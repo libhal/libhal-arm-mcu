@@ -1,0 +1,6 @@
+[options]
+*:platform={{ platform }}
+
+[buildenv]
+LIBHAL_PLATFORM={{ platform }}
+LIBHAL_PLATFORM_LIBRARY=lpc40

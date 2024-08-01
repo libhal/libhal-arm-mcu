@@ -1,0 +1,3 @@
+{% include "cortex-m4f" %}
+{% set platform = "lpc4088" %}
+{% include "lpc40" %}

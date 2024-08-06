@@ -81,10 +81,16 @@ class libhal_arm_mcu_conan(ConanFile):
     def package_info(self):
         self.cpp_info.libs = ["libhal-arm-mcu"]
         self.cpp_info.set_property("cmake_target_name", "libhal::arm-mcu")
+        self.cpp_info.set_property("cmake_target_aliases", [
+            "libhal::lpc40",
+            "libhal::stm32f1",
+            "libhal::stm32f4",
+        ])
         self.cpp_info.exelinkflags = []
 
         platform = str(self.options.platform)
         self.buildenv_info.define("LIBHAL_PLATFORM", platform)
+        self.buildenv_info.define("LIBHAL_PLATFORM_LIBRARY", "arm-mcu")
 
         if self.settings.os == "baremetal":
             # If the platform matches the linker script, just use that linker
@@ -93,8 +99,9 @@ class libhal_arm_mcu_conan(ConanFile):
                 "-L" + os.path.join(self.package_folder, "linker_scripts")]
 
             # if the file exists, then we should use it as the linker
-            if os.path.isfile(os.path.join(platform + ".ld")):
+            if os.path.isfile(platform + ".ld"):
                 self.cpp_info.exelinkflags.append("-T" + platform + ".ld")
+
             # if there is no match, then the linker script could be a pattern
             # based on the name of the platform
             else:

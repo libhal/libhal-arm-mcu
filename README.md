@@ -10,7 +10,6 @@ processor microcontrollers (MCUs). This is a platform library supporting
 generic ARM processor APIs and peripheral drivers from many different
 microcontrollers.
 
-
 ## 📚 Software APIs & Usage
 
 To learn about the available drivers and APIs see the headers

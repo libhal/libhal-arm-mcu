@@ -1,3 +1,3 @@
-{% include "cortex-m4" %}
 {% set platform = "lpc4074" %}
+{% set arch = "cortex-m4" %}
 {% include "lpc40" %}

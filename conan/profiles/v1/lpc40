@@ -1,6 +1,8 @@
+[settings]
+build_type=MinSizeRel
+os=baremetal
+arch={{ arch }}
+libc=custom
+
 [options]
 *:platform={{ platform }}
-
-[buildenv]
-LIBHAL_PLATFORM={{ platform }}
-LIBHAL_PLATFORM_LIBRARY=lpc40

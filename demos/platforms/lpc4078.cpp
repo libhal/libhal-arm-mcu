@@ -15,8 +15,8 @@
 #include <libhal-arm-mcu/dwt_counter.hpp>
 #include <libhal-arm-mcu/lpc40/adc.hpp>
 #include <libhal-arm-mcu/lpc40/can.hpp>
-#include <libhal-arm-mcu/lpc40/clock.hpp>
 #include <libhal-arm-mcu/lpc40/constants.hpp>
+#include <libhal-arm-mcu/lpc40/dma_spi.hpp>
 #include <libhal-arm-mcu/lpc40/i2c.hpp>
 #include <libhal-arm-mcu/lpc40/input_pin.hpp>
 #include <libhal-arm-mcu/lpc40/interrupt_pin.hpp>
@@ -27,6 +27,7 @@
 #include <libhal-arm-mcu/lpc40/uart.hpp>
 #include <libhal-arm-mcu/startup.hpp>
 #include <libhal-arm-mcu/system_control.hpp>
+#include <libhal-lpc40/clock.hpp>
 
 #include <resource_list.hpp>
 
@@ -44,7 +45,7 @@ resource_list initialize_platform()
   static hal::lpc40::uart uart0(0,
                                 receive_buffer,
                                 hal::serial::settings{
-                                  .baud_rate = 38400,
+                                  .baud_rate = 115200,
                                 });
 
   static hal::lpc40::can can(2,
@@ -58,8 +59,8 @@ resource_list initialize_platform()
   static hal::lpc40::i2c i2c2(2);
   static hal::lpc40::interrupt_pin interrupt_pin(0, 29);
   static hal::lpc40::pwm pwm(1, 6);
-  static hal::lpc40::spi spi2(2);
-  static hal::lpc40::output_pin chip_select(1, 10);
+  static hal::lpc40::dma_spi spi2(2);
+  static hal::lpc40::output_pin chip_select(1, 8);
   static hal::lpc40::stream_dac_u8 stream_dac;
 
   return {

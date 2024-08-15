@@ -34,11 +34,14 @@ void application(resource_list& p_map)
 
   while (true) {
     using namespace std::literals;
-    std::array<hal::byte, 4> payload{ 0xDE, 0xAD, 0xBE, 0xEF };
+
+    std::array<hal::byte, 4> const payload{ 0xDE, 0xAD, 0xBE, 0xEF };
     std::array<hal::byte, 8> buffer{};
 
     hal::print(console, "Write operation\n");
+    chip_select.level(false);
     hal::write(spi, payload);
+    chip_select.level(true);
     hal::delay(clock, 1s);
 
     hal::print(console, "Read operation: [ ");
@@ -64,7 +67,7 @@ void application(resource_list& p_map)
       std::array<hal::byte, 4> id_data{};
 
       chip_select.level(false);
-      hal::delay(clock, 250ns);
+      hal::delay(clock, 250ns);  // wait at least 250ns
       hal::write_then_read(spi, read_manufacturer_id, id_data, 0xA5);
       chip_select.level(true);
 

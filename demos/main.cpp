@@ -23,7 +23,7 @@ resource_list resources{};
 [[noreturn]] void terminate_handler() noexcept
 {
 
-  if (not resources.status_led && not resources.console) {
+  if (not resources.status_led && not resources.status_led) {
     // spin here until debugger is connected
     while (true) {
       continue;
@@ -72,4 +72,12 @@ int main()
   }  // Allow any other exceptions to terminate the application
 
   std::terminate();
+}
+
+extern "C"
+{
+  // This gets rid of an issue with libhal-exceptions in Debug mode.
+  void __assert_func()
+  {
+  }
 }

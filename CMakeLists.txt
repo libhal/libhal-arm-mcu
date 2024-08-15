@@ -39,6 +39,7 @@ libhal_test_and_make_library(
   src/lpc40/power.cpp
   src/lpc40/pwm.cpp
   src/lpc40/spi.cpp
+  src/lpc40/dma_spi.cpp
   src/lpc40/stream_dac.cpp
   src/lpc40/uart.cpp
 

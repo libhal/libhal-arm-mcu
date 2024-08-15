@@ -98,8 +98,11 @@ class libhal_arm_mcu_conan(ConanFile):
             self.cpp_info.exelinkflags = [
                 "-L" + os.path.join(self.package_folder, "linker_scripts")]
 
+            full_linker_path = os.path.join(
+                self.package_folder, "linker_scripts", platform + ".ld")
             # if the file exists, then we should use it as the linker
-            if os.path.isfile(platform + ".ld"):
+            if os.path.isfile(full_linker_path):
+                self.output.info(f"linker file '{full_linker_path}' found!")
                 self.cpp_info.exelinkflags.append("-T" + platform + ".ld")
 
             # if there is no match, then the linker script could be a pattern

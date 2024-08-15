@@ -41,13 +41,21 @@ inline spi_reg_t* get_spi_reg(peripheral p_id)
   }
 }
 
-inline bool busy(spi_reg_t* p_reg)
+inline bool tx_fifo_full(spi_reg_t* p_reg)
+{
+  return not bit_extract<status_register::transmit_fifo_not_full>(p_reg->sr);
+}
+inline bool rx_fifo_not_empty(spi_reg_t* p_reg)
+{
+  return bit_extract<status_register::receive_fifo_not_empty>(p_reg->sr);
+}
+inline bool still_sending(spi_reg_t* p_reg)
 {
   return bit_extract<status_register::data_line_busy_bit>(p_reg->sr);
 }
 }  // namespace
 
-spi::spi(std::uint8_t p_bus_number, const spi::settings& p_settings)
+spi::spi(std::uint8_t p_bus_number, spi::settings const& p_settings)
 {
   // UM10562: Chapter 7: LPC408x/407x I/O configuration page 13
   if (p_bus_number == 0) {
@@ -98,7 +106,7 @@ spi::spi(bus_info p_bus)
 {
 }
 
-void spi::driver_configure(const settings& p_settings)
+void spi::driver_configure(settings const& p_settings)
 {
   constexpr uint8_t spi_format_code = 0b00;
 
@@ -114,11 +122,11 @@ void spi::driver_configure(const settings& p_settings)
   bit_modify(reg->cr1).clear<control_register1::slave_mode_bit>();
 
   // Setup operating frequency
-  const auto input_clock = get_frequency(m_bus.peripheral_id);
-  const auto clock_divider = input_clock / p_settings.clock_rate;
-  const auto prescaler = static_cast<std::uint16_t>(clock_divider);
-  const auto prescaler_low = static_cast<std::uint8_t>(prescaler & 0xFF);
-  const auto prescaler_high = static_cast<std::uint8_t>(prescaler >> 8);
+  auto const input_clock = get_frequency(m_bus.peripheral_id);
+  auto const clock_divider = input_clock / p_settings.clock_rate;
+  auto const prescaler = static_cast<std::uint16_t>(clock_divider);
+  auto const prescaler_low = static_cast<std::uint8_t>(prescaler & 0xFF);
+  auto const prescaler_high = static_cast<std::uint8_t>(prescaler >> 8);
   // Store lower half of prescalar in clock prescalar register
   reg->cpsr = prescaler_low;
   // Store upper 8 bit half of the prescalar in control register 0
@@ -155,32 +163,29 @@ void spi::driver_configure(const settings& p_settings)
   bit_modify(reg->cr1).set<control_register1::spi_enable>();
 }
 
-void spi::driver_transfer(std::span<const hal::byte> p_data_out,
+void spi::driver_transfer(std::span<hal::byte const> p_data_out,
                           std::span<hal::byte> p_data_in,
                           hal::byte p_filler)
 {
   auto* reg = get_spi_reg(m_bus.peripheral_id);
-  size_t max_length = std::max(p_data_in.size(), p_data_out.size());
+  auto tx_interator = p_data_out.begin();
+  auto rx_interator = p_data_in.begin();
 
-  for (size_t index = 0; index < max_length; index++) {
-    hal::byte byte = 0;
-
-    if (index < p_data_out.size()) {
-      byte = p_data_out[index];
-    } else {
-      byte = p_filler;
+  // iterate until both reach their end
+  while (tx_interator != p_data_out.end() || rx_interator != p_data_in.end()) {
+    if (rx_interator != p_data_in.end() && rx_fifo_not_empty(reg)) {
+      *rx_interator++ = reg->dr;
     }
-
-    reg->dr = byte;
-
-    while (busy(reg)) {
-      continue;
+    if (tx_interator == p_data_out.end()) {
+      reg->dr = p_filler;
+    } else if (not tx_fifo_full(reg)) {
+      reg->dr = *tx_interator++;
     }
+  }
 
-    byte = static_cast<uint8_t>(reg->dr);
-    if (index < p_data_in.size()) {
-      p_data_in[index] = byte;
-    }
+  // Wait for bus activity to cease before leaving the function
+  while (still_sending(reg)) {
+    continue;
   }
 }
 }  // namespace hal::lpc40

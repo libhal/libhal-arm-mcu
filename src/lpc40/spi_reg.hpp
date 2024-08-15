@@ -22,24 +22,25 @@ namespace hal::lpc40 {
 struct spi_reg_t
 {
   /*!< Offset: 0x000 Control Register 0 (R/W) */
-  volatile uint32_t cr0;
+  uint32_t volatile cr0;
   /*!< Offset: 0x004 Control Register 1 (R/W) */
-  volatile uint32_t cr1;
+  uint32_t volatile cr1;
   /*!< Offset: 0x008 Data Register (R/W) */
-  volatile uint32_t dr;
+  uint32_t volatile dr;
   /*!< Offset: 0x00C Status Register (R/ ) */
-  const volatile uint32_t sr;
+  uint32_t const volatile sr;
   /*!< Offset: 0x010 Clock Prescale Register (R/W) */
-  volatile uint32_t cpsr;
+  uint32_t volatile cpsr;
   /*!< Offset: 0x014 Interrupt Mask Set and Clear Register (R/W) */
-  volatile uint32_t imsc;
+  uint32_t volatile imsc;
   /*!< Offset: 0x018 Raw Interrupt Status Register (R/W) */
-  volatile uint32_t ris;
+  uint32_t volatile ris;
   /*!< Offset: 0x01C Masked Interrupt Status Register (R/W) */
-  volatile uint32_t mis;
+  uint32_t volatile mis;
   /*!< Offset: 0x020 SSPICR Interrupt Clear Register (R/W) */
-  volatile uint32_t icr;
-  volatile uint32_t dmacr;
+  uint32_t volatile icr;
+  /*!< Offset: 0x024 SSPnDMACR DMA control register (R/W) */
+  uint32_t volatile dmacr;
 };
 
 /// SSPn Control Register 0
@@ -87,9 +88,18 @@ struct control_register1  // NOLINT
 /// SSPn Status Register
 struct status_register  // NOLINT
 {
+  static constexpr auto transmit_fifo_not_full = bit_mask::from<1>();
+  static constexpr auto receive_fifo_not_empty = bit_mask::from<2>();
   /// This bit is 0 if the SSPn controller is idle, or 1 if it is currently
   /// sending/receiving a frame and/or the Tx FIFO is not empty.
   static constexpr auto data_line_busy_bit = bit_mask::from<4>();
+};
+
+/// SSPn dma Register
+struct dma_register  // NOLINT
+{
+  static constexpr auto receive_dma_enable = bit_mask::from<0>();
+  static constexpr auto transmit_dma_enable = bit_mask::from<1>();
 };
 
 inline spi_reg_t* spi_reg0 = reinterpret_cast<spi_reg_t*>(0x40088000);

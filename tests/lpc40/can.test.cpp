@@ -14,17 +14,16 @@
 
 #include <libhal-lpc40/can.hpp>
 
-#include "can_reg.hpp"
-#include "gpio_reg.hpp"
-#include "helper.hpp"
-#include "pin_reg.hpp"
-#include "system_controller_reg.hpp"
+#include "lpc40/can_reg.hpp"
+#include "lpc40/gpio_reg.hpp"
+#include "lpc40/helper.hpp"
+#include "lpc40/pin_reg.hpp"
+#include "lpc40/system_controller_reg.hpp"
 
 #include <boost/ut.hpp>
 
 namespace hal::lpc40 {
-void can_test()
-{
+boost::ut::suite can_test = []() {
   using namespace boost::ut;
 
   auto stub_out_pin_map = stub_out_registers(&pin_map);
@@ -39,8 +38,6 @@ void can_test()
   auto stub_out_can1 = stub_out_registers(&can_reg1);
   auto stub_out_can2 = stub_out_registers(&can_reg2);
   auto stub_out_can_accept = stub_out_registers(&can_acceptance_filter);
-
-  // [[maybe_unused]] auto test_can = hal::lpc40::can::get(1).value();
 
   "can::ctor()"_test = []() {};
   "can::configure()"_test = []() {};

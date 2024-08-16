@@ -50,16 +50,9 @@ resource_list resources{};
 
 int main()
 {
-  try {
-    resources = initialize_platform();
-  } catch (...) {
-    while (true) {
-      // halt here and wait for a debugger to connect
-      continue;
-    }
-  }
-
   hal::set_terminate(terminate_handler);
+
+  resources = initialize_platform();
 
   try {
     application(resources);

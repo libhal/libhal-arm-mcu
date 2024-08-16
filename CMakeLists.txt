@@ -43,6 +43,9 @@ libhal_test_and_make_library(
   src/lpc40/stream_dac.cpp
   src/lpc40/uart.cpp
 
+  # stm32_generic
+  src/stm32_generic/spi.cpp
+
   # stm32f1
   src/stm32f1/can_reg.hpp
   src/stm32f1/can.cpp
@@ -59,6 +62,7 @@ libhal_test_and_make_library(
   src/stm32f1/rcc_reg.hpp
   src/stm32f1/uart_reg.hpp
   src/stm32f1/uart.cpp
+  src/stm32f1/spi.cpp
 
   # stm32f411
   src/stm32f411/input_pin.cpp
@@ -71,35 +75,33 @@ libhal_test_and_make_library(
   src/stm32f40/output_pin.cpp
 
   TEST_SOURCES
+  # cortex_m
   tests/dwt_counter.test.cpp
   tests/interrupt.test.cpp
   tests/main.test.cpp
   tests/systick_timer.test.cpp
 
-  # # lpc40
-  # tests/lpc40/adc.test.cpp
-  # tests/lpc40/can.test.cpp
-  # tests/lpc40/helper.hpp
-  # tests/lpc40/i2c.test.cpp
-  # tests/lpc40/input_pin.test.cpp
-  # tests/lpc40/interrupt_pin.test.cpp
-  # tests/lpc40/main.test.cpp
-  # tests/lpc40/output_pin.test.cpp
-  # tests/lpc40/pwm.test.cpp
-  # tests/lpc40/spi.test.cpp
-  # tests/lpc40/stream_dac.test.cpp
-  # tests/lpc40/uart.test.cpp
+  # lpc40
+  tests/lpc40/adc.test.cpp
+  tests/lpc40/can.test.cpp
+  tests/lpc40/i2c.test.cpp
+  tests/lpc40/input_pin.test.cpp
+  tests/lpc40/interrupt_pin.test.cpp
+  tests/lpc40/output_pin.test.cpp
+  tests/lpc40/pwm.test.cpp
+  tests/lpc40/spi.test.cpp
+  tests/lpc40/stream_dac.test.cpp
+  tests/lpc40/uart.test.cpp
 
-  # # stm32f1
-  # tests/stm32f1/can.test.cpp
-  # tests/stm32f1/helper.hpp
-  # tests/stm32f1/main.test.cpp
-  # tests/stm32f1/output_pin.test.cpp
-  # tests/stm32f1/uart.test.cpp
+  # stm32f1
+  tests/stm32f1/can.test.cpp
+  tests/stm32f1/output_pin.test.cpp
+  tests/stm32f1/uart.test.cpp
+  tests/stm32f1/spi.test.cpp
 
-  # # stm32f411
-
-  # # stm32f40
+  # stm32f411
+  tests/stm32f411/output_pin.test.cpp
+  tests/stm32f411/spi.test.cpp
 
   PACKAGES
   libhal

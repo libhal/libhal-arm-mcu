@@ -1,8 +1,9 @@
+#include <libhal-arm-mcu/stm32f1/spi.hpp>
+
 #include <boost/ut.hpp>
-#include <libhal-stm32f1/uart.hpp>
 
 namespace hal::stm32f1 {
-boost::ut::suite uart_test = []() {
+boost::ut::suite spi_test = []() {
   // fill in later?
 };
 }  // namespace hal::stm32f1

@@ -23,8 +23,7 @@
 #include <boost/ut.hpp>
 
 namespace hal::cortex_m {
-void systick_timer_test()
-{
+boost::ut::suite systick_timer_test = []() {
   using namespace boost::ut;
   using namespace std::chrono_literals;
   using namespace hal::literals;

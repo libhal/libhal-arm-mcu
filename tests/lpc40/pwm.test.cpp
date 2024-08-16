@@ -14,17 +14,16 @@
 
 #include <libhal-lpc40/pwm.hpp>
 
-#include "gpio_reg.hpp"
-#include "helper.hpp"
-#include "pin_reg.hpp"
-#include "pwm_reg.hpp"
-#include "system_controller_reg.hpp"
+#include "lpc40/gpio_reg.hpp"
+#include "lpc40/helper.hpp"
+#include "lpc40/pin_reg.hpp"
+#include "lpc40/pwm_reg.hpp"
+#include "lpc40/system_controller_reg.hpp"
 
 #include <boost/ut.hpp>
 
 namespace hal::lpc40 {
-void pwm_test()
-{
+boost::ut::suite pwm_test = []() {
   using namespace boost::ut;
 
   auto stub_out_pin_map = stub_out_registers(&pin_map);

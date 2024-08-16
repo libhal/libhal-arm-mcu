@@ -21,8 +21,7 @@
 
 namespace hal::cortex_m {
 
-void dwt_test()
-{
+boost::ut::suite dwt_test = []() {
   using namespace boost::ut;
   using namespace hal::cortex_m;
 

@@ -19,11 +19,14 @@
 #include <libhal-arm-mcu/stm32f1/constants.hpp>
 #include <libhal-arm-mcu/stm32f1/input_pin.hpp>
 #include <libhal-arm-mcu/stm32f1/output_pin.hpp>
+#include <libhal-arm-mcu/stm32f1/spi.hpp>
 #include <libhal-arm-mcu/stm32f1/uart.hpp>
 #include <libhal-arm-mcu/system_control.hpp>
 #include <libhal-soft/bit_bang_i2c.hpp>
 #include <libhal-soft/inert_drivers/inert_adc.hpp>
 
+#include <libhal/output_pin.hpp>
+#include <libhal/units.hpp>
 #include <resource_list.hpp>
 
 resource_list initialize_platform()
@@ -46,16 +49,29 @@ resource_list initialize_platform()
   // pin G0 on the STM micromod is port B, pin 4
   static hal::stm32f1::input_pin input_pin('B', 4);
 
-  // TODO(kammce): change this before submission
-
   static hal::stm32f1::output_pin sda_output_pin('B', 7);
   static hal::stm32f1::output_pin scl_output_pin('B', 6);
-  static hal::bit_bang_i2c bit_bang_i2c(
-    hal::bit_bang_i2c::pins{
-      .sda = &sda_output_pin,
-      .scl = &scl_output_pin,
-    },
-    steady_clock);
+
+  sda_output_pin.configure({
+    .resistor = hal::pin_resistor::pull_up,
+    .open_drain = true,
+  });
+  scl_output_pin.configure({
+    .resistor = hal::pin_resistor::pull_up,
+    .open_drain = true,
+  });
+  static hal::bit_bang_i2c::pins bit_bang_pins{
+    .sda = &sda_output_pin,
+    .scl = &scl_output_pin,
+  };
+  static hal::bit_bang_i2c bit_bang_i2c(bit_bang_pins, steady_clock);
+  static hal::stm32f1::output_pin spi_chip_select('A', 4);
+  static hal::stm32f1::spi spi1(hal::bus<2>,
+                                {
+                                  .clock_rate = 250.0_kHz,
+                                  .clock_polarity = false,
+                                  .clock_phase = false,
+                                });
 
   return {
     .reset = []() { hal::cortex_m::reset(); },
@@ -66,5 +82,7 @@ resource_list initialize_platform()
     .adc = &adc,
     .input_pin = &input_pin,
     .i2c = &bit_bang_i2c,
+    .spi = &spi1,
+    .spi_chip_select = &spi_chip_select,
   };
 }

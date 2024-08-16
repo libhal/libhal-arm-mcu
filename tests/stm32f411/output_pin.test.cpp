@@ -17,8 +17,7 @@
 #include <boost/ut.hpp>
 
 namespace hal::stm32f411 {
-void output_pin_test()
-{
+boost::ut::suite output_pin_test = []() {
   using namespace boost::ut;
   using namespace std::literals;
 

@@ -33,8 +33,7 @@ enum class my_irq : irq_t
 };
 }
 
-void interrupt_test()
-{
+boost::ut::suite test_interrupts = []() {
   using namespace boost::ut;
 
   auto saved_registers = setup_interrupts_for_unit_testing();

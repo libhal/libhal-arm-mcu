@@ -12,15 +12,17 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-namespace hal::lpc40 {
-extern void can_test();
-extern void i2c_test();
-extern void pwm_test();
-}  // namespace hal::lpc40
+#include <libhal-arm-mcu/stm32f411/spi.hpp>
 
-int main()
-{
-  hal::lpc40::can_test();
-  hal::lpc40::i2c_test();
-  hal::lpc40::pwm_test();
-}
+#include <boost/ut.hpp>
+
+namespace hal::stm32f411 {
+boost::ut::suite spi_test = []() {
+  using namespace boost::ut;
+  using namespace std::literals;
+
+  "spi::spi()"_test = []() {
+    // Add later?
+  };
+};
+}  // namespace hal::stm32f411

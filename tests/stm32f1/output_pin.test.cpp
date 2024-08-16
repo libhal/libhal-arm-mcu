@@ -14,8 +14,10 @@
 
 #include <libhal-stm32f1/output_pin.hpp>
 
+#include <boost/ut.hpp>
+
 namespace hal::stm32f1 {
-void output_pin_test()
-{
-}
+boost::ut::suite output_pin_test = []() {
+  // fill in later?
+};
 }  // namespace hal::stm32f1

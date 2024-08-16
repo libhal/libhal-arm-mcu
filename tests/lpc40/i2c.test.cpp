@@ -14,17 +14,16 @@
 
 #include <libhal-lpc40/i2c.hpp>
 
-#include "gpio_reg.hpp"
-#include "helper.hpp"
-#include "i2c_reg.hpp"
-#include "pin_reg.hpp"
-#include "system_controller_reg.hpp"
+#include "lpc40/gpio_reg.hpp"
+#include "lpc40/helper.hpp"
+#include "lpc40/i2c_reg.hpp"
+#include "lpc40/pin_reg.hpp"
+#include "lpc40/system_controller_reg.hpp"
 
 #include <boost/ut.hpp>
 
 namespace hal::lpc40 {
-void i2c_test()
-{
+boost::ut::suite i2c_test = []() {
   using namespace boost::ut;
 
   auto stub_out_pin_map = stub_out_registers(&pin_map);

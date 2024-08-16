@@ -17,6 +17,7 @@
 #include <array>
 #include <cstdint>
 
+#include <libhal-util/bit.hpp>
 #include <libhal/error.hpp>
 
 #include <libhal-stm32f1/pin.hpp>
@@ -163,4 +164,48 @@ inline auto* gpio_d_reg = reinterpret_cast<gpio_t*>(0x4001'1400);
 inline auto* gpio_e_reg = reinterpret_cast<gpio_t*>(0x4001'1800);
 inline auto* gpio_f_reg = reinterpret_cast<gpio_t*>(0x4001'1c00);
 inline auto* gpio_g_reg = reinterpret_cast<gpio_t*>(0x4001'2000);
+
+struct pin_remap
+{
+  static constexpr auto adc2_etrgreg_remap = hal::bit_mask::from<20>();
+  static constexpr auto adc2_etrginj_remap = hal::bit_mask::from<19>();
+  static constexpr auto adc1_etrgreg_remap = hal::bit_mask::from<18>();
+  static constexpr auto adc1_etrginj_remap = hal::bit_mask::from<17>();
+  static constexpr auto tim5ch4_iremap = hal::bit_mask::from<16>();
+  static constexpr auto pd01_remap = hal::bit_mask::from<15>();
+  static constexpr auto can1_remap = hal::bit_mask::from<13, 14>();
+  static constexpr auto tim4_rempap = hal::bit_mask::from<12>();
+  static constexpr auto tim3_rempap = hal::bit_mask::from<10, 11>();
+  static constexpr auto tim2_rempap = hal::bit_mask::from<8, 9>();
+  static constexpr auto tim1_rempap = hal::bit_mask::from<6, 7>();
+  static constexpr auto usart3_remap = hal::bit_mask::from<4, 5>();
+  static constexpr auto usart2_remap = hal::bit_mask::from<3>();
+  static constexpr auto usart1_remap = hal::bit_mask::from<2>();
+  static constexpr auto i2c1_remap = hal::bit_mask::from<1>();
+  static constexpr auto spi1_remap = hal::bit_mask::from<0>();
+};
+
+struct pin_remap2
+{
+  static constexpr auto ptp_pps_remap = hal::bit_mask::from<30>();
+  static constexpr auto tim2itr1_iremap = hal::bit_mask::from<29>();
+  static constexpr auto spi3_remap = hal::bit_mask::from<28>();
+  static constexpr auto swj_cfg = hal::bit_mask::from<26, 24>();
+  static constexpr auto mii_rmii_sel = hal::bit_mask::from<23>();
+  static constexpr auto can2_remap = hal::bit_mask::from<22>();
+  static constexpr auto eth_remap = hal::bit_mask::from<21>();
+
+  static constexpr auto tim5ch4_iremap = hal::bit_mask::from<16>();
+  static constexpr auto pd01_remap = hal::bit_mask::from<15>();
+  static constexpr auto can1_remap = hal::bit_mask::from<14, 13>();
+  static constexpr auto tim4_rempap = hal::bit_mask::from<12>();
+  static constexpr auto tim3_rempap = hal::bit_mask::from<11, 10>();
+  static constexpr auto tim2_rempap = hal::bit_mask::from<9, 8>();
+  static constexpr auto tim1_rempap = hal::bit_mask::from<7, 6>();
+  static constexpr auto usart3_remap = hal::bit_mask::from<5, 4>();
+  static constexpr auto usart2_remap = hal::bit_mask::from<3>();
+  static constexpr auto usart1_remap = hal::bit_mask::from<2>();
+  static constexpr auto i2c1_remap = hal::bit_mask::from<1>();
+  static constexpr auto spi1_remap = hal::bit_mask::from<0>();
+};
 }  // namespace hal::stm32f1

@@ -20,17 +20,22 @@
 
 #include "constants.hpp"
 
-namespace hal::stm32f411 {
+namespace hal::stm32f1 {
 class spi : public hal::spi
 {
 public:
   /**
-   * @brief Construct a new spi object
+   * @brief Construct a new spi driver
    *
-   * @param p_bus SPI bus number 1-5
-   * @param p_settings
+   * @param p_bus - spi bus number from 1 to 3
+   * @param p_settings - initial spi settings
    */
-  spi(hal::runtime, std::uint8_t p_bus, spi::settings const& p_settings = {});
+  spi(hal::bus_param auto p_bus, spi::settings const& p_settings = {})
+    : spi(p_bus(), p_settings)
+  {
+    static_assert(1 <= p_bus() and p_bus() <= 3,
+                  "stm32f1 only supports ports from 1 to 3");
+  }
 
   spi(spi& p_other) = delete;
   spi& operator=(spi& p_other) = delete;
@@ -39,6 +44,8 @@ public:
   ~spi();
 
 private:
+  spi(std::uint8_t p_bus_number, spi::settings const& p_settings = {});
+
   void driver_configure(settings const& p_settings) override;
   void driver_transfer(std::span<hal::byte const> p_data_out,
                        std::span<hal::byte> p_data_in,
@@ -47,4 +54,4 @@ private:
   peripheral m_peripheral_id;
   stm32_generic::spi m_spi_driver;
 };
-}  // namespace hal::stm32f411
+}  // namespace hal::stm32f1

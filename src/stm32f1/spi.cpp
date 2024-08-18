@@ -105,7 +105,7 @@ spi::spi(std::uint8_t p_bus_number, spi::settings const& p_settings)
 
 spi::~spi()
 {
-  power_on(m_peripheral_id);
+  power_off(m_peripheral_id);
 }
 
 void spi::driver_configure(settings const& p_settings)

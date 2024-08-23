@@ -55,11 +55,15 @@ void application(resource_list& p_map)
     hal::delay(clock, 1s);
 
     hal::print(console, "Full-duplex transfer\n");
+    chip_select.level(false);
     spi.transfer(payload, buffer);
+    chip_select.level(true);
     hal::delay(clock, 1s);
 
     hal::print(console, "Half-duplex transfer\n");
+    chip_select.level(false);
     hal::write_then_read(spi, payload, buffer);
+    chip_select.level(true);
     hal::delay(clock, 1s);
 
     {

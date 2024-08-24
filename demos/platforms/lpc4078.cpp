@@ -16,6 +16,7 @@
 #include <libhal-arm-mcu/lpc40/adc.hpp>
 #include <libhal-arm-mcu/lpc40/can.hpp>
 #include <libhal-arm-mcu/lpc40/constants.hpp>
+#include <libhal-arm-mcu/lpc40/dac.hpp>
 #include <libhal-arm-mcu/lpc40/dma_spi.hpp>
 #include <libhal-arm-mcu/lpc40/i2c.hpp>
 #include <libhal-arm-mcu/lpc40/input_pin.hpp>
@@ -63,6 +64,7 @@ resource_list initialize_platform()
   static hal::lpc40::output_pin chip_select(1, 8);
   static hal::lpc40::stream_dac_u8 stream_dac;
 
+  static hal::lpc40::dac dac;
   return {
     .reset = []() { hal::cortex_m::reset(); },
     .console = &uart0,
@@ -77,5 +79,6 @@ resource_list initialize_platform()
     .spi = &spi2,
     .spi_chip_select = &chip_select,
     .stream_dac = &stream_dac,
+    .dac = &dac,
   };
 }

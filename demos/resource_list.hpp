@@ -18,6 +18,7 @@
 
 #include <libhal/adc.hpp>
 #include <libhal/can.hpp>
+#include <libhal/dac.hpp>
 #include <libhal/functional.hpp>
 #include <libhal/i2c.hpp>
 #include <libhal/input_pin.hpp>
@@ -50,6 +51,7 @@ struct resource_list
   std::optional<hal::spi*> spi = std::nullopt;
   std::optional<hal::output_pin*> spi_chip_select = std::nullopt;
   std::optional<hal::stream_dac_u8*> stream_dac = std::nullopt;
+  std::optional<hal::dac*> dac = std::nullopt;
 };
 
 // Each application file should have this function implemented

@@ -9,7 +9,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: take the issue
-        uses: bdougie/take-action@main
+        uses: bdougie/take-action@v1.6.1
         with:
           message: Thanks for taking this issue! Let us know if you have any questions!
           trigger: .take

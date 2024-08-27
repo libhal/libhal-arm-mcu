@@ -23,11 +23,15 @@
 #include <libhal-arm-mcu/stm32f1/uart.hpp>
 #include <libhal-arm-mcu/system_control.hpp>
 #include <libhal-soft/bit_bang_i2c.hpp>
+#include <libhal-soft/bit_bang_spi.hpp>
 #include <libhal-soft/inert_drivers/inert_adc.hpp>
+#include <libhal-util/steady_clock.hpp>
 
 #include <libhal/output_pin.hpp>
 #include <libhal/units.hpp>
 #include <resource_list.hpp>
+
+constexpr bool use_bit_bang_spi = false;
 
 resource_list initialize_platform()
 {
@@ -65,13 +69,37 @@ resource_list initialize_platform()
     .scl = &scl_output_pin,
   };
   static hal::bit_bang_i2c bit_bang_i2c(bit_bang_pins, steady_clock);
+
   static hal::stm32f1::output_pin spi_chip_select('A', 4);
-  static hal::stm32f1::spi spi1(hal::bus<2>,
-                                {
-                                  .clock_rate = 250.0_kHz,
-                                  .clock_polarity = false,
-                                  .clock_phase = false,
-                                });
+  static hal::stm32f1::output_pin sck('A', 5);
+  static hal::stm32f1::output_pin copi('A', 6);
+  static hal::stm32f1::input_pin cipo('A', 7);
+
+  static hal::soft::bit_bang_spi::pins bit_bang_spi_pins{ .sck = &sck,
+                                                          .copi = &copi,
+                                                          .cipo = &cipo };
+
+  static hal::spi::settings bit_bang_spi_settings{
+    .clock_rate = 250.0_kHz,
+    .clock_polarity = false,
+    .clock_phase = false,
+  };
+
+  hal::spi* spi = nullptr;
+
+  if constexpr (use_bit_bang_spi) {
+    static hal::soft::bit_bang_spi bit_bang_spi(
+      bit_bang_spi_pins, steady_clock, bit_bang_spi_settings);
+    spi = &bit_bang_spi;
+  } else {
+    static hal::stm32f1::spi spi1(hal::bus<2>,
+                                  {
+                                    .clock_rate = 250.0_kHz,
+                                    .clock_polarity = false,
+                                    .clock_phase = false,
+                                  });
+    spi = &spi1;
+  }
 
   return {
     .reset = []() { hal::cortex_m::reset(); },
@@ -82,7 +110,7 @@ resource_list initialize_platform()
     .adc = &adc,
     .input_pin = &input_pin,
     .i2c = &bit_bang_i2c,
-    .spi = &spi1,
+    .spi = spi,
     .spi_chip_select = &spi_chip_select,
   };
 }

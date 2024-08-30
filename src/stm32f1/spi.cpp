@@ -64,14 +64,14 @@ spi::spi(std::uint8_t p_bus_number, spi::settings const& p_settings)
   // Datasheet: Chapter 4: Pin definition Table 9
   switch (m_peripheral_id) {
     case peripheral::spi1: {
+      hal::bit_modify(alternative_function_io->mapr)
+        .clear<pin_remap::spi1_remap>();
       // clock
       configure_pin({ .port = 'A', .pin = 5 }, push_pull_alternative_output);
       // cipo
       configure_pin({ .port = 'A', .pin = 6 }, input_float);
       // copi
       configure_pin({ .port = 'A', .pin = 7 }, push_pull_alternative_output);
-      hal::bit_modify(alternative_function_io->mapr)
-        .clear<pin_remap::spi1_remap>();
       break;
     }
     case peripheral::spi2: {
@@ -84,14 +84,14 @@ spi::spi(std::uint8_t p_bus_number, spi::settings const& p_settings)
       break;
     }
     case peripheral::spi3: {
+      hal::bit_modify(alternative_function_io->mapr2)
+        .set<pin_remap2::spi3_remap>();
       // clock
       configure_pin({ .port = 'C', .pin = 10 }, push_pull_alternative_output);
       // cipo
       configure_pin({ .port = 'C', .pin = 11 }, input_float);
       // copi
       configure_pin({ .port = 'C', .pin = 12 }, push_pull_alternative_output);
-      hal::bit_modify(alternative_function_io->mapr2)
-        .clear<pin_remap2::spi3_remap>();
       break;
     }
     default:

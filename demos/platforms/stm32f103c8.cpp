@@ -65,8 +65,9 @@ resource_list initialize_platform()
     .scl = &scl_output_pin,
   };
   static hal::bit_bang_i2c bit_bang_i2c(bit_bang_pins, steady_clock);
+
   static hal::stm32f1::output_pin spi_chip_select('A', 4);
-  static hal::stm32f1::spi spi1(hal::bus<2>,
+  static hal::stm32f1::spi spi1(hal::bus<1>,
                                 {
                                   .clock_rate = 250.0_kHz,
                                   .clock_polarity = false,

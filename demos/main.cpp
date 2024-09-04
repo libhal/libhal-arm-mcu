@@ -49,7 +49,6 @@ resource_list resources{};
 int main()
 {
   hal::set_terminate(terminate_handler);
-
   initialize_platform(resources);
 
   try {

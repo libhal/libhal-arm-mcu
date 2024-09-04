@@ -33,7 +33,7 @@
 struct resource_list
 {
   hal::callback<void()> reset;
-  // Each resource is made optional because some mcus do not support all
+  // Each resource is made optional because some MCUs do not support all
   // possible drivers in the resource list. If an application needs a driver it
   // will access them via `std::optional::value()` which will throw an exception
   // if the value, is not present. That exception will be caught in main and a

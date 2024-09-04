@@ -385,7 +385,8 @@ struct can_peripheral_manager final
   can_peripheral_manager(
     hal::u32 p_baud_rate,
     can_pins p_pins = can_pins::pa11_pa12,
-    disable_ids p_disabled_ids = disable_ids{ .standard = 0, .extended = 0 });
+    disable_ids p_disabled_ids = disable_ids{ .standard = 0, .extended = 0 },
+    bool p_self_test = false);
 
   /**
    * @brief Construct a new can peripheral manager object

@@ -21,33 +21,83 @@
 #include <libhal-arm-mcu/stm32f1/output_pin.hpp>
 #include <libhal-arm-mcu/stm32f1/spi.hpp>
 #include <libhal-arm-mcu/stm32f1/uart.hpp>
+#include <libhal-arm-mcu/stm32f1/usb.hpp>
 #include <libhal-arm-mcu/system_control.hpp>
 #include <libhal-soft/bit_bang_i2c.hpp>
 #include <libhal-soft/inert_drivers/inert_adc.hpp>
-
+#include <libhal-util/serial.hpp>
 #include <libhal/output_pin.hpp>
+#include <libhal/timeout.hpp>
 #include <libhal/units.hpp>
+
 #include <resource_list.hpp>
 
-resource_list initialize_platform()
+std::array<hal::byte, 16> buffer{};
+std::span<hal::byte> usable_data(buffer);
+bool act = false;
+
+void my_control_handler(std::span<hal::byte> p_data)
+{
+  auto const min = std::min(buffer.size(), p_data.size());
+  std::copy_n(p_data.begin(), min, buffer.begin());
+  usable_data = buffer;
+  usable_data = usable_data.first(min);
+  act = true;
+};
+
+void initialize_platform(resource_list& p_resource_list)
 {
   using namespace hal::literals;
 
-  // Set the MCU to the maximum clock speed
-  hal::stm32f1::maximum_speed_using_internal_oscillator();
+  p_resource_list.reset = []() { hal::cortex_m::reset(); };
+
+  hal::stm32f1::configure_clocks(hal::stm32f1::clock_tree{
+    .high_speed_external = 8.0_MHz,
+    .pll = {
+      .enable = true,
+      .source = hal::stm32f1::pll_source::high_speed_external,
+      .multiply = hal::stm32f1::pll_multiply::multiply_by_9,
+      .usb = {
+        .divider = hal::stm32f1::usb_divider::divide_by_1_point_5,
+      }
+    },
+    .system_clock = hal::stm32f1::system_clock_select::pll,
+    .ahb = {
+      .divider = hal::stm32f1::ahb_divider::divide_by_1,
+      .apb1 = {
+        .divider = hal::stm32f1::apb_divider::divide_by_2,
+      },
+      .apb2 = {
+        .divider = hal::stm32f1::apb_divider::divide_by_1,
+        .adc = {
+          .divider = hal::stm32f1::adc_divider::divide_by_6,
+        }
+      },
+    },
+  });
 
   auto cpu_frequency = hal::stm32f1::frequency(hal::stm32f1::peripheral::cpu);
   static hal::cortex_m::dwt_counter steady_clock(cpu_frequency);
+  p_resource_list.clock = &steady_clock;
+
   static hal::stm32f1::uart uart1(hal::port<1>, hal::buffer<128>);
+  p_resource_list.console = &uart1;
+
+  static hal::stm32f1::output_pin led('C', 13);
+  p_resource_list.status_led = &led;
+
+#if 0
   static hal::stm32f1::can can({ .baud_rate = 1'000'000 },
                                hal::stm32f1::can_pins::pb9_pb8);
-  static hal::stm32f1::output_pin led('C', 13);
-
+  p_resource_list.can = &can;
+#endif
   // TODO: replace with actual ADC
   static hal::soft::inert_adc adc(0.5);
+  p_resource_list.adc = &adc;
 
   // pin G0 on the STM micromod is port B, pin 4
   static hal::stm32f1::input_pin input_pin('B', 4);
+  p_resource_list.input_pin = &input_pin;
 
   static hal::stm32f1::output_pin sda_output_pin('B', 7);
   static hal::stm32f1::output_pin scl_output_pin('B', 6);
@@ -65,25 +115,104 @@ resource_list initialize_platform()
     .scl = &scl_output_pin,
   };
   static hal::bit_bang_i2c bit_bang_i2c(bit_bang_pins, steady_clock);
+  p_resource_list.i2c = &bit_bang_i2c;
 
   static hal::stm32f1::output_pin spi_chip_select('A', 4);
+  p_resource_list.spi_chip_select = &spi_chip_select;
+
+#if 0
   static hal::stm32f1::spi spi1(hal::bus<1>,
                                 {
                                   .clock_rate = 250.0_kHz,
                                   .clock_polarity = false,
                                   .clock_phase = false,
                                 });
+  p_resource_list.spi = &spi1;
+#endif
 
-  return {
-    .reset = []() { hal::cortex_m::reset(); },
-    .console = &uart1,
-    .status_led = &led,
-    .clock = &steady_clock,
-    .can = &can,
-    .adc = &adc,
-    .input_pin = &input_pin,
-    .i2c = &bit_bang_i2c,
-    .spi = &spi1,
-    .spi_chip_select = &spi_chip_select,
+  hal::print(uart1, "USB test starting in init...\n");
+
+  hal::stm32f1::usb usb(steady_clock);
+  hal::stm32f1::usb_control_endpoint control_endpoint(usb);
+
+  control_endpoint.on_request(my_control_handler);
+  control_endpoint.connect(true);
+  // Device Descriptor
+  uint8_t const device_descriptor[] = {
+    0x12,        // bLength
+    0x01,        // bDescriptorType (Device)
+    0x00, 0x02,  // bcdUSB (USB 2.0)
+    0x00,  // bDeviceClass (Use class information in the Interface Descriptors)
+    0x00,  // bDeviceSubClass
+    0x00,  // bDeviceProtocol
+    16,    // bMaxPacketSize0 (64 bytes)
+    0xAD, 0xDE,  // idVendor (0xDEAD)
+    0xEF, 0xBE,  // idProduct (0xBEEF)
+    0x00, 0x01,  // bcdDevice
+    0x01,        // iManufacturer (String Index)
+    0x02,        // iProduct (String Index)
+    0x03,        // iSerialNumber (String Index)
+    0x01         // bNumConfigurations
   };
+
+  // String Descriptor 0 (Language ID)
+  [[maybe_unused]] uint8_t const lang_descriptor[] = {
+    0x04,  // bLength
+    0x03,  // bDescriptorType (String)
+    0x09,
+    0x04  // wLANGID[0] (0x0409: English-US)
+  };
+
+  // String Descriptor 1 (Manufacturer)
+  [[maybe_unused]] uint8_t const manufacturer_descriptor[] = {
+    0x18,  // bLength
+    0x03,  // bDescriptorType (String)
+    'l',  0, 'i', 0, 'b', 0, 'h', 0, 'a', 0,
+    'l',  0, ' ', 0, 'i', 0, 'n', 0, 'c', 0
+  };
+
+  // String Descriptor 2 (Product)
+  [[maybe_unused]] uint8_t const product_descriptor[] = {
+    0x18,  // bLength
+    0x03,  // bDescriptorType (String)
+    's',  0, 'u', 0, 'p', 0, 'e', 0, 'r', 0, ' ', 0, 'u', 0, 's', 0, 'b', 0
+  };
+
+  // String Descriptor 3 (Serial Number)
+  [[maybe_unused]] uint8_t const serial_descriptor[] = {
+    0x1A,  // bLength
+    0x03,  // bDescriptorType (String)
+    '0',  0, '8', 0, '8', 0, '8', 0, '0', 0, '8', 0, '8', 0, '0', 0, '8', 0
+  };
+
+  while (true) {
+    if (not act) {
+      continue;
+    }
+
+    if (buffer[0] == 0x00 && buffer[1] == 0x05) {
+      hal::print(uart1, "ZLP\n");
+      control_endpoint.write({});
+      hal::print(uart1, "ZLP+\n");
+      hal::print<32>(uart1, "ADDR (%d)\n", buffer[2]);
+      control_endpoint.set_address(buffer[2]);
+      hal::print<32>(uart1, "ADDR (%d)+\n", buffer[2]);
+    } else if (buffer[0] == 0x80 && buffer[1] == 0x06 && buffer[2] == 0x00 &&
+               buffer[3] == 0x01) {
+      hal::print(uart1, "S:DD\n");
+      control_endpoint.write(device_descriptor);
+      hal::print(uart1, "S:DD+\n");
+    } else if (buffer[0] == 0x80 && buffer[1] == 0x06 && buffer[2] == 0x00 &&
+               buffer[3] == 0x02) {
+      while (true) {
+        continue;
+      }
+    } else {
+      while (true) {
+        continue;
+      }
+    }
+
+    act = false;
+  }
 }

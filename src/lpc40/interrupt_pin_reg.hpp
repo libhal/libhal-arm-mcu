@@ -31,29 +31,29 @@ inline std::array<std::array<hal::callback<interrupt_pin::handler>, 32>, 2>
 struct interrupt_pin_reg_t
 {
   /// Offset: 0x080 GPIO overall Interrupt Status (RO)
-  const volatile uint32_t status;
+  uint32_t const volatile status;
   /// Offset: 0x084 GPIO Interrupt Status for Rising edge for Port 0 (RO)
-  const volatile uint32_t raising_status_port0;
+  uint32_t const volatile raising_status_port0;
   /// Offset: 0x088 GPIO Interrupt Status for Falling edge for Port 0 (RO)
-  const volatile uint32_t falling_status_port0;
+  uint32_t const volatile falling_status_port0;
   /// Offset: 0x08C (WO)
-  volatile uint32_t clear_interrupt_port0;
+  uint32_t volatile clear_interrupt_port0;
   /// Offset: 0x090 (R/W)
-  volatile uint32_t enable_raising_port0;
+  uint32_t volatile enable_raising_port0;
   /// Offset: 0x094 (R/W)
-  volatile uint32_t enable_falling_port0;
+  uint32_t volatile enable_falling_port0;
   /// Offset: 0x098 - 0x0A0
   std::array<uint32_t, 3> reserved0;
   /// Offset: 0x0A4 (RO)
-  const volatile uint32_t raising_status_port2;
+  uint32_t const volatile raising_status_port2;
   /// Offset: 0x0A8 (RO)
-  const volatile uint32_t falling_status_port2;
+  uint32_t const volatile falling_status_port2;
   /// Offset: 0x0AC (WO)
-  volatile uint32_t clear_interrupt_port2;
+  uint32_t volatile clear_interrupt_port2;
   /// Offset: 0x0B0 (R/W)
-  volatile uint32_t enable_raising_port2;
+  uint32_t volatile enable_raising_port2;
   /// Offset: 0x0B4 (R/W)
-  volatile uint32_t enable_falling_port2;
+  uint32_t volatile enable_falling_port2;
 };
 
 inline interrupt_pin_reg_t* interrupt_pin_reg =

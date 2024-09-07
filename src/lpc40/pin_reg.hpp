@@ -24,7 +24,7 @@ namespace hal::lpc40 {
 struct pin_map_t
 {
   /// Register matrix that maps against the 6 ports and the 32 pins per port
-  volatile std::uint32_t matrix[6][32];
+  std::uint32_t volatile matrix[6][32];
 };
 
 /// The address of the IO connect peripheral

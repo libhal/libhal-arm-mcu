@@ -169,15 +169,15 @@ constexpr uart_baud_t calculate_baud(uint32_t p_baud_rate,
   // Hold the result return value.
   uart_baud_t result{};
 
-  const uint64_t frequency_1000 = p_frequency_hz * thousands;
-  const uint32_t sample_rate = p_baud_rate * samples_per_bit_rate;
+  uint64_t const frequency_1000 = p_frequency_hz * thousands;
+  uint32_t const sample_rate = p_baud_rate * samples_per_bit_rate;
 
   // Compute the integer divider for the baud rate
-  const uint32_t integer_divider = (p_frequency_hz / sample_rate);
+  uint32_t const integer_divider = (p_frequency_hz / sample_rate);
 
   // Computer the integer divider for the baud rate except multiplied by 1000
   // in order to get 3 additional decimal places.
-  const auto divider_1000 = static_cast<uint32_t>(frequency_1000 / sample_rate);
+  auto const divider_1000 = static_cast<uint32_t>(frequency_1000 / sample_rate);
 
   // Save divider to result
   result.divider = integer_divider;
@@ -186,9 +186,9 @@ constexpr uart_baud_t calculate_baud(uint32_t p_baud_rate,
   // a division error. Also note that an integer divider of 0 represents a
   // failure.
   if (integer_divider != 0) {
-    const auto multiplier_ratio =
+    auto const multiplier_ratio =
       static_cast<std::int32_t>(divider_1000 / integer_divider);
-    const fractional_divider_t fraction = closest_fractional(multiplier_ratio);
+    fractional_divider_t const fraction = closest_fractional(multiplier_ratio);
     result.numerator = fraction.numerator;
     result.denominator = fraction.denominator;
   }

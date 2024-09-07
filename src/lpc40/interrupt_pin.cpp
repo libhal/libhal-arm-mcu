@@ -73,7 +73,7 @@ void interrupt_pin_handler()
 
 interrupt_pin::interrupt_pin(std::uint8_t p_port,  // NOLINT
                              std::uint8_t p_pin,
-                             const settings& p_settings)
+                             settings const& p_settings)
   : m_port(p_port)
   , m_pin(p_pin)
 {
@@ -92,7 +92,7 @@ interrupt_pin::~interrupt_pin()
   }
 }
 
-void interrupt_pin::driver_configure(const settings& p_settings)
+void interrupt_pin::driver_configure(settings const& p_settings)
 {
   // Set pin as input
   bit_modify(gpio_reg[m_port]->direction).clear(pin_mask(m_pin));

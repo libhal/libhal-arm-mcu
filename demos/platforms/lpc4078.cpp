@@ -32,15 +32,21 @@
 
 #include <resource_list.hpp>
 
-resource_list initialize_platform()
+void initialize_platform(resource_list& p_resources)
 {
   using namespace hal::literals;
+
+  p_resources.reset = []() { hal::cortex_m::reset(); };
 
   // Set the MCU to the maximum clock speed
   hal::lpc40::maximum(12.0_MHz);
 
+  static hal::lpc40::output_pin led(1, 10);
+  p_resources.status_led = &led;
+
   static hal::cortex_m::dwt_counter counter(
     hal::lpc40::get_frequency(hal::lpc40::peripheral::cpu));
+  p_resources.clock = &counter;
 
   static std::array<hal::byte, 64> receive_buffer{};
   static hal::lpc40::uart uart0(0,
@@ -48,37 +54,38 @@ resource_list initialize_platform()
                                 hal::serial::settings{
                                   .baud_rate = 115200,
                                 });
+  p_resources.console = &uart0;
 
   static hal::lpc40::can can(2,
                              hal::can::settings{
                                .baud_rate = 1.0_MHz,
                              });
+  p_resources.can = &can;
 
-  static hal::lpc40::output_pin led(1, 10);
   static hal::lpc40::adc adc4(hal::channel<4>);
+  p_resources.adc = &adc4;
+
   static hal::lpc40::input_pin input_pin(0, 29);
+  p_resources.input_pin = &input_pin;
+
   static hal::lpc40::i2c i2c2(2);
+  p_resources.i2c = &i2c2;
+
   static hal::lpc40::interrupt_pin interrupt_pin(0, 29);
+  p_resources.interrupt_pin = &interrupt_pin;
+
   static hal::lpc40::pwm pwm(1, 6);
+  p_resources.pwm = &pwm;
+
   static hal::lpc40::dma_spi spi2(2);
+  p_resources.spi = &spi2;
+
   static hal::lpc40::output_pin chip_select(1, 8);
+  p_resources.spi_chip_select = &chip_select;
+
   static hal::lpc40::stream_dac_u8 stream_dac;
+  p_resources.stream_dac = &stream_dac;
 
   static hal::lpc40::dac dac;
-  return {
-    .reset = []() { hal::cortex_m::reset(); },
-    .console = &uart0,
-    .status_led = &led,
-    .clock = &counter,
-    .can = &can,
-    .adc = &adc4,
-    .input_pin = &input_pin,
-    .i2c = &i2c2,
-    .interrupt_pin = &interrupt_pin,
-    .pwm = &pwm,
-    .spi = &spi2,
-    .spi_chip_select = &chip_select,
-    .stream_dac = &stream_dac,
-    .dac = &dac,
-  };
+  p_resources.dac = &dac;
 }

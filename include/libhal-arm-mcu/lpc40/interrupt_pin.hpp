@@ -49,5 +49,4 @@ private:
   uint8_t m_port;
   uint8_t m_pin;
 };
-
 }  // namespace hal::lpc40

@@ -19,19 +19,19 @@ hertz peripheral_clock_rate = irc_frequency / default_peripheral_divider;
 
 struct pll_registers
 {
-  volatile uint32_t* p_control;
-  volatile uint32_t* p_config;
-  volatile uint32_t* p_feed;
-  const volatile uint32_t* p_stat;
+  uint32_t volatile* p_control;
+  uint32_t volatile* p_config;
+  uint32_t volatile* p_feed;
+  uint32_t const volatile* p_stat;
 };
 
-hertz setup_pll(const clock_tree& p_clock_config,
-                const pll_registers& p_pll_registers,
+hertz setup_pll(clock_tree const& p_clock_config,
+                pll_registers const& p_pll_registers,
                 std::uint8_t p_pll_index)
 {
   using namespace hal::literals;
 
-  const auto& pll_config = p_clock_config.pll[p_pll_index];
+  auto const& pll_config = p_clock_config.pll[p_pll_index];
   hertz fcco = 0.0_Hz;
 
   if (pll_config.enabled) {
@@ -102,7 +102,7 @@ void enable_external_oscillator(hertz p_oscillator_frequency)
 void maximum(hertz p_external_crystal_frequency)
 {
   static constexpr auto max_speed = 120.0_MHz;
-  const auto multiply = max_speed / p_external_crystal_frequency;
+  auto const multiply = max_speed / p_external_crystal_frequency;
 
   clock_tree config{};
   config.oscillator_frequency = p_external_crystal_frequency;
@@ -150,7 +150,7 @@ hertz get_frequency(peripheral p_peripheral)
   }
 }
 
-void configure_clocks(const clock_tree& p_clock_tree)
+void configure_clocks(clock_tree const& p_clock_tree)
 {
   using namespace hal::literals;
 

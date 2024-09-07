@@ -39,23 +39,23 @@ struct resource_list
   // if the value, is not present. That exception will be caught in main and a
   // message will be printed if the `console` field has been set, then call
   // std::terminate.
-  std::optional<hal::serial*> console = std::nullopt;
-  std::optional<hal::output_pin*> status_led = std::nullopt;
-  std::optional<hal::steady_clock*> clock = std::nullopt;
-  std::optional<hal::can*> can = std::nullopt;
-  std::optional<hal::adc*> adc = std::nullopt;
-  std::optional<hal::input_pin*> input_pin = std::nullopt;
-  std::optional<hal::i2c*> i2c = std::nullopt;
-  std::optional<hal::interrupt_pin*> interrupt_pin = std::nullopt;
-  std::optional<hal::pwm*> pwm = std::nullopt;
-  std::optional<hal::spi*> spi = std::nullopt;
-  std::optional<hal::output_pin*> spi_chip_select = std::nullopt;
-  std::optional<hal::stream_dac_u8*> stream_dac = std::nullopt;
-  std::optional<hal::dac*> dac = std::nullopt;
+  std::optional<hal::serial*> console;
+  std::optional<hal::output_pin*> status_led;
+  std::optional<hal::steady_clock*> clock;
+  std::optional<hal::can*> can;
+  std::optional<hal::adc*> adc;
+  std::optional<hal::input_pin*> input_pin;
+  std::optional<hal::i2c*> i2c;
+  std::optional<hal::interrupt_pin*> interrupt_pin;
+  std::optional<hal::pwm*> pwm;
+  std::optional<hal::spi*> spi;
+  std::optional<hal::output_pin*> spi_chip_select;
+  std::optional<hal::stream_dac_u8*> stream_dac;
+  std::optional<hal::dac*> dac;
 };
 
 // Each application file should have this function implemented
 void application(resource_list& p_map);
 
 // Each platform file should have this function implemented
-resource_list initialize_platform();
+void initialize_platform(resource_list& p_resources);

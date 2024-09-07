@@ -102,7 +102,7 @@ can::message_t receive(can_reg_t* p_reg) noexcept
 /// Convert message into the registers LPC40xx can bus registers.
 ///
 /// @param message - message to convert.
-can_lpc_message message_to_registers(const can::message_t& p_message)
+can_lpc_message message_to_registers(can::message_t const& p_message)
 {
   static constexpr auto highest_11_bit_number = 2048UL;
   can_lpc_message registers;
@@ -146,17 +146,17 @@ can_lpc_message message_to_registers(const can::message_t& p_message)
 }
 }  // namespace
 
-void can::configure_baud_rate(const can::port& p_port,
-                              const can::settings& p_settings)
+void can::configure_baud_rate(can::port const& p_port,
+                              can::settings const& p_settings)
 {
   using namespace hal::literals;
 
   auto* reg = get_can_reg(p_port.id);
-  const auto can_frequency = get_frequency(p_port.id);
+  auto const can_frequency = get_frequency(p_port.id);
 
   bool external_oscillator_used = using_external_oscillator();
   bool baud_rate_above_100khz = p_settings.baud_rate > 100.0_kHz;
-  const auto valid_divider =
+  auto const valid_divider =
     hal::calculate_can_bus_divider(can_frequency, p_settings.baud_rate);
 
   if ((baud_rate_above_100khz && not external_oscillator_used) ||
@@ -164,9 +164,9 @@ void can::configure_baud_rate(const can::port& p_port,
     safe_throw(hal::operation_not_supported(this));
   }
 
-  const auto dividers = valid_divider.value();
-  const auto prescale = dividers.clock_divider - 1U;
-  const auto sync_jump_width = dividers.synchronization_jump_width - 1U;
+  auto const dividers = valid_divider.value();
+  auto const prescale = dividers.clock_divider - 1U;
+  auto const sync_jump_width = dividers.synchronization_jump_width - 1U;
 
   auto phase_segment1 =
     (dividers.phase_segment1 + dividers.propagation_delay) - 1U;
@@ -178,7 +178,7 @@ void can::configure_baud_rate(const can::port& p_port,
   // Check if phase segment 2 does not fit
   if (phase_segment2 > segment2_bit_limit) {
     // Take the extra time quanta and add it to the phase 1 segment
-    const auto phase_segment2_remainder = phase_segment2 - segment2_bit_limit;
+    auto const phase_segment2_remainder = phase_segment2 - segment2_bit_limit;
     phase_segment1 += phase_segment2_remainder;
     // Cap phase segment 2 to the max available in the bit field
     phase_segment2 = segment2_bit_limit;
@@ -199,7 +199,7 @@ void can::configure_baud_rate(const can::port& p_port,
     .insert<can_bus_timing::sampling>(enable_triple_sampling);
 }
 
-void can::setup(const can::port& p_port, const can::settings& p_settings)
+void can::setup(can::port const& p_port, can::settings const& p_settings)
 {
   auto* reg = get_can_reg(p_port.id);
 
@@ -222,7 +222,7 @@ void can::setup(const can::port& p_port, const can::settings& p_settings)
   bit_modify(reg->MOD).clear<can_mode::reset>();
 }
 
-can::can(std::uint8_t p_port_number, const can::settings& p_settings)
+can::can(std::uint8_t p_port_number, can::settings const& p_settings)
 {
   if (p_port_number == 1) {
     m_port = can::port{
@@ -263,18 +263,18 @@ can::~can()
  *
  * @param p_port - CAN port information
  */
-can::can(const port& p_port, const can::settings& p_settings)
+can::can(port const& p_port, can::settings const& p_settings)
   : m_port(p_port)
 {
   setup(p_port, p_settings);
 }
 
-void can::driver_configure(const can::settings& p_settings)
+void can::driver_configure(can::settings const& p_settings)
 {
   return setup(m_port, p_settings);
 }
 
-void can::driver_send(const message_t& p_message)
+void can::driver_send(message_t const& p_message)
 {
   auto* reg = get_can_reg(m_port.id);
   auto can_message_registers = message_to_registers(p_message);
@@ -283,7 +283,7 @@ void can::driver_send(const message_t& p_message)
   // through it.
   bool sent = false;
   while (!sent) {
-    const auto status_register = reg->SR;
+    auto const status_register = reg->SR;
     // Check if any buffer is available.
     if (bit_extract<can_buffer_status::bus_status>(status_register) ==
         can_buffer_status::bus_off) {

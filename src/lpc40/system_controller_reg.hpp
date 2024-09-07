@@ -28,97 +28,97 @@ namespace hal::lpc40 {
 struct system_controller_t
 {
   /// Offset: 0x000 (R/W)  Flash Accelerator Configuration Register
-  volatile uint32_t flashcfg;
+  uint32_t volatile flashcfg;
   /// reserved 0
   std::array<uint32_t, 31> reserved0;
   /// Offset: 0x080 (R/W)  PLL0 Control Register
-  volatile uint32_t pll0con;
+  uint32_t volatile pll0con;
   /// Offset: 0x084 (R/W)  PLL0 Configuration Register
-  volatile uint32_t pll0cfg;
+  uint32_t volatile pll0cfg;
   /// Offset: 0x088 (R/ )  PLL0 Status Register
-  const volatile uint32_t pll0stat;
+  uint32_t const volatile pll0stat;
   /// Offset: 0x08C ( /W)  PLL0 Feed Register
-  volatile uint32_t pll0feed;
+  uint32_t volatile pll0feed;
   /// reserved 1
   std::array<uint32_t, 4> reserved1;
   /// Offset: 0x0A0 (R/W)  PLL1 Control Register
-  volatile uint32_t pll1con;
+  uint32_t volatile pll1con;
   /// Offset: 0x0A4 (R/W)  PLL1 Configuration Register
-  volatile uint32_t pll1cfg;
+  uint32_t volatile pll1cfg;
   /// Offset: 0x0A8 (R/ )  PLL1 Status Register
-  const volatile uint32_t pll1stat;
+  uint32_t const volatile pll1stat;
   /// Offset: 0x0AC ( /W)  PLL1 Feed Register
-  volatile uint32_t pll1feed;
+  uint32_t volatile pll1feed;
   /// reserved 2
   std::array<uint32_t, 4> reserved2;
   /// Offset: 0x0C0 (R/W)  Power Control Register
-  volatile uint32_t power_control;
+  uint32_t volatile power_control;
   /// Offset: 0x0C4 (R/W)  Power Control for Peripherals Register
-  volatile uint32_t peripheral_power_control0;
+  uint32_t volatile peripheral_power_control0;
   /// Offset: 0x0C8 (R/W)  Power Control for Peripherals Register
-  volatile uint32_t peripheral_power_control1;
+  uint32_t volatile peripheral_power_control1;
   /// reserved 3
   std::array<uint32_t, 13> reserved3;
   /// Offset: 0x100 (R/W)  External Memory Controller Clock Selection Register
-  volatile uint32_t emmc_clock_select;
+  uint32_t volatile emmc_clock_select;
   /// Offset: 0x104 (R/W)  CPU Clock Selection Register
-  volatile uint32_t cpu_clock_select;
+  uint32_t volatile cpu_clock_select;
   /// Offset: 0x108 (R/W)  USB Clock Selection Register
-  volatile uint32_t usb_clock_select;
+  uint32_t volatile usb_clock_select;
   /// Offset: 0x10C (R/W)  Clock Source Select Register
-  volatile uint32_t clock_source_select;
+  uint32_t volatile clock_source_select;
   /// Offset: 0x110 (R/W)  CAN Sleep Clear Register
-  volatile uint32_t can_sleep_clear;
+  uint32_t volatile can_sleep_clear;
   /// Offset: 0x114 (R/W)  CAN Wake-up Flags Register
-  volatile uint32_t canwakeflags;
+  uint32_t volatile canwakeflags;
   /// reserved 4
   std::array<uint32_t, 10> reserved4;
   /// Offset: 0x140 (R/W)  External Interrupt Flag Register
-  volatile uint32_t extint;
+  uint32_t volatile extint;
   /// reserved 5
   std::array<uint32_t, 1> reserved5;
   /// Offset: 0x148 (R/W)  External Interrupt Mode Register
-  volatile uint32_t extmode;
+  uint32_t volatile extmode;
   /// Offset: 0x14C (R/W)  External Interrupt Polarity Register
-  volatile uint32_t extpolar;
+  uint32_t volatile extpolar;
   /// reserved 6
   std::array<uint32_t, 12> reserved6;
   /// Offset: 0x180 (R/W)  Reset Source Identification Register
-  volatile uint32_t reset_source_id;
+  uint32_t volatile reset_source_id;
   /// reserved 7
   std::array<uint32_t, 7> reserved7;
   /// Offset: 0x1A0 (R/W)  System Controls and Status Register
-  volatile uint32_t scs;
+  uint32_t volatile scs;
   /// Offset: 0x1A4 (R/W) Clock Dividers
-  volatile uint32_t irctrim;
+  uint32_t volatile irctrim;
   /// Offset: 0x1A8 (R/W)  Peripheral Clock Selection Register
-  volatile uint32_t peripheral_clock_select;
+  uint32_t volatile peripheral_clock_select;
   /// reserved 8
   std::array<uint32_t, 1> reserved8;
   /// Offset: 0x1B0 (R/W)  Power Boost control register
-  volatile uint32_t power_boost;
+  uint32_t volatile power_boost;
   /// Offset: 0x1B4 (R/W)  spifi clock select
-  volatile uint32_t spifi_clock_select;
+  uint32_t volatile spifi_clock_select;
   /// Offset: 0x1B8 (R/W)  LCD Configuration and clocking control Register
-  volatile uint32_t lcd_cfg;
+  uint32_t volatile lcd_cfg;
   /// reserved 9
   std::array<uint32_t, 1> reserved9;
   /// Offset: 0x1C0 (R/W)  USB Interrupt Status Register
-  volatile uint32_t usb_interrupt_status;
+  uint32_t volatile usb_interrupt_status;
   /// Offset: 0x1C4 (R/W)  DMA Request Select Register
-  volatile uint32_t dmareqsel;
+  uint32_t volatile dmareqsel;
   /// Offset: 0x1C8 (R/W)  Clock Output Configuration Register
-  volatile uint32_t clkoutcfg;
+  uint32_t volatile clkoutcfg;
   /// Offset: 0x1CC (R/W)  RESET Control0 Register
-  volatile uint32_t rstcon0;
+  uint32_t volatile rstcon0;
   /// Offset: 0x1D0 (R/W)  RESET Control1 Register
-  volatile uint32_t rstcon1;
+  uint32_t volatile rstcon1;
   /// reserved 10
   std::array<uint32_t, 2> reserved10;
   /// Offset: 0x1DC (R/W) sdram programmable delays
-  volatile uint32_t sdram_delay;
+  uint32_t volatile sdram_delay;
   /// Offset: 0x1E0 (R/W) Calibration of programmable delays
-  volatile uint32_t emmc_calibration;
+  uint32_t volatile emmc_calibration;
 };  // namespace system_controller_t
 
 /// Namespace for PLL configuration bit masks

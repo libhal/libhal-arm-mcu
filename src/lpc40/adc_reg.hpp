@@ -26,19 +26,19 @@ struct adc_reg_t
   /// Number of channels
   static constexpr size_t channel_length = 8;
   /// Offset: 0x000 A/D Control Register (R/W)
-  volatile uint32_t control;
+  uint32_t volatile control;
   /// Offset: 0x004 A/D Global Data Register (R/W)
-  volatile uint32_t global_data;
+  uint32_t volatile global_data;
   /// Offset: 0x008 Reserved 0
   std::array<uint32_t, 1> reserved0;
   /// Offset: 0x00C A/D Interrupt Enable Register (R/W)
-  volatile uint32_t interrupt_enable;
+  uint32_t volatile interrupt_enable;
   /// Offset: 0x010-0x02C A/D Channel 0..7 Data Register (R/W)
-  std::array<volatile uint32_t, channel_length> data;
+  std::array<uint32_t volatile, channel_length> data;
   /// Offset: 0x030 A/D Status Register (R/ )
-  const volatile uint32_t stat;
+  uint32_t const volatile stat;
   /// Offset: 0x034 A/D Trim Calibration (R/W)
-  volatile uint32_t trim;
+  uint32_t volatile trim;
 };
 
 /// Namespace containing the bit_mask objects that are used to manipulate the

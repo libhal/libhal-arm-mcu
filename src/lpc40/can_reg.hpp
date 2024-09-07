@@ -22,93 +22,93 @@ namespace hal::lpc40 {
 struct can_acceptance_filter_ram_t
 {
   /// Mask IDs
-  volatile std::uint32_t mask[512];
+  std::uint32_t volatile mask[512];
 };
 
 struct can_acceptance_filter_t
 {
   /// Offset: 0x00000000 - Acceptance Filter Register
-  volatile std::uint32_t acceptance_filter;
+  std::uint32_t volatile acceptance_filter;
   /// Offset: 0x00000004 - Standard Frame Individual Start Address Register
-  volatile std::uint32_t SFF_sa;
+  std::uint32_t volatile SFF_sa;
   /// Offset: 0x00000008 - Standard Frame Group Start Address Register
-  volatile std::uint32_t SFF_GRP_sa;
+  std::uint32_t volatile SFF_GRP_sa;
   /// Offset: 0x0000000C - Extended Frame Start Address Register
-  volatile std::uint32_t EFF_sa;
+  std::uint32_t volatile EFF_sa;
   /// Offset: 0x00000010 - Extended Frame Group Start Address Register
-  volatile std::uint32_t EFF_GRP_sa;
+  std::uint32_t volatile EFF_GRP_sa;
   /// Offset: 0x00000014 - End of AF Tables register
-  volatile std::uint32_t ENDofTable;
+  std::uint32_t volatile ENDofTable;
   /// Offset: 0x00000018 - LUT Error Address register
-  const volatile std::uint32_t LUTerrAd;
+  std::uint32_t const volatile LUTerrAd;
   /// Offset: 0x0000001C - LUT Error Register
-  const volatile std::uint32_t LUTerr;
+  std::uint32_t const volatile LUTerr;
   /// Offset: 0x00000020 - CAN Central Transmit Status Register
-  volatile std::uint32_t full_can_transmit_status;
+  std::uint32_t volatile full_can_transmit_status;
   /// Offset: 0x00000024 - FullCAN Interrupt and Capture registers 0
-  volatile std::uint32_t FCANIC0;
+  std::uint32_t volatile FCANIC0;
   /// Offset: 0x00000028 - FullCAN Interrupt and Capture registers 1
-  volatile std::uint32_t FCANIC1;
+  std::uint32_t volatile FCANIC1;
 };
 
 struct can_central_reg_t
 {
-  const volatile std::uint32_t TxSR;
-  const volatile std::uint32_t RxSR;
-  const volatile std::uint32_t MSR;
+  std::uint32_t const volatile TxSR;
+  std::uint32_t const volatile RxSR;
+  std::uint32_t const volatile MSR;
 };
 
 struct can_reg_t
 {
   /// Offset: 0x00000000 - Controls the operating mode of the CAN Controller
-  volatile std::uint32_t MOD;
+  std::uint32_t volatile MOD;
   /// Offset: 0x00000004 - Command bits that affect the state
-  volatile std::uint32_t CMR;
+  std::uint32_t volatile CMR;
   /// Offset: 0x00000008 - Global Controller Status and Error Counters
-  volatile std::uint32_t GSR;
+  std::uint32_t volatile GSR;
   /// Offset: 0x0000000C - Interrupt status, Arbitration Lost Capture, Error
   /// Code Capture
-  const volatile std::uint32_t ICR;
+  std::uint32_t const volatile ICR;
   /// Offset: 0x00000010 - Interrupt Enable Register
-  volatile std::uint32_t IER;
+  std::uint32_t volatile IER;
   /// Offset: 0x00000014 - Bus Timing Register
-  volatile std::uint32_t BTR;
+  std::uint32_t volatile BTR;
   /// Offset: 0x00000018 - Error Warning Limit
-  volatile std::uint32_t EWL;
+  std::uint32_t volatile EWL;
   /// Offset: 0x0000001C - Status Register
-  const volatile std::uint32_t SR;
+  std::uint32_t const volatile SR;
   /// Offset: 0x00000020 - Receive frame status
-  volatile std::uint32_t RFS;
+  std::uint32_t volatile RFS;
   /// Offset: 0x00000024 - Received Identifier
-  volatile std::uint32_t RID;
+  std::uint32_t volatile RID;
   /// Offset: 0x00000028 - Received data bytes 1-4
-  volatile std::uint32_t RDA;
+  std::uint32_t volatile RDA;
   /// Offset: 0x0000002C - Received data bytes 5-8
-  volatile std::uint32_t RDB;
+  std::uint32_t volatile RDB;
   /// Offset: 0x00000030 - Transmit frame info (Tx Buffer 1)
-  volatile std::uint32_t TFI1;
+  std::uint32_t volatile TFI1;
   /// Offset: 0x00000034 - Transmit Identifier (Tx Buffer 1)
-  volatile std::uint32_t TID1;
+  std::uint32_t volatile TID1;
   /// Offset: 0x00000038 - Transmit data bytes 1-4 (Tx Buffer 1)
-  volatile std::uint32_t TDA1;
+  std::uint32_t volatile TDA1;
   /// Offset: 0x0000003C - Transmit data bytes 5-8 (Tx Buffer 1)
-  volatile std::uint32_t TDB1;
+  std::uint32_t volatile TDB1;
   /// Offset: 0x00000040 - Transmit frame info (Tx Buffer 2)
-  volatile std::uint32_t TFI2;
+  std::uint32_t volatile TFI2;
   /// Offset: 0x00000044 - Transmit Identifier (Tx Buffer 2)
-  volatile std::uint32_t TID2;
+  std::uint32_t volatile TID2;
   /// Offset: 0x00000048 - Transmit data bytes 1-4 (Tx Buffer 2)
-  volatile std::uint32_t TDA2;
+  std::uint32_t volatile TDA2;
   /// Offset: 0x0000004C - Transmit data bytes 5-8 (Tx Buffer 2)
-  volatile std::uint32_t TDB2;
+  std::uint32_t volatile TDB2;
   /// Offset: 0x00000050 - Transmit frame info (Tx Buffer 3)
-  volatile std::uint32_t TFI3;
+  std::uint32_t volatile TFI3;
   /// Offset: 0x00000054 - Transmit Identifier (Tx Buffer 3)
-  volatile std::uint32_t TID3;
+  std::uint32_t volatile TID3;
   /// Offset: 0x00000058 - Transmit data bytes 1-4 (Tx Buffer 3)
-  volatile std::uint32_t TDA3;
+  std::uint32_t volatile TDA3;
   /// Offset: 0x0000005C - Transmit data bytes 5-8 (Tx Buffer 3)
-  volatile std::uint32_t TDB3;
+  std::uint32_t volatile TDB3;
 };
 
 /// Container for the LPC40xx CAN BUS registers

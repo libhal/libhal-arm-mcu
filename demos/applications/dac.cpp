@@ -12,16 +12,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include <cinttypes>
-
-#include "../resource_list.hpp"
-#include <libhal-armcortex/dwt_counter.hpp>
-#include <libhal-lpc40/clock.hpp>
-#include <libhal-lpc40/constants.hpp>
-#include <libhal-lpc40/dac.hpp>
-#include <libhal-lpc40/uart.hpp>
+#include <libhal-arm-mcu/dwt_counter.hpp>
+#include <libhal-arm-mcu/lpc40/clock.hpp>
+#include <libhal-arm-mcu/lpc40/constants.hpp>
+#include <libhal-arm-mcu/lpc40/dac.hpp>
+#include <libhal-arm-mcu/lpc40/uart.hpp>
 #include <libhal-util/serial.hpp>
 #include <libhal-util/steady_clock.hpp>
+
+#include <resource_list.hpp>
 
 void application(resource_list& p_map)
 {

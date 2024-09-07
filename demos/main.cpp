@@ -52,7 +52,7 @@ int main()
 {
   hal::set_terminate(terminate_handler);
 
-  resources = initialize_platform();
+  initialize_platform(resources);
 
   try {
     application(resources);

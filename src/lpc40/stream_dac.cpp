@@ -23,7 +23,7 @@ void setup_stream_dac()
 
 template<std::unsigned_integral T>
 void dac_dma_write(hal::io_waiter& p_waiter,
-                   const typename hal::stream_dac<T>::samples& p_samples)
+                   typename hal::stream_dac<T>::samples const& p_samples)
 {
   // Setup sampling frequency
   auto const input_clock =

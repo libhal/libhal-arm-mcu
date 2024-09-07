@@ -27,14 +27,14 @@
 namespace hal::lpc40 {
 input_pin::input_pin(std::uint8_t p_port,  // NOLINT
                      std::uint8_t p_pin,
-                     const settings& p_settings)  // NOLINT
+                     settings const& p_settings)  // NOLINT
   : m_port(p_port)
   , m_pin(p_pin)
 {
   configure(p_settings);
 }
 
-void input_pin::driver_configure(const settings& p_settings)
+void input_pin::driver_configure(settings const& p_settings)
 {
   power_on(peripheral::gpio);
 

@@ -25,7 +25,6 @@
 #include <libhal-soft/bit_bang_i2c.hpp>
 #include <libhal-soft/bit_bang_spi.hpp>
 #include <libhal-soft/inert_drivers/inert_adc.hpp>
-#include <libhal-util/steady_clock.hpp>
 
 #include <libhal/output_pin.hpp>
 #include <libhal/units.hpp>

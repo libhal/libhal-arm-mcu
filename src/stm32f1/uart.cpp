@@ -121,9 +121,9 @@ uart::uart(std::uint8_t p_port,
       break;
     case 2:
       port_tx = 'A';
-      pin_tx = 3;
+      pin_tx = 2;
       port_rx = 'A';
-      pin_rx = 2;
+      pin_rx = 3;
       m_dma = 6;
       m_id = peripheral::usart2;
       m_uart = usart2;

@@ -50,6 +50,7 @@ public:
     alternate14,
     alternate15
   };
+
   /**
    * @brief Construct a new pin mux and configuration driver
    *
@@ -83,6 +84,22 @@ public:
    * @return pin& - reference to this pin for chaining
    */
   pin const& open_drain(bool p_enable = true) const noexcept;
+
+  enum class mco_source : std::uint8_t
+  {
+    high_speed_internal = 0b00U,
+    low_speed_external = 0b01U,
+    high_speed_external = 0b10U,
+    pll = 0b11U,
+  };
+
+  /**
+   * @brief Output a clock divided by 2 on the PA8 pin
+   *
+   * @param p_source - source clock to channel to the PA8 pin
+   */
+
+  void activate_mco_pa8(mco_source p_source);
 
 private:
   peripheral m_port{};

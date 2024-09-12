@@ -1,0 +1,8 @@
+[settings]
+build_type=MinSizeRel
+os=baremetal
+arch=cortex-m4f
+libc=custom
+
+[options]
+*:platform={{ platform }}

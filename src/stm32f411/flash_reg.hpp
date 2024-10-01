@@ -45,14 +45,15 @@ struct flash_config_t
   /// bytes
   std::uint32_t volatile optional_control_reg;
 };
-struct flash_acess_control{
-    static constexpr auto latency = bit_mask::from<3,0>();
-    static constexpr auto prefetch_cache_en = bit_mask::from<8>();
-    static constexpr auto instruction_cache_en = bit_mask::from<9>();
-    static constexpr auto data_cache_en = bit_mask::from<10>();
-    static constexpr auto instruction_cache_reset = bit_mask::from<11>();
-    static constexpr auto data_cache_reset = bit_mask::from<12>();
-    
+struct flash_acess_control
+{
+  static constexpr auto latency = bit_mask::from<3, 0>();
+  static constexpr auto prefetch_cache_en = bit_mask::from<8>();
+  static constexpr auto instruction_cache_en = bit_mask::from<9>();
+  static constexpr auto data_cache_en = bit_mask::from<10>();
+  static constexpr auto instruction_cache_reset = bit_mask::from<11>();
+  static constexpr auto data_cache_reset = bit_mask::from<12>();
 };
-inline flash_config_t* flash_config = reinterpret_cast<flash_config_t*>(0x4002'3C00);
+inline flash_config_t* flash_config =
+  reinterpret_cast<flash_config_t*>(0x4002'3C00);
 }  // namespace hal::stm32f411

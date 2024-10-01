@@ -177,7 +177,7 @@ constexpr uart_baud_t calculate_baud(uint32_t p_baud_rate,
 
   // Computer the integer divider for the baud rate except multiplied by 1000
   // in order to get 3 additional decimal places.
-  const auto divider_1000 = static_cast<uint32_t>(frequency_1000 / sample_rate);
+  auto const divider_1000 = static_cast<uint32_t>(frequency_1000 / sample_rate);
 
   // Save divider to result
   result.divider = integer_divider;
@@ -186,7 +186,7 @@ constexpr uart_baud_t calculate_baud(uint32_t p_baud_rate,
   // a division error. Also note that an integer divider of 0 represents a
   // failure.
   if (integer_divider != 0) {
-    const auto multiplier_ratio =
+    auto const multiplier_ratio =
       static_cast<std::int32_t>(divider_1000 / integer_divider);
     const fractional_divider_t fraction = closest_fractional(multiplier_ratio);
     result.numerator = fraction.numerator;

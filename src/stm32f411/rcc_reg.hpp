@@ -258,7 +258,8 @@ struct rcc_backup_domain_control
   static constexpr auto backup_domain_software_reset = bit_mask::from<16>();
 };
 
-struct rcc_ahb2{
+struct rcc_ahb2
+{
   static constexpr auto usb_otg_en = bit_mask::from<7>();
 };
 

@@ -57,6 +57,6 @@ static inline gpio_config_t* get_reg(hal::stm32f411::peripheral p_port)
 {
   // STM has dedicated memory blocks where every 2^10 is a new
   return reinterpret_cast<gpio_config_t*>(ahb_base +
-                                           (static_cast<int>(p_port) << 10));
+                                          (static_cast<int>(p_port) << 10));
 }
 }  // namespace hal::stm32f411

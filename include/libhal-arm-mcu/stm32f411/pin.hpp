@@ -98,7 +98,6 @@ public:
    *
    * @param p_source - source clock to channel to the PA8 pin
    */
-
   void activate_mco_pa8(mco_source p_source);
 
 private:

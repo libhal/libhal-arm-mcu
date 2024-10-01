@@ -26,7 +26,7 @@
 namespace hal::lpc40 {
 
 namespace {
-void setup(const adc::channel& p_channel)
+void setup(adc::channel const& p_channel)
 {
   using namespace hal::literals;
 
@@ -46,9 +46,9 @@ void setup(const adc::channel& p_channel)
     .open_drain(false)
     .analog(true);
 
-  const auto clock_frequency = get_frequency(peripheral::adc);
-  const auto clock_divider = clock_frequency / p_channel.clock_rate;
-  const auto clock_divider_int = static_cast<std::uint32_t>(clock_divider);
+  auto const clock_frequency = get_frequency(peripheral::adc);
+  auto const clock_divider = clock_frequency / p_channel.clock_rate;
+  auto const clock_divider_int = static_cast<std::uint32_t>(clock_divider);
 
   // Activate burst mode (continuous sampling), power on ADC and set clock
   // divider.
@@ -64,7 +64,7 @@ void setup(const adc::channel& p_channel)
 }
 }  // namespace
 
-adc::adc(const channel& p_channel)
+adc::adc(channel const& p_channel)
   : m_sample(&adc_reg->data[p_channel.index])
 {
   setup(p_channel);

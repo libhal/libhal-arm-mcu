@@ -56,7 +56,8 @@ void pll_valid(clock_tree p_clock_tree)
   }
 }
 
-// TODO #62: Add I2S to the clock configs
+// TODO (#62): Add I2S to the clock configs
+// TODO (#66): Add 48_MHz to the clock configs
 void configure_pll(clock_tree p_clock_tree)
 {
   if (p_clock_tree.pll.enable) {
@@ -202,7 +203,6 @@ void configure_clocks(clock_tree p_clock_tree)
     .insert(rcc_config::ahb_prescalar, value(p_clock_tree.ahb.divider))
     .insert(rcc_config::apb1_prescalar, value(p_clock_tree.ahb.apb1.divider))
     .insert(rcc_config::apb2_prescalar, value(p_clock_tree.ahb.apb2.divider));
-
   // =========================================================================
   // Step 6. Setup flash access
   // =========================================================================
@@ -216,8 +216,7 @@ void configure_clocks(clock_tree p_clock_tree)
   // Step 7. Set System Clock and RTC Clock
   // =========================================================================
 
-  [[maybe_unused]] uint32_t target_clock_source =
-    value(p_clock_tree.system_clock);
+  std::uint32_t target_clock_source = value(p_clock_tree.system_clock);
   bit_modify(rcc->config)
     .insert(rcc_config::system_clock_switch, target_clock_source);
 

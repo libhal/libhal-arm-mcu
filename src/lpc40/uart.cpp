@@ -65,7 +65,7 @@ void configure_baud_rate(uart_reg_t* p_reg, uart_baud_t p_calibration)
   bit_modify(p_reg->line_control).clear(divisor_access);
 }
 
-uint8_t get_line_control(const serial::settings& p_settings)
+uint8_t get_line_control(serial::settings const& p_settings)
 {
   bit_value<std::uint8_t> line_control_object(0);
 
@@ -180,7 +180,7 @@ void uart::setup_receive_interrupt()
 
 uart::uart(std::uint8_t p_port_number,
            std::span<hal::byte> p_receive_working_buffer,
-           const serial::settings& p_settings)
+           serial::settings const& p_settings)
   : m_port{}
   , m_receive_buffer(p_receive_working_buffer.begin(),
                      p_receive_working_buffer.end())
@@ -244,9 +244,9 @@ uart::uart(std::uint8_t p_port_number,
   uart::driver_configure(p_settings);
 }
 
-uart::uart(const uart::port& p_port,
+uart::uart(uart::port const& p_port,
            std::span<hal::byte> p_receive_working_buffer,
-           const serial::settings& p_settings)
+           serial::settings const& p_settings)
   : m_port(p_port)
   , m_receive_buffer(p_receive_working_buffer.begin(),
                      p_receive_working_buffer.end())
@@ -255,7 +255,7 @@ uart::uart(const uart::port& p_port,
   uart::driver_configure(p_settings);
 }
 
-void uart::driver_configure(const settings& p_settings)
+void uart::driver_configure(settings const& p_settings)
 {
   auto* reg = get_uart_reg(m_port.id);
 
@@ -305,7 +305,7 @@ serial::write_t uart::driver_write(std::span<const hal::byte> p_data)
 {
   auto* reg = get_uart_reg(m_port.id);
 
-  for (const auto& byte : p_data) {
+  for (auto const& byte : p_data) {
     reg->group1.transmit_buffer = byte;
     while (!finished_sending(reg)) {
       continue;

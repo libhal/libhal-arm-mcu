@@ -32,7 +32,7 @@ namespace {
   return pwm_reg1;
 }
 
-[[nodiscard]] volatile uint32_t& get_match_registers(pwm_reg_t* p_reg,
+[[nodiscard]] uint32_t volatile& get_match_registers(pwm_reg_t* p_reg,
                                                      uint8_t p_match)
 {
   switch (p_match) {
@@ -164,7 +164,7 @@ void pwm::driver_frequency(hertz p_frequency)
 {
   pwm_reg_t* reg = get_pwm_reg(m_channel.peripheral_id);
 
-  const auto input_clock = get_frequency(m_channel.peripheral_id);
+  auto const input_clock = get_frequency(m_channel.peripheral_id);
 
   if (p_frequency >= input_clock) {
     safe_throw(hal::operation_not_supported(this));
@@ -180,7 +180,7 @@ void pwm::driver_frequency(hertz p_frequency)
 
   // Set frequency by setting match register 0 (the reset register) to the
   // counts required to reach the desired frequency.
-  const auto new_frequency = input_clock / p_frequency;
+  auto const new_frequency = input_clock / p_frequency;
 
   get_match_registers(reg, 0) = static_cast<std::uint32_t>(new_frequency);
 

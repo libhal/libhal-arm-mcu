@@ -101,8 +101,10 @@ pin const& pin::open_drain(bool p_enable) const noexcept
   return *this;
 }
 
-void pin::activate_mco_pa8(mco_source p_source){
-  bit_modify(rcc->config).insert(rcc_config::mco1_clock_select, value(p_source));
+void pin::activate_mco_pa8(mco_source p_source)
+{
+  bit_modify(rcc->config)
+    .insert(rcc_config::mco1_clock_select, value(p_source));
   bit_modify(rcc->config).insert(rcc_config::mco1_prescaler, 0b110U);
   pin a8(peripheral::gpio_a, 8);
   a8.function(pin_function::alternate0);

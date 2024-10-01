@@ -23,6 +23,7 @@ libhal_build_demos(
   adc
   blinker
   can
+  dac
   gpio
   i2c
   interrupt_pin

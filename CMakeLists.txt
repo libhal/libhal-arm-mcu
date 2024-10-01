@@ -29,6 +29,7 @@ libhal_test_and_make_library(
   src/lpc40/adc.cpp
   src/lpc40/can.cpp
   src/lpc40/clock.cpp
+  src/lpc40/dac.cpp
   src/lpc40/dma.cpp
   src/lpc40/i2c.cpp
   src/lpc40/input_pin.cpp

@@ -22,8 +22,7 @@ resource_list resources{};
 
 [[noreturn]] void terminate_handler() noexcept
 {
-
-  if (not resources.status_led && not resources.status_led) {
+  if (not resources.status_led && not resources.clock) {
     // spin here until debugger is connected
     while (true) {
       continue;
@@ -31,7 +30,6 @@ resource_list resources{};
   }
 
   // Otherwise, blink the led in a pattern
-
   auto& led = *resources.status_led.value();
   auto& clock = *resources.clock.value();
 
@@ -52,7 +50,7 @@ int main()
 {
   hal::set_terminate(terminate_handler);
 
-  resources = initialize_platform();
+  initialize_platform(resources);
 
   try {
     application(resources);

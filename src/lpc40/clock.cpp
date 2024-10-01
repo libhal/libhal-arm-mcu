@@ -22,7 +22,7 @@ struct pll_registers
   uint32_t volatile* p_control;
   uint32_t volatile* p_config;
   uint32_t volatile* p_feed;
-  const volatile uint32_t* p_stat;
+  uint32_t const volatile* p_stat;
 };
 
 hertz setup_pll(clock_tree const& p_clock_config,

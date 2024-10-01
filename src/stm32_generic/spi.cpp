@@ -54,7 +54,7 @@ struct control_register1
   /// Frame Format
   /// 0: msb transmitted first
   /// 1: lsb tranmitted first
-  static constexpr auto frame_format = bit_mask::from<7>();
+  static constexpr auto lsb_first = bit_mask::from<7>();
 
   /// internal slave select
   static constexpr auto internal_slave_select = bit_mask::from<8>();
@@ -65,21 +65,19 @@ struct control_register1
 
   /// Recieve only
   /// 0: Full Duplex, 1: Output disable
-  [[maybe_unused]] static constexpr auto rx_only = bit_mask::from<10>();
+  static constexpr auto rx_only = bit_mask::from<10>();
 
   /// Data frame format
   /// 0: 8-bits, 1: 16-bit
-  [[maybe_unused]] static constexpr auto data_frame_format =
-    bit_mask::from<11>();
+  static constexpr auto data_frame_format = bit_mask::from<11>();
 
   /// CRC transfer next
   /// 0: No CRC phase, 1: transfer CRC next
-  [[maybe_unused]] static constexpr auto crc_transfer_next =
-    bit_mask::from<12>();
+  static constexpr auto crc_transfer_next = bit_mask::from<12>();
 
   /// CRC enable
   /// 0: disable, 1: enable
-  [[maybe_unused]] static constexpr auto crc_enable = bit_mask::from<13>();
+  static constexpr auto crc_enable = bit_mask::from<13>();
 
   /// Output enable in bidirectional mode
   /// 0: output disabled, 1: output enable
@@ -87,18 +85,17 @@ struct control_register1
 
   /// Bidirectional data mode enable
   /// 0: full-duplex, 1: half-duplex
-  [[maybe_unused]] static constexpr auto bidirectional_mode_enable =
-    bit_mask::from<15>();
+  static constexpr auto bidirectional_mode_enable = bit_mask::from<15>();
 };
 
 /// SPI Control Register 2
 struct control_register2
 {
   /// Rx buffer DMA enable
-  [[maybe_unused]] static constexpr auto rx_dma_enable = bit_mask::from<0>();
+  static constexpr auto rx_dma_enable = bit_mask::from<0>();
 
   /// Tx buffer DMA enable
-  [[maybe_unused]] static constexpr auto tx_dma_enable = bit_mask::from<1>();
+  static constexpr auto tx_dma_enable = bit_mask::from<1>();
 
   /// Slave select output enable
   /// 0: use a GPIO, 1: use the NSS pin
@@ -109,16 +106,13 @@ struct control_register2
   static constexpr auto frame_format = bit_mask::from<4>();
 
   /// Error interupt enable
-  [[maybe_unused]] static constexpr auto error_interrupt_enable =
-    bit_mask::from<5>();
+  static constexpr auto error_interrupt_enable = bit_mask::from<5>();
 
   /// Rx buffer empty interrupt enable
-  [[maybe_unused]] static constexpr auto rx_buffer_empty_interrupt_enable =
-    bit_mask::from<6>();
+  static constexpr auto rx_buffer_empty_interrupt_enable = bit_mask::from<6>();
 
   /// Tx buffer empty interrupt enable
-  [[maybe_unused]] static constexpr auto tx_buffer_empty_interrupt_enable =
-    bit_mask::from<7>();
+  static constexpr auto tx_buffer_empty_interrupt_enable = bit_mask::from<7>();
 };
 
 /// SPI Status Register
@@ -131,8 +125,8 @@ struct status_register
   static constexpr auto tx_buffer_empty = bit_mask::from<1>();
 
   /// Channel side (i2s only)
-  /// 0: left has been transmitted/recieved
-  /// 1: right has been transmitted/recieved
+  /// 0: left has been transmitted/received
+  /// 1: right has been transmitted/received
   [[maybe_unused]] static constexpr auto i2s_channel_side = bit_mask::from<2>();
 
   /// Underrun flag
@@ -190,19 +184,20 @@ spi::spi(hal::unsafe, void* p_peripheral_address)
 
 spi::~spi()
 {
+  auto& reg = to_reg(m_peripheral_address);
+  bit_modify(reg.cr1).clear<control_register1::enable>();
 }
 
 void spi::configure(hal::spi::settings const& p_settings,
                     hal::hertz p_peripheral_clock_speed)
 {
+  using namespace hal::literals;
+
   auto& reg = to_reg(m_peripheral_address);
 
-  // Set SPI to master mode by clearing
-  bit_modify(reg.cr1).set(control_register1::master_selection);
-
-  using namespace hal::literals;
   auto const clock_divider = p_peripheral_clock_speed / p_settings.clock_rate;
   auto prescaler = static_cast<std::uint16_t>(clock_divider);
+
   if (prescaler <= 1) {
     prescaler = 2;
   } else if (prescaler > 256) {
@@ -213,25 +208,33 @@ void spi::configure(hal::spi::settings const& p_settings,
   if (std::has_single_bit(prescaler)) {
     baud_control--;
   }
-  bit_modify(reg.cr1)
-    .insert<control_register1::baud_rate_control>(baud_control)
-    .insert<control_register1::clock_phase>(
-      p_settings.data_valid_on_trailing_edge)
-    .insert<control_register1::clock_polarity>(p_settings.clock_idles_high)
-    .set<control_register1::bidirectional_output_enable>()
-    .set<control_register1::software_slave_management>()
-    .set<control_register1::internal_slave_select>()
-    .clear<control_register1::frame_format>();
 
   bit_modify(reg.cr2)
+    .clear<control_register2::rx_dma_enable>()
+    .clear<control_register2::tx_dma_enable>()
+    // We set `slave_select_output_enable` because it is required for master
+    // mode to work.
     .set<control_register2::slave_select_output_enable>()
-    .clear<control_register2::frame_format>();
-
-  bit_modify(reg.cr1).set<control_register1::master_selection>();
+    .clear<control_register2::frame_format>()
+    .clear<control_register2::error_interrupt_enable>()
+    .clear<control_register2::rx_buffer_empty_interrupt_enable>()
+    .clear<control_register2::tx_buffer_empty_interrupt_enable>();
 
   bit_modify(reg.cr1)
-    .set<control_register1::enable>()
-    .clear<control_register1::internal_slave_select>();
+    .clear<control_register1::rx_only>()
+    .clear<control_register1::crc_transfer_next>()
+    .clear<control_register1::data_frame_format>()
+    .clear<control_register1::crc_enable>()
+    .clear<control_register1::lsb_first>()
+    .clear<control_register1::bidirectional_mode_enable>()
+    .clear<control_register1::bidirectional_output_enable>()
+    .insert<control_register1::baud_rate_control>(baud_control)
+    .insert<control_register1::clock_phase>(p_settings.clock_phase)
+    .insert<control_register1::clock_polarity>(p_settings.clock_polarity)
+    .set<control_register1::internal_slave_select>()  // same as disabled
+    .set<control_register1::software_slave_management>()
+    .set<control_register1::master_selection>()
+    .set<control_register1::enable>();
 }
 
 void spi::transfer(std::span<hal::byte const> p_data_out,
@@ -250,7 +253,7 @@ void spi::transfer(std::span<hal::byte const> p_data_out,
   // The stm's spi driver needs to be internally told that it is selecting a
   // device before it will emit anything on the pins. This will control the NSS
   // pin if it is selected, otherwise, its just an internal enable signal.
-  bit_modify(reg.cr1).set<control_register1::internal_slave_select>();
+  bit_modify(reg.cr1).clear<control_register1::internal_slave_select>();
 
   for (size_t index = 0; index < max_length; index++) {
     hal::byte byte = 0;
@@ -277,7 +280,7 @@ void spi::transfer(std::span<hal::byte const> p_data_out,
     }
   }
 
-  bit_modify(reg.cr1).clear<control_register1::internal_slave_select>();
+  bit_modify(reg.cr1).set<control_register1::internal_slave_select>();
 
   // Wait for bus activity to cease before leaving the function
   while (busy(reg)) {

@@ -14,28 +14,20 @@
 
 #pragma once
 
-#include <cstdint>
+#include <libhal/dac.hpp>
 
-#include <libhal-stm32f1/constants.hpp>
-
-namespace hal::stm32f1 {
+namespace hal::lpc40 {
 /**
- * @brief Power on the peripheral
+ * @brief Digital to Analog converter
  *
  */
-void power_on(peripheral p_peripheral);
+class dac : public hal::dac
+{
+public:
+  dac();
+  virtual ~dac() = default;
 
-/**
- * @brief Power off peripheral
- *
- */
-void power_off(peripheral p_peripheral);
-
-/**
- * @brief Check if the peripheral is powered on
- *
- * @return true - peripheral is on
- * @return false - peripheral is off
- */
-[[nodiscard]] bool is_on(peripheral p_peripheral);
-}  // namespace hal::stm32f1
+private:
+  void driver_write(float p_percentage) override;
+};
+}  // namespace hal::lpc40

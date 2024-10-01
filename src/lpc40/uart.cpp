@@ -301,7 +301,7 @@ bool finished_sending(uart_reg_t* p_reg)
   return bit_extract<bit_mask::from<5U>()>(p_reg->line_status);
 }
 
-serial::write_t uart::driver_write(std::span<const hal::byte> p_data)
+serial::write_t uart::driver_write(std::span<hal::byte const> p_data)
 {
   auto* reg = get_uart_reg(m_port.id);
 

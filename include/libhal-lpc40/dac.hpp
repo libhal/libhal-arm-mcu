@@ -14,28 +14,4 @@
 
 #pragma once
 
-#include <cstdint>
-
-#include <libhal-stm32f1/constants.hpp>
-
-namespace hal::stm32f1 {
-/**
- * @brief Power on the peripheral
- *
- */
-void power_on(peripheral p_peripheral);
-
-/**
- * @brief Power off peripheral
- *
- */
-void power_off(peripheral p_peripheral);
-
-/**
- * @brief Check if the peripheral is powered on
- *
- * @return true - peripheral is on
- * @return false - peripheral is off
- */
-[[nodiscard]] bool is_on(peripheral p_peripheral);
-}  // namespace hal::stm32f1
+#include <libhal-arm-mcu/lpc40/dac.hpp>

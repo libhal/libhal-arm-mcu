@@ -14,11 +14,12 @@
 
 #pragma once
 
-#include "constants.hpp"
-
 #include <cstdint>
+
 #include <libhal/error.hpp>
 #include <libhal/units.hpp>
+
+#include "constants.hpp"
 
 namespace hal::stm32f411 {
 
@@ -160,7 +161,7 @@ struct clock_tree
  * fault or cause the clock system(s) to supply incorrect clock rate(s).
  *
  * @see Figure 12. Clock Tree
- *      https://www.st.com/resource/en/reference_manual/rm0383-stm32f411xce-advanced-armbased-32bit-mcus-stmicroelectronics.pdf#page=93
+ * https://www.st.com/resource/en/reference_manual/rm0383-stm32f411xce-advanced-armbased-32bit-mcus-stmicroelectronics.pdf#page=93
  */
 void configure_clocks(clock_tree p_clock_tree);
 

@@ -20,12 +20,10 @@
 #include <libhal-util/enum.hpp>
 #include <libhal/error.hpp>
 #include <libhal/units.hpp>
+#include <libhal-arm-mcu/stm32f411/constants.hpp>
 
 #include "flash_reg.hpp"
-#include "libhal-arm-mcu/stm32f411/constants.hpp"
-#include "power.hpp"
 #include "rcc_reg.hpp"
-#include "stm32f411/power.hpp"
 namespace hal::stm32f411 {
 
 namespace {
@@ -39,7 +37,7 @@ hal::hertz timer_apb1_clock_rate = internal_high_speed_oscillator;
 hal::hertz timer_apb2_clock_rate = internal_high_speed_oscillator;
 }  // namespace
 
-void pll_valid(clock_tree p_clock_tree)
+void pll_valid(clock_tree const& p_clock_tree)
 {
   /// Check if the VCO input can be set from 1_MHz to 2_MHz
   if (p_clock_tree.pll.source == pll_source::high_speed_external) {
@@ -58,7 +56,7 @@ void pll_valid(clock_tree p_clock_tree)
 
 // TODO (#62): Add I2S to the clock configs
 // TODO (#66): Add 48_MHz to the clock configs
-void configure_pll(clock_tree p_clock_tree)
+void configure_pll(clock_tree const& p_clock_tree)
 {
   if (p_clock_tree.pll.enable) {
     auto vco_in = 2.0_MHz;
@@ -86,6 +84,8 @@ void configure_pll(clock_tree p_clock_tree)
       .insert(rcc_pllcnfg::input_division_factor, input_division_factor);
 
     uint8_t output_division_factor = 0;
+    /// 2 * (output_division_factor + 1) is to get the PLLP division factor
+    /// Page 105 on the RM0383 User Manual
     while (p_clock_tree.pll.output * (2 * (output_division_factor + 1)) <
            100.0_MHz) {
       output_division_factor++;
@@ -94,6 +94,8 @@ void configure_pll(clock_tree p_clock_tree)
     bit_modify(rcc->pllconfig)
       .insert(rcc_pllcnfg::main_division_factor, output_division_factor);
 
+    /// 2 * (output_division_factor + 1) is to get the PLLN multiplicaiton factor
+    /// Page 105 on the RM0383 User Manual
     uint16_t target =
       p_clock_tree.pll.output * (2 * (output_division_factor + 1)) / vco_in;
     bit_modify(rcc->pllconfig)

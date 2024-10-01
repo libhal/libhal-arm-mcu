@@ -23,7 +23,7 @@
 
 namespace hal::stm32f411 {
 /// gpio peripheral register map
-struct stm32f4_gpio_t
+struct gpio_config_t
 {
   /// Offset: 0x000 pin mode (00 = Input, 01 = Output, 10 = Alternate Function
   /// mode, 11 Analog) (R/W)
@@ -53,10 +53,10 @@ struct stm32f4_gpio_t
 };
 
 inline constexpr intptr_t ahb_base = 0x4002'0000UL;
-static inline stm32f4_gpio_t* get_reg(hal::stm32f411::peripheral p_port)
+static inline gpio_config_t* get_reg(hal::stm32f411::peripheral p_port)
 {
   // STM has dedicated memory blocks where every 2^10 is a new
-  return reinterpret_cast<stm32f4_gpio_t*>(ahb_base +
-                                           (static_cast<int>(p_port) << 10));
+  return reinterpret_cast<gpio_config_t*>(ahb_base +
+                                          (static_cast<int>(p_port) << 10));
 }
 }  // namespace hal::stm32f411

@@ -77,7 +77,8 @@ enum class peripheral : std::uint32_t
   spi5 = apb2_bus + 20,
 
   cpu = beyond + 0,
-  system_timer = beyond + 1
+  system_timer = beyond + 1,
+  i2s = beyond + 2
 };
 
 /// List of interrupt request numbers for this platform

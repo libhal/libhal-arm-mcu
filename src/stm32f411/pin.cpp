@@ -17,9 +17,12 @@
 #include <libhal-arm-mcu/stm32f411/pin.hpp>
 
 #include <libhal-util/bit.hpp>
+#include <libhal-util/enum.hpp>
 #include <libhal/units.hpp>
+#include <libhal-arm-mcu/stm32f411/constants.hpp>
 
 #include "gpio_reg.hpp"
+#include "rcc_reg.hpp"
 #include "power.hpp"
 
 namespace hal::stm32f411 {
@@ -31,8 +34,7 @@ pin::pin(peripheral p_port, std::uint8_t p_pin) noexcept
   power(p_port).on();
 }
 
-pin const& pin::function(
-  hal::stm32f411::pin::pin_function p_function) const noexcept
+pin const& pin::function(pin_function p_function) const noexcept
 {
   auto port_reg = get_reg(m_port);
   bit_mask pin_mode_mask = { .position = static_cast<uint32_t>(m_pin) * 2U,
@@ -96,6 +98,17 @@ pin const& pin::open_drain(bool p_enable) const noexcept
   bit_modify(port_reg->output_type)
     .insert(pin_mask, static_cast<uint32_t>(p_enable));
   return *this;
+}
+
+void pin::activate_mco_pc9(mco_source p_source)
+{
+  bit_modify(rcc->config)
+    .insert(rcc_config::mco2_clock_select, value(p_source));
+  bit_modify(rcc->config).insert(rcc_config::mco2_prescaler, 0b110U);
+  pin a8(peripheral::gpio_c, 9);
+  a8.function(pin_function::alternate0);
+
+  return;
 }
 
 }  // namespace hal::stm32f411

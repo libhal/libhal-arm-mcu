@@ -71,6 +71,7 @@ libhal_test_and_make_library(
   src/stm32f411/pin.cpp
   src/stm32f411/power.cpp
   src/stm32f411/spi.cpp
+  src/stm32f411/clock.cpp
 
   # stm32f40
   src/stm32f40/output_pin.cpp

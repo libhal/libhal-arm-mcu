@@ -163,7 +163,7 @@ struct clock_tree
  * @see Figure 12. Clock Tree
  * https://www.st.com/resource/en/reference_manual/rm0383-stm32f411xce-advanced-armbased-32bit-mcus-stmicroelectronics.pdf#page=93
  */
-void configure_clocks(clock_tree p_clock_tree);
+void configure_clocks(clock_tree const& p_clock_tree);
 
 /// @return the clock rate frequency of a peripheral
 hal::hertz frequency(peripheral p_id);

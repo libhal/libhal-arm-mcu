@@ -115,7 +115,7 @@ void configure_pll(clock_tree const& p_clock_tree)
   return;
 }
 
-void configure_clocks(clock_tree p_clock_tree)
+void configure_clocks(clock_tree const& p_clock_tree)
 {
   hal::hertz system_clock = 0.0_Hz;
 

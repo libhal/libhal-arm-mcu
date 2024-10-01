@@ -153,13 +153,11 @@ struct clock_tree
 };
 
 /** @attention If configuration of the system clocks is desired, one should
- *            consult the user manual of the target MCU in use to determine
- *            the valid clock configuration values that can/should be used.
- *            The configure_clocks() method is only responsible for configuring the
- *            clock system based on configurations in the
- *            clock_configuration. Incorrect configurations may result in a
- *            hard fault or cause the clock system(s) to supply incorrect
- *            clock rate(s).
+ * consult the user manual of the target MCU in use to determine the valid clock
+ * configuration values that can/should be used. The configure_clocks() method
+ * is only responsible for configuring the clock system based on configurations
+ * in the clock_configuration. Incorrect configurations may result in a hard
+ * fault or cause the clock system(s) to supply incorrect clock rate(s).
  *
  * @see Figure 12. Clock Tree
  *      https://www.st.com/resource/en/reference_manual/rm0383-stm32f411xce-advanced-armbased-32bit-mcus-stmicroelectronics.pdf#page=93

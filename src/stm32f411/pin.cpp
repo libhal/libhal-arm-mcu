@@ -36,7 +36,7 @@ pin::pin(peripheral p_port, std::uint8_t p_pin) noexcept
 
 pin const& pin::function(pin_function p_function) const noexcept
 {
-  auto port_reg = get_reg(m_port);
+  auto port_reg = get_gpio_reg(m_port);
   bit_mask pin_mode_mask = { .position = static_cast<uint32_t>(m_pin) * 2U,
                              .width = 2 };
 
@@ -69,7 +69,7 @@ pin const& pin::function(pin_function p_function) const noexcept
 pin const& pin::resistor(hal::pin_resistor p_resistor) const noexcept
 {
   // modify the pull_up_pull_down reg to the enumclass of p_registor
-  auto port_reg = get_reg(m_port);
+  auto port_reg = get_gpio_reg(m_port);
   bit_mask port_mask = { .position = 2 * static_cast<uint32_t>(m_pin),
                          .width = 2 };
   switch (p_resistor) {
@@ -92,7 +92,7 @@ pin const& pin::resistor(hal::pin_resistor p_resistor) const noexcept
 pin const& pin::open_drain(bool p_enable) const noexcept
 {
   // modify output_type to p_enable
-  auto port_reg = get_reg(m_port);
+  auto port_reg = get_gpio_reg(m_port);
   bit_mask pin_mask = { .position = static_cast<uint32_t>(m_pin), .width = 1 };
 
   bit_modify(port_reg->output_type)

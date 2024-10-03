@@ -53,9 +53,9 @@ struct gpio_config_t
 };
 
 inline constexpr intptr_t ahb_base = 0x4002'0000UL;
-static inline gpio_config_t* get_reg(hal::stm32f411::peripheral p_port)
+static inline gpio_config_t* get_gpio_reg(hal::stm32f411::peripheral p_port)
 {
-  // STM has dedicated memory blocks where every 2^10 is a new
+  // STM has dedicated memory blocks where every 2^10 is a new gpio register
   return reinterpret_cast<gpio_config_t*>(ahb_base +
                                           (static_cast<int>(p_port) << 10));
 }

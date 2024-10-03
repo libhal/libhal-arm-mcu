@@ -32,7 +32,7 @@ void output_pin::driver_configure(settings const& p_settings)
 {
   bit_mask pin_mode_mask = { .position = 2 * static_cast<uint32_t>(m_pin),
                              .width = 2 };
-  bit_modify(get_reg(m_port)->pin_mode).insert(pin_mode_mask, 0b01U);
+  bit_modify(get_gpio_reg(m_port)->pin_mode).insert(pin_mode_mask, 0b01U);
 
   pin(m_port, m_pin)
     .function(pin::pin_function::output)
@@ -44,9 +44,9 @@ void output_pin::driver_level(bool p_high)
 {
   bit_mask set_bit = { .position = static_cast<uint32_t>(m_pin), .width = 1 };
   if (p_high) {
-    get_reg(m_port)->set = bit_value(0U).set(set_bit).to<std::uint16_t>();
+    get_gpio_reg(m_port)->set = bit_value(0U).set(set_bit).to<std::uint16_t>();
   } else {
-    get_reg(m_port)->reset = bit_value(0U).set(set_bit).to<std::uint16_t>();
+    get_gpio_reg(m_port)->reset = bit_value(0U).set(set_bit).to<std::uint16_t>();
   }
 }
 
@@ -54,6 +54,6 @@ bool output_pin::driver_level()
 {
   bit_mask output_data_mask = { .position = static_cast<uint32_t>(m_pin),
                                 .width = 1 };
-  return bit_extract(output_data_mask, get_reg(m_port)->output_data);
+  return bit_extract(output_data_mask, get_gpio_reg(m_port)->output_data);
 }
 }  // namespace hal::stm32f411

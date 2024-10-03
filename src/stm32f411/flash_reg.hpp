@@ -18,11 +18,10 @@
 #include <cstddef>
 #include <cstdint>
 
-#include <libhal-arm-mcu/stm32f411/pin.hpp>
 #include <libhal-util/bit.hpp>
 
 namespace hal::stm32f411 {
-/// gpio peripheral register map
+/// flash register map
 struct flash_config_t
 {
   /// Offset 0x00: The Flash access control register is used to enable/disable

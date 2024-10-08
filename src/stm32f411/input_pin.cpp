@@ -37,7 +37,7 @@ void input_pin::driver_configure(settings const& p_settings)
   bit_mask pin_mode_mask = { .position = 2 * static_cast<uint32_t>(m_pin),
                              .width = 2 };
 
-  bit_modify(get_reg(m_port)->pin_mode).clear(pin_mode_mask);
+  bit_modify(get_gpio_reg(m_port)->pin_mode).clear(pin_mode_mask);
 
   pin(m_port, m_pin)
     .function(pin::pin_function::input)
@@ -49,7 +49,7 @@ bool input_pin::driver_level()
 {
   bit_mask input_data_mask = { .position = static_cast<uint32_t>(m_pin),
                                .width = 1 };
-  auto pin_value = bit_extract(input_data_mask, get_reg(m_port)->input_data);
+  auto pin_value = bit_extract(input_data_mask, get_gpio_reg(m_port)->input_data);
   return static_cast<bool>(pin_value);
 }
 }  // namespace hal::stm32f411

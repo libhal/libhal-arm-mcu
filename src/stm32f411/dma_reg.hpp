@@ -138,11 +138,12 @@ struct dma_stream_config
 };
 
 inline constexpr intptr_t ahb_base = 0x4002'0000UL;
+inline constexpr intptr_t dma_base = ahb_base + 0x6000;
 static inline dma_config_t* get_dma_reg(peripheral p_dma)
 {
+  std::uint8_t dma_index =
+    static_cast<int>(p_dma) - static_cast<int>(peripheral::dma1);
   // STM has dedicated memory blocks where every 2^10 is a new DMA register
-  return reinterpret_cast<dma_config_t*>(
-    ahb_base + 0x6000 +
-    ((static_cast<int>(p_dma) - static_cast<int>(peripheral::dma1)) << 10));
+  return reinterpret_cast<dma_config_t*>(dma_base + (dma_index << 10));
 }
 }  // namespace hal::stm32f411

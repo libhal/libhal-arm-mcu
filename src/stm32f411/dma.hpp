@@ -15,34 +15,56 @@
 #pragma once
 
 #include <array>
+#include <atomic>
+#include <cstddef>
 #include <cstdint>
+#include <span>
 
 #include <libhal-arm-mcu/stm32f411/constants.hpp>
 #include <libhal-util/bit.hpp>
+#include <libhal/functional.hpp>
 
 namespace hal::stm32f411 {
+struct dma_channel_stream_t
+{
+  uint8_t stream;
+  uint8_t channel;
+};
+
+enum class dma_transfer_type : std::uint8_t
+{
+  peripheral_to_memory = 0b00U,
+  memory_to_peripheral = 0b01U,
+  memory_to_memory = 0b10U
+};
+enum class dma_transfer_size : std::uint8_t
+{
+  byte = 0b00U,
+  half_word = 0b01U,
+  word = 0b10U
+};
+
+enum class dma_burst_size : std::uint8_t
+{
+  single_transfer = 0b00U,
+  transfer_4_beats = 0b01U,
+  transfer_8_beats = 0b10U,
+  transfer_16_beats = 0b11U,
+};
+
+enum class dma_priority_level : std::uint8_t
+{
+  low = 0b00U,
+  medium = 0b01U,
+  high = 0b10U,
+  very_high = 0b11U,
+};
+enum class dma_flow_controller : bool
+{
+  dma_controls_flow = 0b0U,
+  peripheral_controls_flow = 0b1U,
+};
 /// DMA register map
-enum class dma_transfer_type
-{
-  peripheral_to_memory = 0b00,
-  memory_to_peripheral = 0b01,
-  memory_to_memory = 0b10
-};
-enum class dma_transfer_size
-{
-  byte = 0b00,
-  half_word = 0b01,
-  word = 0b10
-};
-
-enum class dma_burst_size
-{
-  single_transfer = 0b00,
-  transfer_4_beats = 0b01,
-  transfer_8_beats = 0b10,
-  transfer_16_beats = 0b11,
-};
-
 struct stream_config_t
 {
   /// Offset 0x00: This register is used to configure the concerned stream
@@ -53,13 +75,13 @@ struct stream_config_t
   /// Offset 0x08: Base address of the peripheral data register from/to which
   /// the data will be read/written. These bits are write-protected and can be
   /// written only when bit EN = '0' in the DMA_SxCR register.
-  std::uint32_t volatile peripheral_address;
+  std::uintptr_t volatile peripheral_address;
   /// Offset 0x0C: Base address of Memory area 0 from/to which the data will be
   /// read/written
-  std::uint32_t volatile memory_0_address;
+  std::uintptr_t volatile memory_0_address;
   /// Offset 0x10: Base address of Memory area 1 from/to which the data will be
   /// read/written
-  std::uint32_t volatile memory_1_address;
+  std::uintptr_t volatile memory_1_address;
   /// Offset 0x14: fifo_control
   std::uint32_t volatile fifo_control;
 };
@@ -88,7 +110,7 @@ struct dma_stream_config
   /// 00: Peripheral-to-memory
   /// 01: Memory-to-peripheral
   /// 10: Memory-to-memory
-  static constexpr auto data_transfer_direction = bit_mask::from<5>();
+  static constexpr auto data_transfer_direction = bit_mask::from<7, 6>();
   static constexpr auto circular_mode_enable = bit_mask::from<8>();
   /// 0: peripheral address pointer is fixed
   /// 1: peripheral address pointer is incremented after each data transfer (set
@@ -105,7 +127,7 @@ struct dma_stream_config
   /// 00: byte (8-bit)
   /// 01: half-word (16-bit)
   /// 10: word (32-bit)
-  static constexpr auto memory_data_size = bit_mask::from<14, 11>();
+  static constexpr auto memory_data_size = bit_mask::from<14, 13>();
   /// 0: The offset size for the peripheral address calculation is linked to the
   /// PSIZE 1: The offset size for the peripheral address calculation is fixed
   /// to 4 (32-bit alignment).
@@ -134,9 +156,13 @@ struct dma_stream_config
   static constexpr auto memory_burst_transfer = bit_mask::from<24, 23>();
   /// Refer to Table 27(DMA 1) or 28(DMA 2) of the user manual for channel
   /// selection
-  static constexpr auto channel_select = bit_mask::from<17, 25>();
+  static constexpr auto channel_select = bit_mask::from<27, 25>();
 };
-
+struct dma_fifo_config
+{
+  static constexpr auto direct_mode_disable = bit_mask::from<2>();
+  static constexpr auto threshold_select = bit_mask::from<1, 0>();
+};
 inline constexpr intptr_t ahb_base = 0x4002'0000UL;
 inline constexpr intptr_t dma_base = ahb_base + 0x6000;
 static inline dma_config_t* get_dma_reg(peripheral p_dma)
@@ -146,4 +172,38 @@ static inline dma_config_t* get_dma_reg(peripheral p_dma)
   // STM has dedicated memory blocks where every 2^10 is a new DMA register
   return reinterpret_cast<dma_config_t*>(dma_base + (dma_index << 10));
 }
+
+struct dma_settings_t
+{
+  void volatile* source;
+  void volatile* destination;
+
+  size_t transfer_length;
+  dma_flow_controller flow_controller;
+  dma_transfer_type transfer_type;
+  bool circular_mode;
+  bool peripheral_address_increment;
+  bool memory_address_increment;
+  dma_transfer_size peripheral_data_size;
+  dma_transfer_size memory_data_size;
+  dma_priority_level priority_level;
+  bool double_buffer_mode;
+  bool current_target;
+  dma_burst_size peripheral_burst_size;
+  dma_burst_size memory_burst_size;
+};
+
+/**
+ * @brief Setup and start a dma transfer
+ *
+ * @param p_configuration - dma configuration
+ * @param p_interrupt_callback - callback when dma has completed
+ */
+
+dma_channel_stream_t setup_dma_transfer(
+  peripheral p_dma,
+  std::span<dma_channel_stream_t> const& p_possible_streams,
+  dma_settings_t const& p_configuration,
+  hal::callback<void()> p_interrupt_callback);
+
 }  // namespace hal::stm32f411

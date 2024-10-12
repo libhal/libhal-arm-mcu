@@ -12,9 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <array>
 #include <libhal-util/serial.hpp>
 #include <libhal-util/steady_clock.hpp>
 
+#include <libhal/timeout.hpp>
 #include <resource_list.hpp>
 
 void application(resource_list& p_map)
@@ -31,7 +33,6 @@ void application(resource_list& p_map)
 
     std::string_view message = "Hello, World!\n";
     hal::print(console, message);
-
     // Echo anything received
     std::array<hal::byte, 64> read_buffer;
     console.write(console.read(read_buffer).data);

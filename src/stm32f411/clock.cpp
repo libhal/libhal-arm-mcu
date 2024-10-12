@@ -12,11 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include <libhal-arm-mcu/stm32f411/clock.hpp>
-
 #include <cmath>
 #include <cstdint>
 
+#include <libhal-arm-mcu/stm32f411/clock.hpp>
 #include <libhal-arm-mcu/stm32f411/constants.hpp>
 #include <libhal-util/bit.hpp>
 #include <libhal-util/enum.hpp>
@@ -58,10 +57,12 @@ void pll_valid(clock_tree const& p_clock_tree)
 
 // TODO (#62): Add I2S to the clock configs
 // TODO (#66): Add 48_MHz to the clock configs
-void configure_pll(clock_tree const& p_clock_tree)
+hertz configure_pll(clock_tree const& p_clock_tree)
 {
+  auto vco_in = 2.0_MHz;
+  float target = 0.0f;
+  float output_division_factor = 0;
   if (p_clock_tree.pll.enable) {
-    auto vco_in = 2.0_MHz;
     uint8_t input_division_factor = 2U;
     pll_valid(p_clock_tree);
 
@@ -85,7 +86,6 @@ void configure_pll(clock_tree const& p_clock_tree)
     bit_modify(rcc->pllconfig)
       .insert(rcc_pllcnfg::input_division_factor, input_division_factor);
 
-    float output_division_factor = 0;
     /// 2 * (output_division_factor + 1) is to get the PLLP division factor
     /// Page 105 on the RM0383 User Manual
     while (p_clock_tree.pll.output * (2.0f * (output_division_factor + 1.0f)) <
@@ -99,11 +99,11 @@ void configure_pll(clock_tree const& p_clock_tree)
 
     /// 2 * (output_division_factor + 1) is to get the PLLN multiplicaiton
     /// factor Page 105 on the RM0383 User Manual
-    auto const target = p_clock_tree.pll.output *
-                        (2.0f * (output_division_factor + 1.0f)) / vco_in;
+    target = p_clock_tree.pll.output *
+             (2.0f * (output_division_factor + 1.0f)) / vco_in;
     bit_modify(rcc->pllconfig)
       .insert(rcc_pllcnfg::main_multiplication_factor,
-              static_cast<uint16_t>(target - 1.0f));
+              static_cast<uint16_t>(target));
 
     bit_modify(rcc->pllconfig)
       .insert(rcc_pllcnfg::pll_source, value(p_clock_tree.pll.source));
@@ -115,7 +115,8 @@ void configure_pll(clock_tree const& p_clock_tree)
       continue;
     }
   }
-  return;
+  return (vco_in * std::floor(target) /
+          (2 * (std::floor(output_division_factor + 1.0f))));
 }
 
 void configure_clocks(clock_tree const& p_clock_tree)
@@ -199,7 +200,7 @@ void configure_clocks(clock_tree const& p_clock_tree)
   // =========================================================================
   // Step 4. Set up PLL
   // =========================================================================
-  configure_pll(p_clock_tree);
+  pll_clock_rate = configure_pll(p_clock_tree);
 
   // =========================================================================
   // Step 5. Setup peripheral dividers
@@ -392,7 +393,7 @@ hal::hertz frequency(peripheral p_id)
 
     default: {
       auto id_bus = value(p_id) / bus_id_offset;
-      switch (id_bus) {
+      switch (id_bus * bus_id_offset) {
         case ahb1_bus:
           return ahb_clock_rate;
         case ahb2_bus:

@@ -84,7 +84,7 @@ void setup_default_vector_table(std::span<interrupt_pointer> p_vector_table)
 constexpr bool is_the_same_vector_buffer(
   std::span<interrupt_pointer> p_vector_table)
 {
-  p_vector_table = p_vector_table.subspan(core_interrupts);
+  p_vector_table = p_vector_table.subspan(-core_interrupts);
   return (p_vector_table.data() == vector_table.data() &&
           p_vector_table.size() == vector_table.size());
 }

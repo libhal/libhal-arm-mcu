@@ -14,13 +14,12 @@
 
 #include <cstdint>
 
-#include <libhal-lpc40/i2c.hpp>
-
-#include <libhal-armcortex/interrupt.hpp>
-#include <libhal-lpc40/clock.hpp>
-#include <libhal-lpc40/constants.hpp>
-#include <libhal-lpc40/interrupt.hpp>
-#include <libhal-lpc40/power.hpp>
+#include <libhal-arm-mcu/interrupt.hpp>
+#include <libhal-arm-mcu/lpc40/clock.hpp>
+#include <libhal-arm-mcu/lpc40/constants.hpp>
+#include <libhal-arm-mcu/lpc40/i2c.hpp>
+#include <libhal-arm-mcu/lpc40/interrupt.hpp>
+#include <libhal-arm-mcu/lpc40/power.hpp>
 #include <libhal-util/bit.hpp>
 #include <libhal-util/i2c.hpp>
 #include <libhal-util/static_callable.hpp>
@@ -224,7 +223,7 @@ i2c::i2c(std::uint8_t p_bus_number,
     }
   }
 
-  cortex_m::initialize_interrupts<value(irq::max)>();
+  lpc40::initialize_interrupts();
   i2c::driver_configure(p_settings);
 }
 

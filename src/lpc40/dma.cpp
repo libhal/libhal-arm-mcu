@@ -1,7 +1,6 @@
 #include <cstdint>
 
 #include <array>
-#include <atomic>
 #include <bit>
 #include <mutex>
 

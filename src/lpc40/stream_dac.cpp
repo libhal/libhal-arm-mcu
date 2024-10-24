@@ -1,4 +1,5 @@
 #include <concepts>
+
 #include <libhal-lpc40/clock.hpp>
 #include <libhal-lpc40/dma.hpp>
 #include <libhal-lpc40/pin.hpp>

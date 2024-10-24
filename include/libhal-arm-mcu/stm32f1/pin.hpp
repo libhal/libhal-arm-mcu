@@ -57,4 +57,14 @@ enum class can_pins : std::uint8_t
   pb9_pb8 = 0b10,
   pd0_pd1 = 0b11,
 };
+/**
+ * @brief Default pins for pwm tim1 channels
+ */
+enum class pwm_pins : std::uint8_t
+{
+  pa8 = 0b00,
+  pa9 = 0b01,
+  pa10 = 0b10,
+  pa11 = 0b11,
+};
 }  // namespace hal::stm32f1

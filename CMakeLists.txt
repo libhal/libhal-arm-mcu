@@ -60,6 +60,7 @@ libhal_test_and_make_library(
   src/stm32f1/pin.hpp
   src/stm32f1/power.cpp
   src/stm32f1/power.hpp
+  src/stm32f1/pwm.cpp
   src/stm32f1/rcc_reg.hpp
   src/stm32f1/uart_reg.hpp
   src/stm32f1/uart.cpp

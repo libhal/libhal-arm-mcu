@@ -23,11 +23,15 @@
 #include <libhal-arm-mcu/stm32f1/uart.hpp>
 #include <libhal-arm-mcu/system_control.hpp>
 #include <libhal-util/bit_bang_i2c.hpp>
-#include <libhal-util/inert_drivers/inert_adc.hpp>
+#include <libhal-util/bit_bang_spi.hpp>
+#include <libhal-util/steady_clock.hpp>
+
 #include <libhal/output_pin.hpp>
 #include <libhal/units.hpp>
 
 #include <resource_list.hpp>
+
+constexpr bool use_bit_bang_spi = false;
 
 void initialize_platform(resource_list& p_resources)
 {
@@ -37,7 +41,7 @@ void initialize_platform(resource_list& p_resources)
   // Set the MCU to the maximum clock speed
   hal::stm32f1::maximum_speed_using_internal_oscillator();
 
-  auto cpu_frequency = hal::stm32f1::frequency(hal::stm32f1::peripheral::cpu);
+  auto cpu_frequency = hal ::stm32f1::frequency(hal::stm32f1::peripheral::cpu);
   static hal::cortex_m::dwt_counter steady_clock(cpu_frequency);
   p_resources.clock = &steady_clock;
 
@@ -49,6 +53,7 @@ void initialize_platform(resource_list& p_resources)
   p_resources.can = &can;
 
   static hal::stm32f1::output_pin led('C', 13);
+
   p_resources.status_led = &led;
 
   // pin G0 on the STM micromod is port B, pin 4
@@ -71,16 +76,37 @@ void initialize_platform(resource_list& p_resources)
     .scl = &scl_output_pin,
   };
   static hal::bit_bang_i2c bit_bang_i2c(bit_bang_pins, steady_clock);
-  p_resources.i2c = &bit_bang_i2c;
-
-  static hal::stm32f1::spi spi1(hal::bus<1>,
-                                {
-                                  .clock_rate = 250.0_kHz,
-                                  .clock_polarity = false,
-                                  .clock_phase = false,
-                                });
-  p_resources.spi = &spi1;
 
   static hal::stm32f1::output_pin spi_chip_select('A', 4);
   p_resources.spi_chip_select = &spi_chip_select;
+  static hal::stm32f1::output_pin sck('A', 5);
+  static hal::stm32f1::output_pin copi('A', 6);
+  static hal::stm32f1::input_pin cipo('A', 7);
+
+  static hal::bit_bang_spi::pins bit_bang_spi_pins{ .sck = &sck,
+                                                    .copi = &copi,
+                                                    .cipo = &cipo };
+
+  static hal::spi::settings bit_bang_spi_settings{
+    .clock_rate = 250.0_kHz,
+    .clock_polarity = false,
+    .clock_phase = false,
+  };
+
+  hal::spi* spi = nullptr;
+
+  if constexpr (use_bit_bang_spi) {
+    static hal::bit_bang_spi bit_bang_spi(
+      bit_bang_spi_pins, steady_clock, bit_bang_spi_settings);
+    spi = &bit_bang_spi;
+  } else {
+    static hal::stm32f1::spi spi1(hal::bus<1>,
+                                  {
+                                    .clock_rate = 250.0_kHz,
+                                    .clock_polarity = false,
+                                    .clock_phase = false,
+                                  });
+    spi = &spi1;
+  }
+  p_resources.spi = spi;
 }

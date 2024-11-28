@@ -49,7 +49,8 @@ bool input_pin::driver_level()
 {
   bit_mask input_data_mask = { .position = static_cast<uint32_t>(m_pin),
                                .width = 1 };
-  auto pin_value = bit_extract(input_data_mask, get_gpio_reg(m_port)->input_data);
+  auto pin_value =
+    bit_extract(input_data_mask, get_gpio_reg(m_port)->input_data);
   return static_cast<bool>(pin_value);
 }
 }  // namespace hal::stm32f411

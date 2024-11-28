@@ -9,7 +9,7 @@
 #include <libhal-lpc40/dma.hpp>
 #include <libhal-lpc40/interrupt.hpp>
 #include <libhal-lpc40/power.hpp>
-#include <libhal-soft/atomic_spin_lock.hpp>
+#include <libhal-util/atomic_spin_lock.hpp>
 #include <libhal-util/bit.hpp>
 #include <libhal-util/enum.hpp>
 #include <libhal/functional.hpp>
@@ -122,7 +122,7 @@ void initialize_dma()
   dma_reg->config = 1;
 }
 
-hal::soft::atomic_spin_lock dma_spin_lock;
+hal::atomic_spin_lock dma_spin_lock;
 hal::basic_lock* dma_lock = &dma_spin_lock;
 }  // namespace
 

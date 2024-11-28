@@ -16,14 +16,14 @@
 
 #include <libhal-arm-mcu/stm32f411/pin.hpp>
 
+#include <libhal-arm-mcu/stm32f411/constants.hpp>
 #include <libhal-util/bit.hpp>
 #include <libhal-util/enum.hpp>
 #include <libhal/units.hpp>
-#include <libhal-arm-mcu/stm32f411/constants.hpp>
 
 #include "gpio_reg.hpp"
-#include "rcc_reg.hpp"
 #include "power.hpp"
+#include "rcc_reg.hpp"
 
 namespace hal::stm32f411 {
 

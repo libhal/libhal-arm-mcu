@@ -41,20 +41,22 @@ class libhal_arm_mcu_conan(ConanFile):
         "use_libhal_exceptions": [True, False],
         "use_picolibc": [True, False],
         "platform": ["ANY"],
+        "use_default_linker_script": [True, False],
     }
 
     default_options = {
         "use_libhal_exceptions": True,
         "use_picolibc": True,
         "platform": "ANY",
+        "use_default_linker_script": True,
     }
 
     def requirements(self):
         bootstrap = self.python_requires["libhal-bootstrap"]
-        bootstrap.module.add_library_requirements(self)
+        bootstrap.module.add_library_requirements(
+            self, override_libhal_util_version="5.3.0")
 
         self.requires("ring-span-lite/[^0.7.0]", transitive_headers=True)
-        self.requires("libhal-soft/[^5.1.0]")
         self.requires("scope-lite/0.2.0")
 
         if self.settings.os == "baremetal" and self.settings.compiler == "gcc":
@@ -92,7 +94,8 @@ class libhal_arm_mcu_conan(ConanFile):
         self.buildenv_info.define("LIBHAL_PLATFORM", platform)
         self.buildenv_info.define("LIBHAL_PLATFORM_LIBRARY", "arm-mcu")
 
-        if self.settings.os == "baremetal":
+        if (self.settings.os == "baremetal" and
+                self.options.use_default_linker_script):
             # If the platform matches the linker script, just use that linker
             # script
             self.cpp_info.exelinkflags = [
@@ -114,6 +117,7 @@ class libhal_arm_mcu_conan(ConanFile):
         del self.info.options.use_picolibc
         del self.info.options.use_libhal_exceptions
         del self.info.options.platform
+        del self.info.options.use_default_linker_script
 
     def append_linker_using_platform(self, platform: str):
         if platform.startswith("stm32f1"):

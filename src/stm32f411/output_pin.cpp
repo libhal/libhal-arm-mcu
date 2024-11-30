@@ -46,7 +46,8 @@ void output_pin::driver_level(bool p_high)
   if (p_high) {
     get_gpio_reg(m_port)->set = bit_value(0U).set(set_bit).to<std::uint16_t>();
   } else {
-    get_gpio_reg(m_port)->reset = bit_value(0U).set(set_bit).to<std::uint16_t>();
+    get_gpio_reg(m_port)->reset =
+      bit_value(0U).set(set_bit).to<std::uint16_t>();
   }
 }
 

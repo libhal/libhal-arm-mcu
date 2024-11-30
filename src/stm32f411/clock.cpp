@@ -16,14 +16,15 @@
 
 #include <cstdint>
 
+#include <libhal-arm-mcu/stm32f411/constants.hpp>
 #include <libhal-util/bit.hpp>
 #include <libhal-util/enum.hpp>
 #include <libhal/error.hpp>
 #include <libhal/units.hpp>
-#include <libhal-arm-mcu/stm32f411/constants.hpp>
 
 #include "flash_reg.hpp"
 #include "rcc_reg.hpp"
+
 namespace hal::stm32f411 {
 
 namespace {
@@ -94,8 +95,8 @@ void configure_pll(clock_tree const& p_clock_tree)
     bit_modify(rcc->pllconfig)
       .insert(rcc_pllcnfg::main_division_factor, output_division_factor);
 
-    /// 2 * (output_division_factor + 1) is to get the PLLN multiplicaiton factor
-    /// Page 105 on the RM0383 User Manual
+    /// 2 * (output_division_factor + 1) is to get the PLLN multiplicaiton
+    /// factor Page 105 on the RM0383 User Manual
     uint16_t target =
       p_clock_tree.pll.output * (2 * (output_division_factor + 1)) / vco_in;
     bit_modify(rcc->pllconfig)

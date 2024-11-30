@@ -108,14 +108,12 @@ libhal_test_and_make_library(
   PACKAGES
   libhal
   libhal-util
-  libhal-soft
   ring-span-lite
   scope-lite
 
   LINK_LIBRARIES
   libhal::libhal
   libhal::util
-  libhal::soft
   nonstd::ring-span-lite
   nonstd::scope-lite
 )

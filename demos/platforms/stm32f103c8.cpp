@@ -22,11 +22,11 @@
 #include <libhal-arm-mcu/stm32f1/spi.hpp>
 #include <libhal-arm-mcu/stm32f1/uart.hpp>
 #include <libhal-arm-mcu/system_control.hpp>
-#include <libhal-soft/bit_bang_i2c.hpp>
-#include <libhal-soft/inert_drivers/inert_adc.hpp>
-
+#include <libhal-util/bit_bang_i2c.hpp>
+#include <libhal-util/inert_drivers/inert_adc.hpp>
 #include <libhal/output_pin.hpp>
 #include <libhal/units.hpp>
+
 #include <resource_list.hpp>
 
 void initialize_platform(resource_list& p_resources)

@@ -157,8 +157,9 @@ void enable_all_interrupts()
 
 bool interrupt_vector_table_initialized()
 {
-  return get_interrupt_vector_table_address() ==
-         (vector_table.data() + core_interrupts);
+  auto* vector_base = reinterpret_cast<void*>(&vector_table[core_interrupts]);
+
+  return get_interrupt_vector_table_address() == vector_base;
 }
 
 std::span<interrupt_pointer> const get_vector_table()
@@ -249,7 +250,8 @@ void initialize_interrupts(std::span<interrupt_pointer> p_vector_table)
 
   // Relocate the interrupt vector table the vector buffer. By default this
   // will be set to the address of the start of flash memory for the MCU.
-  set_interrupt_vector_table_address(p_vector_table.data());
+  set_interrupt_vector_table_address(
+    reinterpret_cast<void*>(p_vector_table.data()));
 
   enable_all_interrupts();
 }

@@ -34,14 +34,19 @@ void* peripheral_to_address(peripheral p_id)
 
   switch (p_id) {
     case peripheral::spi1:
+      // NOLINTNEXTLINE(performance-no-int-to-ptr)
       return reinterpret_cast<void*>(spi_reg1);
     case peripheral::spi2:
+      // NOLINTNEXTLINE(performance-no-int-to-ptr)
       return reinterpret_cast<void*>(spi_reg2);
     case peripheral::spi3:
+      // NOLINTNEXTLINE(performance-no-int-to-ptr)
       return reinterpret_cast<void*>(spi_reg3);
     case peripheral::spi4:
+      // NOLINTNEXTLINE(performance-no-int-to-ptr)
       return reinterpret_cast<void*>(spi_reg4);
     case peripheral::spi5:
+      // NOLINTNEXTLINE(performance-no-int-to-ptr)
       return reinterpret_cast<void*>(spi_reg5);
     default:
       hal::safe_throw(hal::operation_not_supported(nullptr));

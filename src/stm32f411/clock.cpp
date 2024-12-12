@@ -14,6 +14,7 @@
 
 #include <libhal-arm-mcu/stm32f411/clock.hpp>
 
+#include <cmath>
 #include <cstdint>
 
 #include <libhal-arm-mcu/stm32f411/constants.hpp>
@@ -71,7 +72,7 @@ void configure_pll(clock_tree const& p_clock_tree)
           .insert(rcc_pllcnfg::input_division_factor, input_division_factor);
       } else {
         float division_factor = p_clock_tree.high_speed_external / 2.0_MHz;
-        if (division_factor - static_cast<uint8_t>(division_factor) > 0) {
+        if ((division_factor - std::floor(division_factor)) > 0) {
           input_division_factor = static_cast<uint8_t>(division_factor) + 1;
         } else {
           input_division_factor = static_cast<uint8_t>(division_factor);
@@ -84,24 +85,25 @@ void configure_pll(clock_tree const& p_clock_tree)
     bit_modify(rcc->pllconfig)
       .insert(rcc_pllcnfg::input_division_factor, input_division_factor);
 
-    uint8_t output_division_factor = 0;
+    float output_division_factor = 0;
     /// 2 * (output_division_factor + 1) is to get the PLLP division factor
     /// Page 105 on the RM0383 User Manual
-    while (p_clock_tree.pll.output * (2 * (output_division_factor + 1)) <
+    while (p_clock_tree.pll.output * (2.0f * (output_division_factor + 1.0f)) <
            100.0_MHz) {
-      output_division_factor++;
+      output_division_factor += 1;
     }
 
     bit_modify(rcc->pllconfig)
-      .insert(rcc_pllcnfg::main_division_factor, output_division_factor);
+      .insert(rcc_pllcnfg::main_division_factor,
+              static_cast<std::uint8_t>(output_division_factor));
 
     /// 2 * (output_division_factor + 1) is to get the PLLN multiplicaiton
     /// factor Page 105 on the RM0383 User Manual
-    uint16_t target =
-      p_clock_tree.pll.output * (2 * (output_division_factor + 1)) / vco_in;
+    auto const target = p_clock_tree.pll.output *
+                        (2.0f * (output_division_factor + 1.0f)) / vco_in;
     bit_modify(rcc->pllconfig)
       .insert(rcc_pllcnfg::main_multiplication_factor,
-              static_cast<uint16_t>(target - 1));
+              static_cast<uint16_t>(target - 1.0f));
 
     bit_modify(rcc->pllconfig)
       .insert(rcc_pllcnfg::pll_source, value(p_clock_tree.pll.source));

@@ -24,14 +24,14 @@
 namespace hal::cortex_m {
 
 namespace {
-
+// NOLINTNEXTLINE(performance-enum-size): the actual size of these types are u16
 enum class my_irq : irq_t
 {
   uart0 = 55,
   spi7 = 63,
   max,
 };
-}
+}  // namespace
 
 boost::ut::suite test_interrupts = []() {
   using namespace boost::ut;
@@ -267,7 +267,7 @@ boost::ut::suite test_interrupts = []() {
 
     should("disable_interrupt(-5)") = [&]() {
       // Setup
-      static constexpr std::uint16_t event_number = -5;
+      static constexpr std::int16_t event_number = -5;
       auto const old_nvic = *nvic;
 
       // Exercise

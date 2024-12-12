@@ -38,12 +38,10 @@ void configure_baud_rate(usart_t& p_usart,
   float usart_divider = clock_frequency / (16.0f * p_settings.baud_rate);
 
   // Truncate off the decimal values
-  uint16_t mantissa = static_cast<uint16_t>(usart_divider);
-
+  auto mantissa = static_cast<uint16_t>(usart_divider);
   // Subtract the whole number to leave just the decimal
-  float fraction = static_cast<float>(usart_divider - mantissa);
-
-  uint16_t fractional_int = static_cast<uint16_t>(std::roundf(fraction * 16));
+  auto fraction = usart_divider - static_cast<float>(mantissa);
+  auto fractional_int = static_cast<uint16_t>(std::roundf(fraction * 16));
 
   if (fractional_int >= 16) {
     mantissa = static_cast<uint16_t>(mantissa + 1U);

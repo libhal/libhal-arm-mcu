@@ -360,11 +360,6 @@ struct standard_filter_bank
   static constexpr auto id_extension1 = hal::bit_mask::from(3);
   static constexpr auto extended_id1 = hal::bit_mask::from(0, 2);
 
-  static constexpr auto standard_id2 = hal::bit_mask::from(5 + 16, 15 + 16);
-  static constexpr auto rtr2 = hal::bit_mask::from(4 + 16);
-  static constexpr auto id_extension2 = hal::bit_mask::from(3 + 16);
-  static constexpr auto extended_id2 = hal::bit_mask::from(0 + 16, 2 + 16);
-
   static constexpr auto sub_bank1 = hal::bit_mask::from(0, 15);
   static constexpr auto sub_bank2 = hal::bit_mask::from(16, 31);
 };

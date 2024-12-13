@@ -19,8 +19,10 @@
 
 #include <libhal-arm-mcu/interrupt.hpp>
 #include <libhal-arm-mcu/stm32f1/can.hpp>
+#include <libhal-arm-mcu/stm32f1/clock.hpp>
 #include <libhal-arm-mcu/stm32f1/constants.hpp>
 #include <libhal-arm-mcu/stm32f1/interrupt.hpp>
+#include <libhal-arm-mcu/stm32f1/pin.hpp>
 #include <libhal-util/bit.hpp>
 #include <libhal-util/bit_limits.hpp>
 #include <libhal-util/can.hpp>
@@ -31,9 +33,6 @@
 #include <nonstd/scope.hpp>
 
 #include "can_reg.hpp"
-#include "libhal-stm32f1/clock.hpp"
-#include "libhal-stm32f1/constants.hpp"
-#include "libhal-stm32f1/pin.hpp"
 #include "pin.hpp"
 #include "power.hpp"
 

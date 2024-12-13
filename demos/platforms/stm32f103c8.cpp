@@ -24,9 +24,8 @@
 #include <libhal-arm-mcu/system_control.hpp>
 #include <libhal-util/bit_bang_i2c.hpp>
 #include <libhal-util/bit_bang_spi.hpp>
+#include <libhal-util/inert_drivers/inert_adc.hpp>
 #include <libhal-util/steady_clock.hpp>
-
-#include <libhal/output_pin.hpp>
 #include <libhal/units.hpp>
 
 #include <resource_list.hpp>
@@ -48,9 +47,37 @@ void initialize_platform(resource_list& p_resources)
   static hal::stm32f1::uart uart1(hal::port<1>, hal::buffer<128>);
   p_resources.console = &uart1;
 
-  static hal::stm32f1::can can({ .baud_rate = 1'000'000 },
-                               hal::stm32f1::can_pins::pb9_pb8);
-  p_resources.can = &can;
+  static hal::stm32f1::can_peripheral_manager can(
+    1_MHz, hal::stm32f1::can_pins::pb9_pb8);
+
+  static std::array<hal::can_message, 32> receive_buffer{};
+  static auto can_transceiver = can.acquire_transceiver(receive_buffer);
+  p_resources.can_transceiver = &can_transceiver;
+
+  static auto can_bus_manager = can.acquire_bus_manager();
+  p_resources.can_bus_manager = &can_bus_manager;
+
+  static auto can_interrupt = can.acquire_interrupt();
+  p_resources.can_interrupt = &can_interrupt;
+
+  static auto id_filters_x4 = can.acquire_identifier_filter();
+  id_filters_x4[0].allow(0x240);
+  id_filters_x4[1].allow(0x250);
+  id_filters_x4[2].allow(0x260);
+  id_filters_x4[3].allow(0x270);
+  static auto extended_id_filters_x2 = can.acquire_extended_identifier_filter();
+  extended_id_filters_x2[0].allow(0x0111'0000);
+  extended_id_filters_x2[1].allow(0x0111'1111);
+
+  static auto mask_id_filters_x2 = can.acquire_mask_filter();
+  // allow 0x222 to 0x0223
+  mask_id_filters_x2[0].allow({ { .id = 0x222, .mask = 0x1F4 } });
+  // allow 0x330 to 0x0223
+  mask_id_filters_x2[1].allow({ { .id = 0x333, .mask = 0x1F4 } });
+
+  static auto extended_mask_id_filter = can.acquire_extended_mask_filter();
+  // allow 0x0222'0000 to 0x0222'0003
+  extended_mask_id_filter.allow({ { .id = 0x0222'0000, .mask = 0x7FFF'FFF4 } });
 
   static hal::stm32f1::output_pin led('C', 13);
   p_resources.status_led = &led;

@@ -1,3 +1,17 @@
+// Copyright 2024 Khalil Estell
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 #pragma once
 
 #include <cstdint>
@@ -56,7 +70,7 @@ struct can_reg_t
   std::uint32_t volatile FA1R;
   std::uint32_t volatile reserved5[8];
   // Limited to only 14 on connectivity line devices
-  can_filter_register_t sFilterRegister[28];
+  can_filter_register_t filter_registers[28];
 };
 
 inline auto* can1_reg = reinterpret_cast<can_reg_t*>(0x4000'6400);
@@ -221,6 +235,13 @@ struct interrupt_enable_register  // NOLINT
   static constexpr auto wakeup = bit_mask::from<16>();
   /// Sleep interrupt enable
   static constexpr auto sleep = bit_mask::from<17>();
+};
+
+/// Strut holding the masks for the error status register
+struct error_status_register
+{
+  /// Set to 1 if the device has been put in to the bus off state
+  static constexpr auto bus_off = bit_mask::from<2>();
 };
 
 /// This struct holds the bitmap for the mailbox identifier.

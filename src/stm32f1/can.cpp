@@ -657,6 +657,18 @@ can_peripheral_manager::~can_peripheral_manager()
   power_off(peripheral::can1);
 }
 
+void can_peripheral_manager::enable_self_test(bool p_enable)
+{
+  enter_initialization();
+  nonstd::scope_exit on_exit(&exit_initialization);
+
+  if (p_enable) {
+    bit_modify(can1_reg->BTR).set<bus_timing::loop_back_mode>();
+  } else {
+    bit_modify(can1_reg->BTR).clear<bus_timing::loop_back_mode>();
+  }
+}
+
 can_peripheral_manager::transceiver::transceiver(
   std::span<can_message> p_receive_buffer)
 {
@@ -786,12 +798,12 @@ can_peripheral_manager::identifier_filter::identifier_filter(
 }
 
 // NOLINTNEXTLINE(bugprone-exception-escape)
-can_peripheral_manager::identifier_filter::~identifier_filter()
+can_peripheral_manager::identifier_filter_set::~identifier_filter_set()
 {
   // Free filter bank for use by a different identifier filter
-  acquired_banks.reset(m_resource.filter_index);
-  set_filter_activation_state(m_resource.filter_index,
-                              filter_activation::not_active);
+  auto const index = filters[0].m_resource.filter_index;
+  acquired_banks.reset(index);
+  set_filter_activation_state(index, filter_activation::not_active);
 }
 
 void can_peripheral_manager::identifier_filter::driver_allow(
@@ -801,6 +813,19 @@ void can_peripheral_manager::identifier_filter::driver_allow(
   constexpr auto second_short = hal::bit_mask::from(16, 31);
 
   auto const id = p_id.value_or(disable_id_sentinel);
+
+  // Activate filter initialization mode (Set bit)
+  set_filter_bank_mode(filter_bank_master_control::initialization);
+  set_filter_activation_state(m_resource.filter_index,
+                              filter_activation::not_active);
+
+  // On scope exit, whether via a return or an exception, invoke this.
+  nonstd::scope_exit on_exit([this]() {
+    // Deactivate filter initialization mode (clear bit)
+    set_filter_bank_mode(filter_bank_master_control::active);
+    set_filter_activation_state(m_resource.filter_index,
+                                filter_activation::active);
+  });
 
   auto& filter = can1_reg->filter_registers[m_resource.filter_index];
 
@@ -852,10 +877,18 @@ can_peripheral_manager::interrupt can_peripheral_manager::acquire_interrupt()
   return {};
 }
 
-std::array<can_peripheral_manager::identifier_filter, 4>
+can_peripheral_manager::identifier_filter_set::identifier_filter_set(
+  hal::u8 p_index)
+  : filters{ identifier_filter{ { .filter_index = p_index, .word_index = 0 } },
+             identifier_filter{ { .filter_index = p_index, .word_index = 1 } },
+             identifier_filter{ { .filter_index = p_index, .word_index = 2 } },
+             identifier_filter{ { .filter_index = p_index, .word_index = 3 } } }
+{
+}
+
+can_peripheral_manager::identifier_filter_set
 can_peripheral_manager::acquire_identifier_filter()
 {
-  using filter = can_peripheral_manager::identifier_filter;
   auto const filter_index = available_filter();
 
   // Activate filter initialization mode (Set bit)
@@ -877,12 +910,7 @@ can_peripheral_manager::acquire_identifier_filter()
   can1_reg->filter_registers[filter_index].FR1 = disable_mask;
   can1_reg->filter_registers[filter_index].FR2 = disable_mask;
 
-  return {
-    filter{ { .filter_index = filter_index, .word_index = 0 } },
-    filter{ { .filter_index = filter_index, .word_index = 1 } },
-    filter{ { .filter_index = filter_index, .word_index = 2 } },
-    filter{ { .filter_index = filter_index, .word_index = 3 } },
-  };
+  return identifier_filter_set{ filter_index };
 }
 
 std::array<can_peripheral_manager::extended_identifier_filter, 2>

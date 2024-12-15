@@ -79,7 +79,7 @@ public:
     void driver_bus_on() override;
   };
 
-  struct filter_resource
+  struct [[gnu::packed]] filter_resource
   {
     hal::u8 filter_index;
     hal::u8 word_index;
@@ -87,15 +87,23 @@ public:
 
   class identifier_filter : public can_identifier_filter
   {
-  public:
-    ~identifier_filter() override;
-
   private:
     friend class can_peripheral_manager;
 
     explicit identifier_filter(filter_resource p_resource);
     void driver_allow(std::optional<u16> p_id) override;
     filter_resource m_resource;
+  };
+
+  class identifier_filter_set
+  {
+  public:
+    std::array<identifier_filter, 4> filters;
+    ~identifier_filter_set();
+
+  private:
+    friend class can_peripheral_manager;
+    explicit identifier_filter_set(hal::u8 p_filter_index);
   };
 
   class extended_identifier_filter : public can_extended_identifier_filter
@@ -176,9 +184,10 @@ public:
   /**
    * @brief A set of 4x standard identifier filters
    *
-   * @return std::array<identifier_filter, 4> - 4x identifier filters
+   * @return identifier_filter_set - A set of 4x identifier filters. When
+   * destroyed, releases the filter resource it held on to.
    */
-  std::array<identifier_filter, 4> acquire_identifier_filter();
+  identifier_filter_set acquire_identifier_filter();
 
   /**
    * @brief A pair of two extended identifier filters

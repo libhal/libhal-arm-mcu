@@ -50,6 +50,8 @@ void initialize_platform(resource_list& p_resources)
   static hal::stm32f1::can_peripheral_manager can(
     1_MHz, hal::stm32f1::can_pins::pb9_pb8);
 
+  can.enable_self_test(true);
+
   static std::array<hal::can_message, 32> receive_buffer{};
   static auto can_transceiver = can.acquire_transceiver(receive_buffer);
   p_resources.can_transceiver = &can_transceiver;
@@ -61,10 +63,10 @@ void initialize_platform(resource_list& p_resources)
   p_resources.can_interrupt = &can_interrupt;
 
   static auto id_filters_x4 = can.acquire_identifier_filter();
-  id_filters_x4[0].allow(0x240);
-  id_filters_x4[1].allow(0x250);
-  id_filters_x4[2].allow(0x260);
-  id_filters_x4[3].allow(0x270);
+  id_filters_x4.filters[0].allow(0x111);
+  id_filters_x4.filters[1].allow(0x250);
+  id_filters_x4.filters[2].allow(0x260);
+  id_filters_x4.filters[3].allow(0x270);
   static auto extended_id_filters_x2 = can.acquire_extended_identifier_filter();
   extended_id_filters_x2[0].allow(0x0111'0000);
   extended_id_filters_x2[1].allow(0x0111'1111);
@@ -86,8 +88,8 @@ void initialize_platform(resource_list& p_resources)
   static hal::stm32f1::input_pin input_pin('B', 4);
   p_resources.input_pin = &input_pin;
 
-  static hal::stm32f1::output_pin sda_output_pin('B', 7);
-  static hal::stm32f1::output_pin scl_output_pin('B', 6);
+  static hal::stm32f1::output_pin sda_output_pin('A', 0);
+  static hal::stm32f1::output_pin scl_output_pin('A', 15);
 
   sda_output_pin.configure({
     .resistor = hal::pin_resistor::pull_up,

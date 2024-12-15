@@ -358,4 +358,33 @@ enum class filter_activation : std::uint8_t
   /// Enable fIlter
   active = 1
 };
+
+struct can_id
+{
+  static constexpr auto standard_id = hal::bit_mask::from(10, 0);
+  static constexpr auto standard_id_part = hal::bit_mask::from(29, 0);
+};
+
+struct standard_filter_bank
+{
+  static constexpr auto standard_id1 = hal::bit_mask::from(5, 15);
+  static constexpr auto rtr1 = hal::bit_mask::from(4);
+  static constexpr auto id_extension1 = hal::bit_mask::from(3);
+  static constexpr auto extended_id1 = hal::bit_mask::from(0, 2);
+
+  static constexpr auto standard_id2 = hal::bit_mask::from(5 + 16, 15 + 16);
+  static constexpr auto rtr2 = hal::bit_mask::from(4 + 16);
+  static constexpr auto id_extension2 = hal::bit_mask::from(3 + 16);
+  static constexpr auto extended_id2 = hal::bit_mask::from(0 + 16, 2 + 16);
+
+  static constexpr auto sub_bank1 = hal::bit_mask::from(0, 15);
+  static constexpr auto sub_bank2 = hal::bit_mask::from(16, 31);
+};
+struct extended_filter_bank
+{
+  static constexpr auto id = hal::bit_mask::from(3, 31);
+  static constexpr auto id_extension = hal::bit_mask::from(2);
+  static constexpr auto rtr = hal::bit_mask::from(1);
+  static constexpr auto reserved = hal::bit_mask::from(0);
+};
 }  // namespace hal::stm32f1

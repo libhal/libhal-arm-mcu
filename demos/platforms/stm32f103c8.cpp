@@ -50,7 +50,7 @@ void initialize_platform(resource_list& p_resources)
 
   can.enable_self_test(true);
 
-  static std::array<hal::can_message, 32> receive_buffer{};
+  static std::array<hal::can_message, 8> receive_buffer{};
   static auto can_transceiver = can.acquire_transceiver(receive_buffer);
   p_resources.can_transceiver = &can_transceiver;
 
@@ -60,24 +60,20 @@ void initialize_platform(resource_list& p_resources)
   static auto can_interrupt = can.acquire_interrupt();
   p_resources.can_interrupt = &can_interrupt;
 
-  static auto id_filters_x4 = can.acquire_identifier_filter();
-  id_filters_x4.filters[0].allow(0x111);
-  id_filters_x4.filters[1].allow(0x250);
-  id_filters_x4.filters[2].allow(0x260);
-  id_filters_x4.filters[3].allow(0x270);
-  static auto extended_id_filters_x2 = can.acquire_extended_identifier_filter();
-  extended_id_filters_x2[0].allow(0x0111'0000);
-  extended_id_filters_x2[1].allow(0x0111'1111);
-
   static auto mask_id_filters_x2 = can.acquire_mask_filter();
-  // allow 0x222 to 0x0223
-  mask_id_filters_x2[0].allow({ { .id = 0x222, .mask = 0x1F4 } });
-  // allow 0x330 to 0x0223
-  mask_id_filters_x2[1].allow({ { .id = 0x333, .mask = 0x1F4 } });
+  // allow only 0x222 using mask
+  mask_id_filters_x2.filter[0].allow({ { .id = 0x112, .mask = 0x1FF } });
+
+  static auto id_filters_x4 = can.acquire_identifier_filter();
+  id_filters_x4.filter[3].allow(0x333);
+
+  static auto extended_id_filters_x2 = can.acquire_extended_identifier_filter();
+  // Allow 0x0123'4567
+  extended_id_filters_x2.filter[0].allow(0x0123'4567);
 
   static auto extended_mask_id_filter = can.acquire_extended_mask_filter();
-  // allow 0x0222'0000 to 0x0222'0003
-  extended_mask_id_filter.allow({ { .id = 0x0222'0000, .mask = 0x7FFF'FFF4 } });
+  // Allow 0x0222'0000 to 0x0222'000F
+  extended_mask_id_filter.allow({ { .id = 0x0222'0000, .mask = 0x1FFF'FFF0 } });
 
   static hal::stm32f1::output_pin led('C', 13);
   p_resources.status_led = &led;

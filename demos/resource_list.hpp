@@ -42,9 +42,7 @@ struct resource_list
   std::optional<hal::serial*> console;
   std::optional<hal::output_pin*> status_led;
   std::optional<hal::steady_clock*> clock;
-  std::optional<hal::can_transceiver*> can_transceiver;
-  std::optional<hal::can_bus_manager*> can_bus_manager;
-  std::optional<hal::can_interrupt*> can_interrupt;
+  std::optional<hal::can*> can;
   std::optional<hal::adc*> adc;
   std::optional<hal::input_pin*> input_pin;
   std::optional<hal::i2c*> i2c;

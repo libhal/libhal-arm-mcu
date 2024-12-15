@@ -337,18 +337,6 @@ enum class filter_scale : std::uint8_t
   single_32_bit_scale = 1
 };
 
-/// This enumeration labels the selected FIFO.
-/// Used with CAN FIFO Assignment Register (CAN_FFA1R) (pg. 693).
-enum class fifo_assignment : std::uint8_t
-{
-  /// FIFO 1
-  fifo1 = 0,
-  /// FIFO 2
-  fifo2 = 1,
-  /// No FIFO selected
-  fifo_none = 4
-};
-
 /// This enumeration labels the activation state of a filter
 /// Used with CAN Filter Activation Register (CAN_FFA1R) (pg. 693)
 enum class filter_activation : std::uint8_t
@@ -357,5 +345,34 @@ enum class filter_activation : std::uint8_t
   not_active = 0,
   /// Enable fIlter
   active = 1
+};
+
+struct can_id
+{
+  static constexpr auto standard_id = hal::bit_mask::from(10, 0);
+  static constexpr auto standard_id_part = hal::bit_mask::from(29, 0);
+};
+
+struct standard_filter_bank
+{
+  static constexpr auto standard_id1 = hal::bit_mask::from(5, 15);
+  static constexpr auto rtr1 = hal::bit_mask::from(4);
+  static constexpr auto id_extension1 = hal::bit_mask::from(3);
+  static constexpr auto extended_id1 = hal::bit_mask::from(0, 2);
+
+  static constexpr auto standard_id2 = hal::bit_mask::from(5 + 16, 15 + 16);
+  static constexpr auto rtr2 = hal::bit_mask::from(4 + 16);
+  static constexpr auto id_extension2 = hal::bit_mask::from(3 + 16);
+  static constexpr auto extended_id2 = hal::bit_mask::from(0 + 16, 2 + 16);
+
+  static constexpr auto sub_bank1 = hal::bit_mask::from(0, 15);
+  static constexpr auto sub_bank2 = hal::bit_mask::from(16, 31);
+};
+struct extended_filter_bank
+{
+  static constexpr auto id = hal::bit_mask::from(3, 31);
+  static constexpr auto id_extension = hal::bit_mask::from(2);
+  static constexpr auto rtr = hal::bit_mask::from(1);
+  static constexpr auto reserved = hal::bit_mask::from(0);
 };
 }  // namespace hal::stm32f1

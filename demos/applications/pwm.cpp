@@ -23,15 +23,20 @@ void application(resource_list& p_map)
   using namespace hal::literals;
 
   auto& pwm = *p_map.pwm.value();
+  auto& serial = *p_map.console.value();
   auto& clock = *p_map.clock.value();
 
+  hal::print(serial, "PWM starting\n");
+
   while (true) {
+
+    hal::print(serial, "Setting 1 kHz\n");
     pwm.frequency(1.0_kHz);
 
     for (unsigned iteration = 0; iteration <= 100; iteration += 1) {
       auto duty_cycle = static_cast<float>(iteration) / 100.0f;
       pwm.duty_cycle(duty_cycle);
-      hal::delay(clock, 100ms);
+      hal::delay(clock, 10ms);
     }
 
     pwm.duty_cycle(0.5f);

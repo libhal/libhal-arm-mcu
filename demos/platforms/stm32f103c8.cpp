@@ -24,6 +24,7 @@
 #include <libhal-arm-mcu/system_control.hpp>
 #include <libhal-util/bit_bang_i2c.hpp>
 #include <libhal-util/inert_drivers/inert_adc.hpp>
+#include <libhal/can.hpp>
 #include <libhal/output_pin.hpp>
 #include <libhal/units.hpp>
 
@@ -44,9 +45,35 @@ void initialize_platform(resource_list& p_resources)
   static hal::stm32f1::uart uart1(hal::port<1>, hal::buffer<128>);
   p_resources.console = &uart1;
 
-  static hal::stm32f1::can can({ .baud_rate = 1'000'000 },
-                               hal::stm32f1::can_pins::pb9_pb8);
-  p_resources.can = &can;
+  static hal::stm32f1::can_peripheral_manager can(
+    1_MHz, hal::stm32f1::can_pins::pb9_pb8);
+
+  can.enable_self_test(true);
+
+  static std::array<hal::can_message, 8> receive_buffer{};
+  static auto can_transceiver = can.acquire_transceiver(receive_buffer);
+  p_resources.can_transceiver = &can_transceiver;
+
+  static auto can_bus_manager = can.acquire_bus_manager();
+  p_resources.can_bus_manager = &can_bus_manager;
+
+  static auto can_interrupt = can.acquire_interrupt();
+  p_resources.can_interrupt = &can_interrupt;
+
+  static auto mask_id_filters_x2 = can.acquire_mask_filter();
+  // allow only 0x222 using mask
+  mask_id_filters_x2.filter[0].allow({ { .id = 0x112, .mask = 0x1FF } });
+
+  static auto id_filters_x4 = can.acquire_identifier_filter();
+  id_filters_x4.filter[3].allow(0x333);
+
+  static auto extended_id_filters_x2 = can.acquire_extended_identifier_filter();
+  // Allow 0x0123'4567
+  extended_id_filters_x2.filter[0].allow(0x0123'4567);
+
+  static auto extended_mask_id_filter = can.acquire_extended_mask_filter();
+  // Allow 0x0222'0000 to 0x0222'000F
+  extended_mask_id_filter.allow({ { .id = 0x0222'0000, .mask = 0x1FFF'FFF0 } });
 
   static hal::stm32f1::output_pin led('C', 13);
   p_resources.status_led = &led;
@@ -55,8 +82,8 @@ void initialize_platform(resource_list& p_resources)
   static hal::stm32f1::input_pin input_pin('B', 4);
   p_resources.input_pin = &input_pin;
 
-  static hal::stm32f1::output_pin sda_output_pin('B', 7);
-  static hal::stm32f1::output_pin scl_output_pin('B', 6);
+  static hal::stm32f1::output_pin sda_output_pin('A', 0);
+  static hal::stm32f1::output_pin scl_output_pin('A', 15);
 
   sda_output_pin.configure({
     .resistor = hal::pin_resistor::pull_up,

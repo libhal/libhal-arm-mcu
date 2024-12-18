@@ -25,17 +25,17 @@ namespace hal::lpc40 {
 struct lpc_gpio_t
 {
   /// Offset: 0x000 Determine pin direction (0 == Input, 1 = Output) (R/W)
-  volatile std::uint32_t direction;
+  std::uint32_t volatile direction;
   /// Offset: 0x004 - 0x00C
   std::array<std::uint32_t, 3> reserved0;
   /// Offset: 0x010 (R/W)
-  volatile std::uint32_t mask;
+  std::uint32_t volatile mask;
   /// Offset: 0x014 Pin status and output control (R/W)
-  volatile std::uint32_t pin;
+  std::uint32_t volatile pin;
   /// Offset: 0x018 Write 1 to this to set output pin as 1 (HIGH voltage) (R/W)
-  volatile std::uint32_t set;
+  std::uint32_t volatile set;
   /// Offset: 0x01C Write 1 to this to Set output pin to 0 (LOW voltage) (R/W)
-  volatile std::uint32_t clear;
+  std::uint32_t volatile clear;
 };
 
 inline constexpr intptr_t ahb_base = 0x20080000UL;

@@ -14,13 +14,12 @@
 
 #include <cstdint>
 
-#include <libhal-lpc40/i2c.hpp>
-
-#include <libhal-armcortex/interrupt.hpp>
-#include <libhal-lpc40/clock.hpp>
-#include <libhal-lpc40/constants.hpp>
-#include <libhal-lpc40/interrupt.hpp>
-#include <libhal-lpc40/power.hpp>
+#include <libhal-arm-mcu/interrupt.hpp>
+#include <libhal-arm-mcu/lpc40/clock.hpp>
+#include <libhal-arm-mcu/lpc40/constants.hpp>
+#include <libhal-arm-mcu/lpc40/i2c.hpp>
+#include <libhal-arm-mcu/lpc40/interrupt.hpp>
+#include <libhal-arm-mcu/lpc40/power.hpp>
 #include <libhal-util/bit.hpp>
 #include <libhal-util/i2c.hpp>
 #include <libhal-util/static_callable.hpp>
@@ -179,7 +178,7 @@ void i2c::interrupt()
 }
 
 i2c::i2c(std::uint8_t p_bus_number,
-         const i2c::settings& p_settings,
+         i2c::settings const& p_settings,
          hal::io_waiter& p_waiter)
   : m_waiter(&p_waiter)
 {
@@ -224,7 +223,7 @@ i2c::i2c(std::uint8_t p_bus_number,
     }
   }
 
-  cortex_m::initialize_interrupts<value(irq::max)>();
+  lpc40::initialize_interrupts();
   i2c::driver_configure(p_settings);
 }
 
@@ -233,8 +232,8 @@ i2c::~i2c()
   disable(m_bus);
 }
 
-i2c::i2c(const bus_info& p_bus,
-         const i2c::settings& p_settings,
+i2c::i2c(bus_info const& p_bus,
+         i2c::settings const& p_settings,
          hal::io_waiter& p_waiter)
   : m_bus(p_bus)
   , m_waiter(&p_waiter)
@@ -243,15 +242,15 @@ i2c::i2c(const bus_info& p_bus,
   i2c::driver_configure(p_settings);
 }
 
-void i2c::driver_configure(const settings& p_settings)
+void i2c::driver_configure(settings const& p_settings)
 {
   auto* reg = get_i2c_reg(m_bus.peripheral_id);
 
   // Setup i2c operating frequency
-  const auto input_clock = get_frequency(m_bus.peripheral_id);
-  const auto clock_divider = input_clock / p_settings.clock_rate;
-  const auto high_side_clocks = clock_divider * m_bus.duty_cycle;
-  const auto low_side_clocks = clock_divider - high_side_clocks;
+  auto const input_clock = get_frequency(m_bus.peripheral_id);
+  auto const clock_divider = input_clock / p_settings.clock_rate;
+  auto const high_side_clocks = clock_divider * m_bus.duty_cycle;
+  auto const low_side_clocks = clock_divider - high_side_clocks;
 
   if (low_side_clocks < 1.0f || high_side_clocks < 1.0f) {
     safe_throw(hal::operation_not_supported(this));
@@ -312,7 +311,7 @@ void i2c::setup_interrupt()
 }
 
 void i2c::driver_transaction(hal::byte p_address,
-                             std::span<const hal::byte> p_data_out,
+                             std::span<hal::byte const> p_data_out,
                              std::span<hal::byte> p_data_in,
                              hal::function_ref<hal::timeout_function> p_timeout)
 {

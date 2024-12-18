@@ -1,7 +1,6 @@
 #include <cstdint>
 
 #include <array>
-#include <atomic>
 #include <bit>
 #include <mutex>
 
@@ -10,7 +9,7 @@
 #include <libhal-lpc40/dma.hpp>
 #include <libhal-lpc40/interrupt.hpp>
 #include <libhal-lpc40/power.hpp>
-#include <libhal-soft/atomic_spin_lock.hpp>
+#include <libhal-util/atomic_spin_lock.hpp>
 #include <libhal-util/bit.hpp>
 #include <libhal-util/enum.hpp>
 #include <libhal/functional.hpp>
@@ -66,6 +65,7 @@ constexpr auto transfer_type = hal::bit_mask::from<13, 11>();
 constexpr auto terminal_count_interrupt_mask = hal::bit_mask::from<15>();
 }  // namespace dma_config
 
+// NOLINTNEXTLINE(performance-no-int-to-ptr)
 auto* dma_reg = reinterpret_cast<gpdma*>(dma_reg_address);
 
 constexpr inline std::uintptr_t dma_channel_offset(unsigned p_channel)
@@ -74,13 +74,21 @@ constexpr inline std::uintptr_t dma_channel_offset(unsigned p_channel)
 }
 
 std::array<dma_channel*, dma_channel_count> dma_channel_reg{
+  // NOLINTNEXTLINE(performance-no-int-to-ptr)
   reinterpret_cast<dma_channel*>(dma_reg_address + dma_channel_offset(0)),
+  // NOLINTNEXTLINE(performance-no-int-to-ptr)
   reinterpret_cast<dma_channel*>(dma_reg_address + dma_channel_offset(1)),
+  // NOLINTNEXTLINE(performance-no-int-to-ptr)
   reinterpret_cast<dma_channel*>(dma_reg_address + dma_channel_offset(2)),
+  // NOLINTNEXTLINE(performance-no-int-to-ptr)
   reinterpret_cast<dma_channel*>(dma_reg_address + dma_channel_offset(3)),
+  // NOLINTNEXTLINE(performance-no-int-to-ptr)
   reinterpret_cast<dma_channel*>(dma_reg_address + dma_channel_offset(4)),
+  // NOLINTNEXTLINE(performance-no-int-to-ptr)
   reinterpret_cast<dma_channel*>(dma_reg_address + dma_channel_offset(5)),
+  // NOLINTNEXTLINE(performance-no-int-to-ptr)
   reinterpret_cast<dma_channel*>(dma_reg_address + dma_channel_offset(6)),
+  // NOLINTNEXTLINE(performance-no-int-to-ptr)
   reinterpret_cast<dma_channel*>(dma_reg_address + dma_channel_offset(7)),
 };
 
@@ -123,7 +131,7 @@ void initialize_dma()
   dma_reg->config = 1;
 }
 
-hal::soft::atomic_spin_lock dma_spin_lock;
+hal::atomic_spin_lock dma_spin_lock;
 hal::basic_lock* dma_lock = &dma_spin_lock;
 }  // namespace
 
@@ -132,8 +140,9 @@ void set_dma_lock(hal::basic_lock& p_lock)
   dma_lock = &p_lock;
 }
 
-void setup_dma_transfer(dma const& p_configuration,
-                        hal::callback<void(void)> p_interrupt_callback)
+void setup_dma_transfer(
+  dma const& p_configuration,
+  hal::callback<void(void)> p_interrupt_callback)  // NOLINT
 {
   auto const config_value =
     hal::bit_value()

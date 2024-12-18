@@ -28,13 +28,13 @@ struct uart_reg_t
   union union1
   {
     /// (R/ ) Contains the next received character to be read
-    const volatile uint8_t receive_buffer;
+    uint8_t const volatile receive_buffer;
     /// ( /W) The next character to be transmitted is written here (DLAB = 0)
-    volatile uint8_t transmit_buffer;
+    uint8_t volatile transmit_buffer;
     /// (R/W) Least significant byte of the baud rate divisor value. The full
     /// divisor is used to generate a baud rate from the fractional rate
     /// divider (DLAB = 1)
-    volatile uint8_t divisor_latch_lsb;
+    uint8_t volatile divisor_latch_lsb;
     /// Simply here to expand the size of the first union to 32-bits
     uint32_t reserved0;
   };
@@ -46,10 +46,10 @@ struct uart_reg_t
     /// (R/W) Most significant byte of the baud rate divisor value. The full
     /// divisor is used to generate a baud rate from the fractional rate
     /// divider (DLAB = 1)
-    volatile uint8_t divisor_latch_msb;
+    uint8_t volatile divisor_latch_msb;
     /// (R/W) Contains individual interrupt enable bits for the 7 potential
     /// UART interrupts (DLAB =0).
-    volatile uint32_t interrupt_enable;
+    uint32_t volatile interrupt_enable;
   };
   /// Offset: 0x004 Registers overlapping offset address 0x004
   union2 group2;
@@ -57,39 +57,39 @@ struct uart_reg_t
   union union3
   {
     /// (R/ ) Identifies which interrupt(s) are pending.
-    const volatile uint32_t interrupt_id;
+    uint32_t const volatile interrupt_id;
     /// ( /W) Controls UART FIFO usage and modes.
-    volatile uint8_t fifo_control;
+    uint8_t volatile fifo_control;
   };
   /// Offset: 0x008 Registers overlapping offset address 0x000
   union3 group3;
   /// Offset: 0x00C (R/W) Contains controls for frame formatting and break
   /// generation
-  volatile uint8_t line_control;
+  uint8_t volatile line_control;
   /// reserved 1
   std::array<uint8_t, 7> reserved1;
   /// Offset: 0x014 (R/ ) Contains flags for transmit and receive status,
   /// including line errors
-  const volatile uint8_t line_status;
+  uint8_t const volatile line_status;
   /// reserved 2
   std::array<uint8_t, 7> reserved2;
   /// Offset: 0x01C (R/W) 8-bit temporary storage for software
-  volatile uint8_t scratch_pad;
+  uint8_t volatile scratch_pad;
   /// reserved 3
   std::array<uint8_t, 3> reserved3;
   /// Offset: 0x020 (R/W) Contains controls for the auto-baud feature.
-  volatile uint32_t autobaud_control;
+  uint32_t volatile autobaud_control;
   /// Offset:
-  volatile uint8_t icr;
+  uint8_t volatile icr;
   /// reserved 4
   std::array<uint8_t, 3> reserved4;
   /// Offset: 0x028 (R/W) Generates a clock input for the baud rate divider.
-  volatile uint8_t fractional_divider;
+  uint8_t volatile fractional_divider;
   /// reserved 5
   std::array<uint8_t, 7> reserved5;
   /// Offset: 0x030 (R/W) Turns off UART transmitter for use with software
   /// flow control.
-  volatile uint8_t transmit_enable;
+  uint8_t volatile transmit_enable;
 };
 
 /// Line control bit fields

@@ -29,29 +29,36 @@
 
 #include <libhal/output_pin.hpp>
 #include <libhal/units.hpp>
+
 #include <resource_list.hpp>
 
 constexpr bool use_bit_bang_spi = false;
 
-resource_list initialize_platform()
+void initialize_platform(resource_list& p_resources)
 {
   using namespace hal::literals;
+  p_resources.reset = []() { hal::cortex_m::reset(); };
 
   // Set the MCU to the maximum clock speed
   hal::stm32f1::maximum_speed_using_internal_oscillator();
 
   auto cpu_frequency = hal::stm32f1::frequency(hal::stm32f1::peripheral::cpu);
   static hal::cortex_m::dwt_counter steady_clock(cpu_frequency);
+  p_resources.clock = &steady_clock;
+
   static hal::stm32f1::uart uart1(hal::port<1>, hal::buffer<128>);
+  p_resources.console = &uart1;
+
   static hal::stm32f1::can can({ .baud_rate = 1'000'000 },
                                hal::stm32f1::can_pins::pb9_pb8);
-  static hal::stm32f1::output_pin led('C', 13);
+  p_resources.can = &can;
 
-  // TODO: replace with actual ADC
-  static hal::soft::inert_adc adc(0.5);
+  static hal::stm32f1::output_pin led('C', 13);
+  p_resources.status_led = &led;
 
   // pin G0 on the STM micromod is port B, pin 4
   static hal::stm32f1::input_pin input_pin('B', 4);
+  p_resources.input_pin = &input_pin;
 
   static hal::stm32f1::output_pin sda_output_pin('B', 7);
   static hal::stm32f1::output_pin scl_output_pin('B', 6);
@@ -71,6 +78,7 @@ resource_list initialize_platform()
   static hal::bit_bang_i2c bit_bang_i2c(bit_bang_pins, steady_clock);
 
   static hal::stm32f1::output_pin spi_chip_select('A', 4);
+  p_resources.spi_chip_select = &spi_chip_select;
   static hal::stm32f1::output_pin sck('A', 5);
   static hal::stm32f1::output_pin copi('A', 6);
   static hal::stm32f1::input_pin cipo('A', 7);
@@ -100,17 +108,5 @@ resource_list initialize_platform()
                                   });
     spi = &spi1;
   }
-
-  return {
-    .reset = []() { hal::cortex_m::reset(); },
-    .console = &uart1,
-    .status_led = &led,
-    .clock = &steady_clock,
-    .can = &can,
-    .adc = &adc,
-    .input_pin = &input_pin,
-    .i2c = &bit_bang_i2c,
-    .spi = spi,
-    .spi_chip_select = &spi_chip_select,
-  };
+  p_resources.spi = spi;
 }

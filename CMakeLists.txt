@@ -29,6 +29,7 @@ libhal_test_and_make_library(
   src/lpc40/adc.cpp
   src/lpc40/can.cpp
   src/lpc40/clock.cpp
+  src/lpc40/dac.cpp
   src/lpc40/dma.cpp
   src/lpc40/i2c.cpp
   src/lpc40/input_pin.cpp
@@ -70,6 +71,7 @@ libhal_test_and_make_library(
   src/stm32f411/pin.cpp
   src/stm32f411/power.cpp
   src/stm32f411/spi.cpp
+  src/stm32f411/clock.cpp
 
   # stm32f40
   src/stm32f40/output_pin.cpp
@@ -106,14 +108,12 @@ libhal_test_and_make_library(
   PACKAGES
   libhal
   libhal-util
-  libhal-soft
   ring-span-lite
   scope-lite
 
   LINK_LIBRARIES
   libhal::libhal
   libhal::util
-  libhal::soft
   nonstd::ring-span-lite
   nonstd::scope-lite
 )

@@ -212,8 +212,8 @@ void dma_spi::driver_transfer(std::span<hal::byte const> p_data_out,
     .source = &reg.dr,
     .destination = p_data_in.data(),
     .length = min,
-    .source_increment = 0,
-    .destination_increment = 1,
+    .source_increment = false,
+    .destination_increment = true,
     .transfer_type = dma_transfer_type::peripheral_to_memory,
     .source_transfer_width = dma_transfer_width::bit_8,
     .destination_transfer_width = dma_transfer_width::bit_8,
@@ -227,8 +227,8 @@ void dma_spi::driver_transfer(std::span<hal::byte const> p_data_out,
     .source = p_data_out.data(),
     .destination = &reg.dr,
     .length = min,
-    .source_increment = 1,
-    .destination_increment = 0,
+    .source_increment = true,
+    .destination_increment = false,
     .transfer_type = dma_transfer_type ::memory_to_peripheral,
     .source_transfer_width = dma_transfer_width::bit_8,
     .destination_transfer_width = dma_transfer_width::bit_8,
@@ -285,7 +285,7 @@ void dma_spi::driver_transfer(std::span<hal::byte const> p_data_out,
 
     transmit_configuration.source = &p_filler;
     transmit_configuration.length = p_data_in.size();
-    transmit_configuration.source_increment = 0;
+    transmit_configuration.source_increment = false;
     hal::lpc40::setup_dma_transfer(transmit_configuration,
                                    transmit_completion_handler);
   } else {

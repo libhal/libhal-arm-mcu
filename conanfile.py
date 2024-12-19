@@ -54,7 +54,8 @@ class libhal_arm_mcu_conan(ConanFile):
     def requirements(self):
         bootstrap = self.python_requires["libhal-bootstrap"]
         bootstrap.module.add_library_requirements(
-            self, override_libhal_util_version="5.3.0")
+            self, override_libhal_util_version="5.3.0",
+            override_libhal_version="4.7.0")
 
         self.requires("ring-span-lite/[^0.7.0]", transitive_headers=True)
         self.requires("scope-lite/0.2.0")

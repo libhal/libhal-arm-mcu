@@ -24,9 +24,8 @@
 #include <libhal-arm-mcu/system_control.hpp>
 #include <libhal-util/bit_bang_i2c.hpp>
 #include <libhal-util/bit_bang_spi.hpp>
+#include <libhal-util/inert_drivers/inert_adc.hpp>
 #include <libhal-util/steady_clock.hpp>
-
-#include <libhal/output_pin.hpp>
 #include <libhal/units.hpp>
 
 #include <resource_list.hpp>

@@ -40,7 +40,7 @@ void initialize_platform(resource_list& p_resources)
   // Set the MCU to the maximum clock speed
   hal::stm32f1::maximum_speed_using_internal_oscillator();
 
-  auto cpu_frequency = hal::stm32f1::frequency(hal::stm32f1::peripheral::cpu);
+  auto cpu_frequency = hal ::stm32f1::frequency(hal::stm32f1::peripheral::cpu);
   static hal::cortex_m::dwt_counter steady_clock(cpu_frequency);
   p_resources.clock = &steady_clock;
 
@@ -67,6 +67,7 @@ void initialize_platform(resource_list& p_resources)
   mask_id_filters_x2.filter[0].allow({ { .id = 0, .mask = 0 } });
 
   static hal::stm32f1::output_pin led('C', 13);
+
   p_resources.status_led = &led;
 
   // pin G0 on the STM micromod is port B, pin 4

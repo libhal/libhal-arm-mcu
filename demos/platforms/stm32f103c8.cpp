@@ -41,7 +41,7 @@ void initialize_platform(resource_list& p_resources)
   // Set the MCU to the maximum clock speed
   hal::stm32f1::maximum_speed_using_internal_oscillator();
 
-  auto cpu_frequency = hal ::stm32f1::frequency(hal::stm32f1::peripheral::cpu);
+  auto cpu_frequency = hal::stm32f1::frequency(hal::stm32f1::peripheral::cpu);
   static hal::cortex_m::dwt_counter steady_clock(cpu_frequency);
   p_resources.clock = &steady_clock;
 

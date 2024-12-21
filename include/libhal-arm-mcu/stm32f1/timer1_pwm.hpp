@@ -15,10 +15,10 @@
 #pragma once
 
 #include <cstdint>
+
+#include <libhal/pwm.hpp>
+
 namespace hal::stm32f1 {
-/**
- * @brief Register map ofr the stm32f1 PWM (TIM1 and TIM8)
- */
 struct pwm_reg_t
 {
   /// Offset: 0x00 Control Register (R/W)
@@ -62,9 +62,39 @@ struct pwm_reg_t
   /// Offset: 0x4C DMA address for full transfer
   std::uint32_t volatile dma_address_register;
 };
+
 inline pwm_reg_t* pwm_timer8 = reinterpret_cast<pwm_reg_t*>(
-  0x4001'3400);  // TIM8 timer (Does not exist on stm32f1? maybe?)
+  0x4001'3400);  // TIM8 timer (Does not exist on stm32f103c8 chip)
 inline pwm_reg_t* pwm_timer1 =
   reinterpret_cast<pwm_reg_t*>(0x4001'2C00);  // TIM1 timer
 
+class timer1_pwm final : public hal::pwm
+{
+public:
+  /**
+   * @brief Default pins for pwm tim1 channels
+   */
+  enum class pwm_pins : std::uint8_t
+  {
+    pa8 = 0b00,
+    pa9 = 0b01,
+    pa10 = 0b10,
+    pa11 = 0b11,
+  };
+  timer1_pwm(pwm_pins pwm_pin);
+
+  timer1_pwm(timer1_pwm const& p_other) = delete;
+  timer1_pwm& operator=(timer1_pwm const& p_other) = delete;
+  timer1_pwm(timer1_pwm&& p_other) noexcept = delete;
+  timer1_pwm& operator=(timer1_pwm&& p_other) noexcept = delete;
+  virtual ~timer1_pwm() = default;
+
+private:
+  void driver_frequency(hertz p_frequency) override;
+  void driver_duty_cycle(float p_duty_cycle) override;
+
+  pwm_pins m_pin;
+  uint8_t m_channel;
+  uint32_t volatile* m_compare_register_addr;
+};
 }  // namespace hal::stm32f1

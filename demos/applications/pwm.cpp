@@ -26,11 +26,11 @@ void application(resource_list& p_map)
   auto& serial = *p_map.console.value();
   auto& clock = *p_map.clock.value();
 
-  hal::print(serial, "PWM starting\n");
+  hal::print(serial, "PWM Application starting...\n");
 
   while (true) {
 
-    hal::print(serial, "Setting 1 kHz\n");
+    hal::print(serial, "Setting PWM frequency to 1kHz\n");
     pwm.frequency(1.0_kHz);
 
     for (unsigned iteration = 0; iteration <= 100; iteration += 1) {
@@ -44,7 +44,7 @@ void application(resource_list& p_map)
     for (unsigned iteration = 0; iteration < 100; iteration++) {
       auto frequency = 100.0_Hz * (static_cast<float>(iteration) * 10);
       pwm.frequency(frequency);
-      hal::delay(clock, 100ms);
+      hal::delay(clock, 10ms);
     }
   }
 }

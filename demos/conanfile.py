@@ -18,11 +18,11 @@ from conan import ConanFile
 
 
 class demos(ConanFile):
-    python_requires = "libhal-bootstrap/[^4.0.0]"
+    python_requires = "libhal-bootstrap/[^4.1.0]"
     python_requires_extend = "libhal-bootstrap.demo"
 
     def requirements(self):
         bootstrap = self.python_requires["libhal-bootstrap"]
-        self.requires("libhal-arm-mcu/[^1.4.0 || latest]")
+        self.requires("libhal-arm-mcu/[^1.5.0 || latest]")
         self.requires("minimp3/cci.20211201")
         bootstrap.module.add_demo_requirements(self, is_platform=True)

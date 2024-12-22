@@ -249,21 +249,21 @@ can_data_registers_t convert_message_to_stm_can(hal::can_message const& message)
 
   uint32_t frame_id = 0;
 
-  if (message.extended()) {
+  if (message.extended) {
     frame_id =
       bit_value(0U)
         .insert<mailbox_identifier::transmit_mailbox_request>(true)
-        .insert<mailbox_identifier::remote_request>(message.remote_request())
+        .insert<mailbox_identifier::remote_request>(message.remote_request)
         .set(mailbox_identifier::identifier_type)
-        .insert<mailbox_identifier::extended_identifier>(message.id())
+        .insert<mailbox_identifier::extended_identifier>(message.id)
         .to<std::uint32_t>();
   } else {
     frame_id =
       bit_value(0U)
         .insert<mailbox_identifier::transmit_mailbox_request>(true)
-        .insert<mailbox_identifier::remote_request>(message.remote_request())
+        .insert<mailbox_identifier::remote_request>(message.remote_request)
         .clear<mailbox_identifier::identifier_type>()
-        .insert<mailbox_identifier::standard_identifier>(message.id())
+        .insert<mailbox_identifier::standard_identifier>(message.id)
         .to<std::uint32_t>();
   }
 
@@ -441,15 +441,15 @@ can_message read_receive_mailbox(v2)
   bool const is_extended =
     format == value(mailbox_identifier::id_type::extended);
 
-  message.remote_request(is_remote_request);
+  message.remote_request = is_remote_request;
   message.length = static_cast<std::uint8_t>(length);
-  message.extended(is_extended);
+  message.extended = is_extended;
 
   // Get the frame ID
   if (is_extended) {
-    message.id(bit_extract<mailbox_identifier::extended_identifier>(id));
+    message.id = bit_extract<mailbox_identifier::extended_identifier>(id);
   } else {
-    message.id(bit_extract<mailbox_identifier::standard_identifier>(id));
+    message.id = bit_extract<mailbox_identifier::standard_identifier>(id);
   }
 
   auto low_read_data = can1_reg->fifo_mailbox[value(fifo_select)].RDLR;

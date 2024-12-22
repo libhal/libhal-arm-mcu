@@ -25,7 +25,7 @@ void print_can_message(hal::serial& p_console,
                   "Received Message from ID: 0x%lX, length: %u \n"
                   "payload = [ 0x%02X, 0x%02X, 0x%02X, 0x%02X, 0x%02X, "
                   "0x%02X, 0x%02X, 0x%02X ]\n",
-                  p_message.id(),
+                  p_message.id,
                   p_message.length,
                   p_message.payload[0],
                   p_message.payload[1],
@@ -64,25 +64,38 @@ void application(resource_list& p_map)
 
   while (true) {
     using namespace std::chrono_literals;
-    hal::can_message standard_message;
-
-    standard_message.id(0x112).extended(false).remote_request(false);
-    standard_message.length = 8;
-    standard_message.payload = {
-      0xAA, 0xBB, 0xCC, 0xDD, 0xDE, 0xAD, 0xBE, 0xEF,
+    hal::can_message standard_message {
+      .id=0x112,
+      .extended=false,
+      .remote_request=false,
+      .length = 8,
+      .payload = {
+        0xAA, 0xBB, 0xCC, 0xDD, 0xDE, 0xAD, 0xBE, 0xEF,
+      },
     };
 
-    hal::can_message standard_message2 = standard_message;
-    standard_message2.id(0x333);
-    standard_message2.length = 1;
+    hal::can_message standard_message2{
+      .id = 0x333,
+      .length = 0,
+    };
 
-    hal::can_message extended_message = standard_message;
-    extended_message.extended(true).id(0x0123'4567);
-    extended_message.length = 3;
+    hal::can_message extended_message{
+      .id = 0x0123'4567,
+      .extended = true,
+      .length = 3,
+      .payload = {
+        0xAA, 0xBB, 0xCC, 0xDD, 0xDE, 0xAD, 0xBE, 0xEF,
+      },
+    };
 
-    hal::can_message extended_message2 = standard_message;
-    extended_message2.extended(true).id(0x0222'0005);
-    extended_message.length = 5;
+    hal::can_message extended_message2 {
+      .id = 0x0222'0005,
+      .extended = true,
+      .length = 3,
+      .payload = {
+        0xAA, 0xBB, 0xCC, 0xDD, 0xDE, 0xAD, 0xBE, 0xEF,
+      },
+    };
 
     hal::print(console, "Sending payload(s)...\n");
 

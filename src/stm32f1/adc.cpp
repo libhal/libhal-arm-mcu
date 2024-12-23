@@ -222,7 +222,7 @@ void setup(adc::pins const& p_pin)
 {
   auto const adc_frequency = frequency(hal::stm32f1::peripheral::adc1);
   if (adc_frequency > 14.0_MHz) {
-    hal::safe_throw(hal::operation_not_supported(&adc_frequency));
+    hal::safe_throw(hal::operation_not_supported(nullptr));
   }
 
   // Power on adc clock
@@ -251,7 +251,8 @@ void setup(adc::pins const& p_pin)
     hal::bit_modify(adc_reg->control_2)
       .set<adc_control_register_2::ad_converter_on>();
 
-    // Start adc calibration
+    // Start adc calibration. ADC must have been in power-on state for a minimum
+    // of 2 clock cycles before starting calibration.
     hal::bit_modify(adc_reg->control_2)
       .set<adc_control_register_2::ad_calibration>();
 
@@ -285,8 +286,8 @@ float adc::driver_read()
          0) {
   }
 
-  auto const full_scale_max = bit_limits<12, size_t>::max();
-  auto const full_scale_float = static_cast<float>(full_scale_max);
+  auto constexpr full_scale_max = bit_limits<12, size_t>::max();
+  auto constexpr full_scale_float = static_cast<float>(full_scale_max);
   // Read sample from peripheral memory
   auto const sample_integer =
     hal::bit_extract<adc_regular_data_register::regular_data>(

@@ -14,8 +14,6 @@
 
 #pragma once
 
-#include <cstdint>
-
 #include <libhal/adc.hpp>
 #include <libhal/initializers.hpp>
 #include <libhal/units.hpp>
@@ -68,8 +66,8 @@ public:
   virtual ~adc() = default;
 
 private:
-  pins const m_pin;
-
   float driver_read() override;
+
+  pins m_pin;
 };
 }  // namespace hal::stm32f1

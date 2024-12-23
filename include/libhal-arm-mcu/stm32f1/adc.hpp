@@ -4,7 +4,7 @@
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//      http://www.apache.org/licenses/LIC`ENSE-2.0
+//      http://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
@@ -28,53 +28,38 @@ namespace hal::stm32f1 {
 class adc final : public hal::adc
 {
 public:
-  /// Channel specific information
-  struct channel
+  /**
+   * @brief Defines the pins which can be used for analog input for the adc
+   */
+  enum class pins : hal::u8
   {
-    /// ADC port
-    std::uint8_t port;
-    /// ADC pin
-    std::uint8_t pin;
-    /// Channel data index
-    uint8_t index;
+    pa0 = 0,
+    pa1 = 1,
+    pa2 = 2,
+    pa3 = 3,
+    pa4 = 4,
+    pa5 = 5,
+    pa6 = 6,
+    pa7 = 7,
+    pb0 = 8,
+    pb1 = 9,
+    pc0 = 10,
+    pc1 = 11,
+    pc2 = 12,
+    pc3 = 13,
+    pc4 = 14,
+    pc5 = 15,
   };
 
   /**
-   * @brief Get a predefined adc channel
+   * @brief Construct an adc object based on the passed in pin. Note: Each adc
+   * object is tied to one pin, so to add more pins you need to create more
+   * objects.
    *
-   * - ADC channel 0 is PA0
-   * - ADC channel 1 is PA1
-   * - ADC channel 2 is PA2
-   * - ADC channel 3 is PA3
-   * - ADC channel 4 is PA4
-   * - ADC channel 5 is PA5
-   * - ADC channel 6 is PA6
-   * - ADC channel 7 is PA7
-   * - ADC channel 8 is PB0
-   * - ADC channel 9 is PB1
-   * - ADC channel 10 is PC0
-   * - ADC channel 11 is PC1
-   * - ADC channel 12 is PC2
-   * - ADC channel 13 is PC3
-   * - ADC channel 14 is PC4
-   * - ADC channel 15 is PC5
-   *
-   * @param p_channel - which adc channel to use
+   * @param p_pin - Which pin to use. Note: The enum members in "pins" are the
+   * only pins capable of analog input for the ADC.
    */
-  adc(hal::channel_param auto p_channel)
-    : adc(get_predefined_channel_info(static_cast<std::uint8_t>(p_channel())))
-  {
-    static_assert(0 <= p_channel() && p_channel() <= 15,
-                  "Available ADC channels are from 0 to 15");
-  }
-
-  /**
-   * @brief Construct a custom adc object based on the passed in channel
-   * information.
-   *
-   * @param p_channel - Which adc channel to use
-   */
-  adc(channel const& p_channel);
+  adc(pins const& p_pin);
 
   adc(adc const& p_other) = delete;
   adc& operator=(adc const& p_other) = delete;
@@ -83,7 +68,8 @@ public:
   virtual ~adc() = default;
 
 private:
-  channel get_predefined_channel_info(std::uint8_t p_channel);
+  pins const m_pin;
+
   float driver_read() override;
 };
 }  // namespace hal::stm32f1

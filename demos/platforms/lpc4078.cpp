@@ -58,9 +58,9 @@ void initialize_platform(resource_list& p_resources)
 
   static hal::lpc40::can can(2,
                              hal::can::settings{
-                               .baud_rate = 1.0_MHz,
+                               .baud_rate = 1.0_kHz,
                              });
-  p_resources.can = &can;
+  // p_resources.can = &can;
 
   static hal::lpc40::adc adc4(hal::channel<4>);
   p_resources.adc = &adc4;

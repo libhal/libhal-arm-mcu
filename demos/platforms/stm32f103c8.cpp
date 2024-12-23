@@ -23,11 +23,14 @@
 #include <libhal-arm-mcu/stm32f1/uart.hpp>
 #include <libhal-arm-mcu/system_control.hpp>
 #include <libhal-util/bit_bang_i2c.hpp>
+#include <libhal-util/bit_bang_spi.hpp>
 #include <libhal-util/inert_drivers/inert_adc.hpp>
-#include <libhal/output_pin.hpp>
+#include <libhal-util/steady_clock.hpp>
 #include <libhal/units.hpp>
 
 #include <resource_list.hpp>
+
+constexpr bool use_bit_bang_spi = false;
 
 void initialize_platform(resource_list& p_resources)
 {
@@ -44,9 +47,24 @@ void initialize_platform(resource_list& p_resources)
   static hal::stm32f1::uart uart1(hal::port<1>, hal::buffer<128>);
   p_resources.console = &uart1;
 
-  static hal::stm32f1::can can({ .baud_rate = 1'000'000 },
-                               hal::stm32f1::can_pins::pb9_pb8);
-  p_resources.can = &can;
+  static hal::stm32f1::can_peripheral_manager can(
+    100_kHz, hal::stm32f1::can_pins::pb9_pb8);
+
+  can.enable_self_test(true);
+
+  static std::array<hal::can_message, 8> receive_buffer{};
+  static auto can_transceiver = can.acquire_transceiver(receive_buffer);
+  p_resources.can_transceiver = &can_transceiver;
+
+  static auto can_bus_manager = can.acquire_bus_manager();
+  p_resources.can_bus_manager = &can_bus_manager;
+
+  static auto can_interrupt = can.acquire_interrupt();
+  p_resources.can_interrupt = &can_interrupt;
+
+  // Allow all messages
+  static auto mask_id_filters_x2 = can.acquire_mask_filter();
+  mask_id_filters_x2.filter[0].allow({ { .id = 0, .mask = 0 } });
 
   static hal::stm32f1::output_pin led('C', 13);
   p_resources.status_led = &led;
@@ -55,8 +73,8 @@ void initialize_platform(resource_list& p_resources)
   static hal::stm32f1::input_pin input_pin('B', 4);
   p_resources.input_pin = &input_pin;
 
-  static hal::stm32f1::output_pin sda_output_pin('B', 7);
-  static hal::stm32f1::output_pin scl_output_pin('B', 6);
+  static hal::stm32f1::output_pin sda_output_pin('A', 0);
+  static hal::stm32f1::output_pin scl_output_pin('A', 15);
 
   sda_output_pin.configure({
     .resistor = hal::pin_resistor::pull_up,
@@ -73,14 +91,36 @@ void initialize_platform(resource_list& p_resources)
   static hal::bit_bang_i2c bit_bang_i2c(bit_bang_pins, steady_clock);
   p_resources.i2c = &bit_bang_i2c;
 
-  static hal::stm32f1::spi spi1(hal::bus<1>,
-                                {
-                                  .clock_rate = 250.0_kHz,
-                                  .clock_polarity = false,
-                                  .clock_phase = false,
-                                });
-  p_resources.spi = &spi1;
-
   static hal::stm32f1::output_pin spi_chip_select('A', 4);
   p_resources.spi_chip_select = &spi_chip_select;
+  static hal::stm32f1::output_pin sck('A', 5);
+  static hal::stm32f1::output_pin copi('A', 6);
+  static hal::stm32f1::input_pin cipo('A', 7);
+
+  static hal::bit_bang_spi::pins bit_bang_spi_pins{ .sck = &sck,
+                                                    .copi = &copi,
+                                                    .cipo = &cipo };
+
+  static hal::spi::settings bit_bang_spi_settings{
+    .clock_rate = 250.0_kHz,
+    .clock_polarity = false,
+    .clock_phase = false,
+  };
+
+  hal::spi* spi = nullptr;
+
+  if constexpr (use_bit_bang_spi) {
+    static hal::bit_bang_spi bit_bang_spi(
+      bit_bang_spi_pins, steady_clock, bit_bang_spi_settings);
+    spi = &bit_bang_spi;
+  } else {
+    static hal::stm32f1::spi spi1(hal::bus<1>,
+                                  {
+                                    .clock_rate = 250.0_kHz,
+                                    .clock_polarity = false,
+                                    .clock_phase = false,
+                                  });
+    spi = &spi1;
+  }
+  p_resources.spi = spi;
 }

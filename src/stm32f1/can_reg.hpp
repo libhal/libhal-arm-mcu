@@ -1,3 +1,17 @@
+// Copyright 2024 Khalil Estell
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 #pragma once
 
 #include <cstdint>
@@ -56,7 +70,7 @@ struct can_reg_t
   std::uint32_t volatile FA1R;
   std::uint32_t volatile reserved5[8];
   // Limited to only 14 on connectivity line devices
-  can_filter_register_t sFilterRegister[28];
+  can_filter_register_t filter_registers[28];
 };
 
 inline auto* can1_reg = reinterpret_cast<can_reg_t*>(0x4000'6400);
@@ -223,6 +237,13 @@ struct interrupt_enable_register  // NOLINT
   static constexpr auto sleep = bit_mask::from<17>();
 };
 
+/// Strut holding the masks for the error status register
+struct error_status_register
+{
+  /// Set to 1 if the device has been put in to the bus off state
+  static constexpr auto bus_off = bit_mask::from<2>();
+};
+
 /// This struct holds the bitmap for the mailbox identifier.
 /// It is represents 32-bit register: CAN_TIxR(0 - 2) (pg. 685).
 /// It is represents 32-bit register: CAN_RIxR(0 - 1) (pg. 688).
@@ -316,18 +337,6 @@ enum class filter_scale : std::uint8_t
   single_32_bit_scale = 1
 };
 
-/// This enumeration labels the selected FIFO.
-/// Used with CAN FIFO Assignment Register (CAN_FFA1R) (pg. 693).
-enum class fifo_assignment : std::uint8_t
-{
-  /// FIFO 1
-  fifo1 = 0,
-  /// FIFO 2
-  fifo2 = 1,
-  /// No FIFO selected
-  fifo_none = 4
-};
-
 /// This enumeration labels the activation state of a filter
 /// Used with CAN Filter Activation Register (CAN_FFA1R) (pg. 693)
 enum class filter_activation : std::uint8_t
@@ -336,5 +345,29 @@ enum class filter_activation : std::uint8_t
   not_active = 0,
   /// Enable fIlter
   active = 1
+};
+
+struct can_id
+{
+  static constexpr auto standard_id = hal::bit_mask::from(10, 0);
+  static constexpr auto standard_id_part = hal::bit_mask::from(29, 0);
+};
+
+struct standard_filter_bank
+{
+  static constexpr auto standard_id1 = hal::bit_mask::from(5, 15);
+  static constexpr auto rtr1 = hal::bit_mask::from(4);
+  static constexpr auto id_extension1 = hal::bit_mask::from(3);
+  static constexpr auto extended_id1 = hal::bit_mask::from(0, 2);
+
+  static constexpr auto sub_bank1 = hal::bit_mask::from(0, 15);
+  static constexpr auto sub_bank2 = hal::bit_mask::from(16, 31);
+};
+struct extended_filter_bank
+{
+  static constexpr auto id = hal::bit_mask::from(3, 31);
+  static constexpr auto id_extension = hal::bit_mask::from(2);
+  static constexpr auto rtr = hal::bit_mask::from(1);
+  static constexpr auto reserved = hal::bit_mask::from(0);
 };
 }  // namespace hal::stm32f1

@@ -64,6 +64,7 @@ libhal_test_and_make_library(
   src/stm32f1/uart_reg.hpp
   src/stm32f1/uart.cpp
   src/stm32f1/spi.cpp
+  src/stm32f1/adc.cpp
 
   # stm32f411
   src/stm32f411/input_pin.cpp
@@ -100,6 +101,7 @@ libhal_test_and_make_library(
   tests/stm32f1/output_pin.test.cpp
   tests/stm32f1/uart.test.cpp
   tests/stm32f1/spi.test.cpp
+  tests/stm32f1/adc.test.cpp
 
   # stm32f411
   tests/stm32f411/output_pin.test.cpp

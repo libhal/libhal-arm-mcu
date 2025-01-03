@@ -675,7 +675,7 @@ can_peripheral_manager::can_peripheral_manager(hal::u32 p_baud_rate,
 
   initialize_interrupts();
 
-  // Enable interrupt service routine.
+  // Setup interrupt service routines
   cortex_m::enable_interrupt(irq::can1_rx0, handler_circular_buffer_interrupt);
   cortex_m::enable_interrupt(irq::can1_rx1, handler_circular_buffer_interrupt);
   cortex_m::enable_interrupt(irq::can1_sce, handler_status_change_interrupt);
@@ -778,6 +778,7 @@ void can_peripheral_manager::bus_manager::driver_baud_rate(hal::u32 p_hertz)
   nonstd::scope_exit on_exit(&exit_initialization);
 
   configure_baud_rate(p_hertz);
+  current_baud_rate = p_hertz;
 }
 
 void can_peripheral_manager::bus_manager::driver_filter_mode(accept)

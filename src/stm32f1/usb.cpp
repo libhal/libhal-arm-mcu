@@ -11,15 +11,23 @@
 #include <libhal-util/static_callable.hpp>
 #include <libhal-util/steady_clock.hpp>
 #include <libhal/error.hpp>
+#include <libhal/output_pin.hpp>
 
 #include "libhal-arm-mcu/stm32f1/pin.hpp"
 #include "power.hpp"
 #include "stm32f1/pin.hpp"
-#include "stm32f1/uart_reg.hpp"
 
 namespace hal::stm32f1 {
 
 namespace {
+
+enum class endpoint_type : std::uint8_t
+{
+  bulk = 0b00,
+  control = 0b01,
+  iso = 0b10,
+  interrupt = 0b11,
+};
 
 struct control  // NOLINT
 {
@@ -162,12 +170,23 @@ constexpr std::uint16_t crc_tail = 2;
 constexpr std::uint16_t rx_endpoint_count_mask =
   hal::bit_value(0U)
     .clear<block_table::block_size>()
-    .insert<block_table::number_of_blocks>(8U)
+    .insert<block_table::number_of_blocks>(9U)
     .to<std::uint16_t>();
 
 std::span<std::uint8_t> usb_packet_buffer_sram()
 {
   return { std::bit_cast<std::uint8_t*>(0x4000'6000), packet_buffer_sram_size };
+}
+
+std::span<hal::u32> usb_packet_buffer_sram_u32()
+{
+  // NOTE: dividing by the sizeof(hal::u16) is not a mistake. The memory is u16
+  // addressable by the USB peripheral but u32 accessible/aligned for the
+  // processor. This means that each u16 has padding of an additional u16 that
+  // goes nowhere. The number of u16 blocks in this memory region is equal to
+  // the u32 blocks and thats why we do the division here.
+  return { std::bit_cast<hal::u32*>(0x4000'6000),
+           packet_buffer_sram_size / sizeof(hal::u16) };
 }
 
 constexpr std::uint16_t tx_endpoint_memory_address(std::size_t p_endpoint)
@@ -182,49 +201,6 @@ constexpr std::uint16_t rx_endpoint_memory_address(std::size_t p_endpoint)
   return buffer_descriptor_table_end + offset;
 }
 
-#if 0
-struct buffer_descriptor_block
-{
-  static constexpr auto count_mask = hal::bit_mask::from<16, 31>();
-  static constexpr auto address = hal::bit_mask::from<0, 15>();
-
-  std::uint32_t tx_address_and_count;
-  std::uint32_t rx_address_and_count;
-
-  void setup_descriptor_for(std::uint8_t p_endpoint)
-  {
-    std::uint32_t result = 0;
-    result = tx_endpoint_memory_address(p_endpoint) << 16;
-    result |= fixed_endpoint_size;
-    tx_address_and_count = result;
-
-    result = rx_endpoint_memory_address(p_endpoint) << 16;
-    result |= rx_endpoint_count_mask;
-    rx_address_and_count = result;
-  }
-
-  std::uint16_t bytes_received()
-  {
-    std::uint32_t count_reg =
-      hal::bit_extract<count_mask>(rx_address_and_count);
-
-    auto const count = hal::bit_extract<block_table::count>(count_reg);
-    auto const bytes_received = count - crc_tail;
-
-    return bytes_received;
-  }
-
-  std::uint16_t rx_address_offset()
-  {
-    return rx_address_and_count & 0xFFFF;
-  }
-
-  void set_count_tx(std::uint16_t p_transfer_size)
-  {
-    bit_modify(tx_address_and_count).insert<count_mask>(p_transfer_size);
-  }
-};
-#else
 struct buffer_descriptor_block
 {
   std::uint32_t tx_address;
@@ -258,12 +234,16 @@ struct buffer_descriptor_block
     return tx_address;
   }
 
+  std::span<hal::u32> tx_span()
+  {
+    return usb_packet_buffer_sram_u32().subspan(tx_address / sizeof(u16));
+  }
+
   void set_count_tx(std::uint16_t p_transfer_size)
   {
     tx_count = p_transfer_size;
   }
 };
-#endif
 
 buffer_descriptor_block& endpoint_descriptor_block(std::size_t p_endpoint)
 {
@@ -288,6 +268,14 @@ enum class stat : std::uint8_t
   stall = 0b01,
   nak = 0b10,
   valid = 0b11,
+};
+
+/// Same stat value for rx and tex
+enum class dtog : std::uint8_t
+{
+  // all reception requests addressed to this endpoint are ignored.
+  tog0 = 0b0,
+  tog1 = 0b1,
 };
 
 template<hal::bit_mask mask>
@@ -320,18 +308,143 @@ void set_tx_stat(std::size_t p_endpoint, stat p_stat)
   set_endpoint_register_toggle<endpoint::status_tx>(p_endpoint, p_stat);
 }
 
-void set_endpoint_address_and_type(std::size_t p_endpoint, usb::endpoint p_type)
+[[maybe_unused]] void set_endpoint_address_and_type(std::size_t p_endpoint,
+                                                    endpoint_type p_type)
 {
   auto& endpoint_register = reg().EP[p_endpoint].EPR;
   auto const reg_value = endpoint_register;
   auto const masked_endpoint_reg = reg_value & endpoint_invariant_mask;
   auto const final_reg_value = hal::bit_value(masked_endpoint_reg)
                                  .insert<endpoint::address>(p_endpoint)
+                                 .insert<endpoint::kind>(0U)
                                  .insert<endpoint::type>(hal::value(p_type))
-                                 .template to<std::uint32_t>();
+                                 .to<std::uint32_t>();
   endpoint_register = final_reg_value;
 }
+
+template<hal::bit_mask mask>
+void clear_correct_transfer_for(std::uint8_t endpoint_id)
+{
+  auto& endpoint_reg = reg().EP[endpoint_id].EPR;
+  auto const endpoint_value = endpoint_reg;
+  auto masked_value = endpoint_value & endpoint_invariant_mask;
+  auto const masked_value_with_transfer_cleared =
+    hal::bit_value(masked_value).clear(mask).to<hal::u32>();
+  endpoint_reg = masked_value_with_transfer_cleared;
+}
 }  // namespace
+
+int reset_counter = 0;
+int transfer_complete_counter = 0;
+int error_detected_count = 0;
+
+[[maybe_unused]] void set_control_tog_bits()
+{
+  set_endpoint_register_toggle<endpoint::data_toggle_tx>(0, dtog::tog1);
+  set_endpoint_register_toggle<endpoint::data_toggle_rx>(0, dtog::tog0);
+}
+
+void handle_bus_reset()
+{
+  // assignment to this register acts as an AND gate
+  reg().ISTR = 0;
+  reg().DADDR = 0u;  // disable USB Function
+
+  // Clear any previous information within the packet buffer
+  std::ranges::fill(usb_packet_buffer_sram(), 0);
+
+  // Set the start of the buffer descriptor table to the start of the packet
+  // buffer.
+  reg().BTABLE = buffer_descriptor_table_start;
+
+  endpoint_descriptor_block(0).setup_descriptor_for(0);
+  set_endpoint_address_and_type(0, endpoint_type::control);
+  set_rx_stat(0, stat::nak);
+  set_tx_stat(0, stat::nak);
+
+  // Reset endpoints to disabled
+  for (std::size_t i = 1; i < reg().EP.size(); i++) {
+    reg().EP[i].EPR = i;
+    set_rx_stat(i, stat::disabled);
+    set_tx_stat(i, stat::disabled);
+  }
+
+  hal::bit_modify(reg().CNTR)
+    .set(control::reset_interrupt)
+    .set(control::correct_transfer_interrupt)
+    .set(control::wakeup_interrupt)
+    .set(control::suspend_mode_interrupt)
+    .set(control::packet_memory_interrupt);
+
+  hal::bit_modify(reg().DADDR).set(device_address::enable_function);
+}
+void usb::interrupt_handler()
+{
+  auto& interrupt_reg = reg().ISTR;
+
+  auto const interrupt_reg_value = interrupt_reg;
+  auto const endpoint_id =
+    hal::bit_extract<interrupt_status::endpoint_id>(interrupt_reg_value);
+  auto const direction =
+    hal::bit_extract<interrupt_status::direction>(interrupt_reg_value);
+  bool const transfer_completed =
+    hal::bit_extract<interrupt_status::correct_transfer>(interrupt_reg_value);
+
+  if (transfer_completed) {
+    if (direction == 0 /* meaning tx */) {
+      transfer_complete_counter++;
+      m_tx_busy[endpoint_id] = false;
+      clear_correct_transfer_for<stm32f1::endpoint::correct_transfer_tx>(
+        endpoint_id);
+    } else {
+      // interrupt status clearing is handled by this function
+      read_endpoint_and_pass_to_callback(endpoint_id);
+    }
+  }
+
+  bool const reset_request =
+    hal::bit_extract<interrupt_status::reset_request>(interrupt_reg_value);
+
+  if (reset_request) {
+    handle_bus_reset();
+  }
+
+  bool const error_detected =
+    hal::bit_extract<interrupt_status::error>(interrupt_reg_value);
+
+  if (error_detected) {
+    // assignment to this register acts as an AND gate
+    interrupt_reg = ~(1U << interrupt_status::error.position);
+    error_detected_count++;
+  }
+
+  bool const suspend_detected =
+    hal::bit_extract<interrupt_status::suspend_mode_request>(
+      interrupt_reg_value);
+
+  if (suspend_detected) {
+    // assignment to this register acts as an AND gate
+    interrupt_reg = ~(1U << interrupt_status::suspend_mode_request.position);
+  }
+
+  bool const wake_detected =
+    hal::bit_extract<interrupt_status::wake_up>(interrupt_reg_value);
+
+  if (wake_detected) {
+    // assignment to this register acts as an AND gate
+    interrupt_reg = ~(1U << interrupt_status::wake_up.position);
+  }
+
+  bool const overrun_detected =
+    hal::bit_extract<interrupt_status::packet_memory_over_underrun>(
+      interrupt_reg_value);
+
+  if (overrun_detected) {
+    // assignment to this register acts as an AND gate
+    interrupt_reg =
+      ~(1U << interrupt_status::packet_memory_over_underrun.position);
+  }
+}
 
 usb::usb(hal::steady_clock& p_clock, hal::time_duration p_power_on_time)
   : m_available_endpoint_memory(initial_packet_buffer_memory)
@@ -352,9 +465,8 @@ usb::usb(hal::steady_clock& p_clock, hal::time_duration p_power_on_time)
     hal::safe_throw(hal::operation_not_supported(nullptr));
   }
 
-  remap_pins(can_pins::pb9_pb8);
-  configure_pin({ .port = 'A', .pin = 11 }, push_pull_alternative_output);
-  configure_pin({ .port = 'A', .pin = 12 }, push_pull_alternative_output);
+  // Clear any previous information within the packet buffer
+  std::ranges::fill(usb_packet_buffer_sram(), 0);
 
   auto handle =
     static_callable<usb, 0, void(void)>([this] { interrupt_handler(); });
@@ -364,48 +476,29 @@ usb::usb(hal::steady_clock& p_clock, hal::time_duration p_power_on_time)
   cortex_m::enable_interrupt(irq::usb_lp_can1_rx0, handle.get_handler());
   cortex_m::enable_interrupt(irq::usb_hp_can1_tx, handle.get_handler());
 
+  // Must be done prior to lifting power down bit
+  configure_pin({ .port = 'A', .pin = 11 }, push_pull_alternative_output);
+  configure_pin({ .port = 'A', .pin = 12 }, push_pull_alternative_output);
+
   power_on(peripheral::usb);
 
-  // Set the start of the buffer descriptor table to the start of the packet
-  // buffer.
-  reg().BTABLE = buffer_descriptor_table_start;
-  // Clear any previous information within the packet buffer
-  std::ranges::fill(usb_packet_buffer_sram(), 0);
-
-  auto& descriptor = endpoint_descriptor_block(0);
-  descriptor.setup_descriptor_for(0);
-  set_endpoint_address_and_type(0, usb::endpoint::control);
-
-  // Set these to NAK until they are needed
-  set_tx_stat(0, stat::nak);
-  set_rx_stat(0, stat::nak);
-
-  hal::bit_modify(reg().CNTR).clear<control::power_down>();
   hal::delay(p_clock, p_power_on_time);
+  // Perform reset
+  hal::bit_modify(reg().CNTR)
+    .set(control::power_down)
+    .set(control::force_reset);
+  hal::delay(p_clock, p_power_on_time);
+
   // The USB peripheral sets this bit on system reset, we need to clear it to
   // allow the device to power on. We must wait approximately 1us before we can
   // proceed for the stm32f103.
-  hal::bit_modify(reg().CNTR).clear<control::force_reset>();
+  hal::bit_modify(reg().CNTR).clear(control::power_down);
+  hal::delay(p_clock, p_power_on_time);
 
-  // Page 626 of RM0008 states that the spurious interrupts should be cleared
-  // from the interrupt status register. Read only bits should be unaffected.
-  reg().ISTR = 0;
+  // Clears everything including the force reset, enabling the USB device.
+  reg().CNTR = 0;
 
-  hal::bit_modify(reg().CNTR)
-    .set<control::correct_transfer_interrupt>()
-    .set<control::error_interrupt>()
-    .set<control::reset_interrupt>();
-}
-
-template<hal::bit_mask mask>
-void clear_correct_transfer_for(std::uint8_t endpoint_id)
-{
-  auto& endpoint_reg = reg().EP[endpoint_id].EPR;
-  auto const endpoint_value = endpoint_reg;
-  auto masked_value = endpoint_value & endpoint_invariant_mask;
-  auto const masked_value_with_transfer_cleared =
-    hal::bit_modify(masked_value).template clear<mask>().get();
-  endpoint_reg = masked_value_with_transfer_cleared;
+  handle_bus_reset();
 }
 
 void usb::read_endpoint_and_pass_to_callback(std::uint8_t p_endpoint)
@@ -436,66 +529,13 @@ void usb::read_endpoint_and_pass_to_callback(std::uint8_t p_endpoint)
   set_rx_stat(p_endpoint, stat::valid);
 }
 
-int reset_counter = 0;
-int transfer_complete_counter = 0;
-
-void usb::interrupt_handler()
+void wait_for_endpoint_transfer_completion(std::uint8_t p_endpoint)
 {
-  auto& interrupt_reg = reg().ISTR;
-  auto const interrupt_reg_value = interrupt_reg;
-  auto const endpoint_id =
-    hal::bit_extract<interrupt_status::endpoint_id>(interrupt_reg_value);
-  auto const direction =
-    hal::bit_extract<interrupt_status::direction>(interrupt_reg_value);
-  bool const transfer_completed =
-    hal::bit_extract<interrupt_status::correct_transfer>(interrupt_reg_value);
-
-  if (transfer_completed) {
-    if (direction == 0 /* meaning tx */) {
-      transfer_complete_counter++;
-      m_tx_busy[endpoint_id] = false;
-      clear_correct_transfer_for<stm32f1::endpoint::correct_transfer_tx>(
-        endpoint_id);
-    } else {
-      // interrupt status clearing is handled by this function
-      read_endpoint_and_pass_to_callback(endpoint_id);
-    }
-  }
-
-  bool const reset_request =
-    hal::bit_extract<interrupt_status::reset_request>(interrupt_reg_value);
-
-  if (reset_request) {
-    if (reset_counter >= 1) {
-      __builtin_trap();
-    }
-    auto& descriptor = endpoint_descriptor_block(0);
-    descriptor.setup_descriptor_for(0);
-    set_endpoint_address_and_type(0, usb::endpoint::control);
-    set_rx_stat(0, stat::valid);
-    set_tx_stat(0, stat::nak);
-
-    hal::bit_modify(reg().DADDR).set<device_address::enable_function>();
-    // assignment to this register acts as an AND gate
-    interrupt_reg = ~(1U << interrupt_status::reset_request.position);
-    reset_counter++;
-  }
-
-  bool const error_detected =
-    hal::bit_extract<interrupt_status::error>(interrupt_reg_value);
-
-  if (error_detected) {
-    // assignment to this register acts as an AND gate
-    interrupt_reg = ~(1U << interrupt_status::error.position);
-  }
-
-  bool const suspend_detected =
-    hal::bit_extract<interrupt_status::suspend_mode_request>(
-      interrupt_reg_value);
-
-  if (suspend_detected) {
-    // assignment to this register acts as an AND gate
-    interrupt_reg = ~(1U << interrupt_status::suspend_mode_request.position);
+  constexpr auto nak_u32_value = static_cast<hal::u32>(stat::nak);
+  auto& endpoint_reg = reg().EP[p_endpoint].EPR;
+  auto endpoint_tx_status = hal::bit_extract<endpoint::status_tx>(endpoint_reg);
+  while (endpoint_tx_status == nak_u32_value) {
+    endpoint_tx_status = hal::bit_extract<endpoint::status_tx>(endpoint_reg);
   }
 }
 
@@ -505,37 +545,29 @@ void usb::write_to_endpoint(std::uint8_t p_endpoint,
   auto& descriptor = endpoint_descriptor_block(p_endpoint);
 
   if (p_data.empty()) {
-    m_tx_busy[p_endpoint] = true;
     // send zero length message
     descriptor.set_count_tx(0);
     set_tx_stat(p_endpoint, stat::valid);
-    while (m_tx_busy[p_endpoint]) {
-      continue;
-    }
+    wait_for_endpoint_transfer_completion(p_endpoint);
     return;
   }
+
+  auto tx_span = descriptor.tx_span();
 
   while (not p_data.empty()) {
     constexpr std::size_t mtu = fixed_endpoint_size - crc_tail;
     auto const min = std::min(p_data.size(), mtu);
 
-    auto usb_sram_buffer = usb_packet_buffer_sram();
-    auto const memory_offset = descriptor.tx_address_offset();
-    auto* memory_location = std::bit_cast<std::uint32_t*>(
-      usb_sram_buffer.data() + (memory_offset * 2));
-    auto tx_endpoint_memory_span =
-      std::span<std::uint32_t>(memory_location, mtu / 2);
-
     descriptor.set_count_tx(min);
 
-    auto even_min = min & ~1;
+    auto const even_min = min & ~1;
     for (std::size_t i = 0; i < even_min; i += 2) {
       std::uint32_t temp = (p_data[i + 1] << 8) | p_data[i];
-      tx_endpoint_memory_span[i / 2] = temp;
+      tx_span[i] = temp;
     }
     if (min & 1) {
       std::uint32_t temp = p_data[min - 1];
-      tx_endpoint_memory_span[min - 1] = temp;
+      tx_span[min - 1] = temp;
     }
 
     p_data = p_data.subspan(min);
@@ -547,14 +579,8 @@ void usb::write_to_endpoint(std::uint8_t p_endpoint,
       set_tx_stat(p_endpoint, stat::valid);
     }
 
-    while (m_tx_busy[p_endpoint]) {
-      continue;
-    }
-
-    m_tx_busy[p_endpoint] = true;
+    wait_for_endpoint_transfer_completion(p_endpoint);
   }
-
-  // set_rx_stat(p_endpoint, stat::valid);
 }
 
 usb::~usb()
@@ -563,6 +589,7 @@ usb::~usb()
   configure_pin({ .port = 'A', .pin = 12 }, input_pull_up);
   power_off(peripheral::usb);
   cortex_m::disable_interrupt(irq::usb_lp_can1_rx0);
+  cortex_m::disable_interrupt(irq::usb_hp_can1_tx);
 }
 
 void usb::set_out_callback(hal::callback<void(std::span<hal::byte>)> p_callback,
@@ -573,98 +600,105 @@ void usb::set_out_callback(hal::callback<void(std::span<hal::byte>)> p_callback,
   }
 }
 
-usb_control_endpoint::usb_control_endpoint([[maybe_unused]] usb& p_usb)
+usb::control_endpoint usb::acquire_control_endpoint()
+{
+  return { *this };
+}
+
+usb::control_endpoint::control_endpoint(usb& p_usb)
   : m_usb(&p_usb)
 {
 }
 
-usb_control_endpoint::~usb_control_endpoint()
+usb::control_endpoint::~control_endpoint()
 {
 }
 
-void usb_control_endpoint::driver_connect(bool p_should_connect)
+void usb::control_endpoint::driver_connect(bool p_should_connect)
 {
   hal::bit_modify(reg().DADDR)
     .insert<device_address::enable_function>(p_should_connect);
 }
 
-void usb_control_endpoint::driver_set_address(std::uint8_t p_address)
+void usb::control_endpoint::driver_set_address(std::uint8_t p_address)
 {
-  hal::bit_modify(reg().DADDR).insert<device_address::address>(p_address);
+  hal::bit_modify(reg().DADDR)
+    .set(device_address::enable_function)
+    .insert<device_address::address>(p_address);
 }
 
-void usb_control_endpoint::driver_write(std::span<hal::byte const> p_data)
+void usb::control_endpoint::driver_write(std::span<hal::byte const> p_data)
 {
   m_usb->write_to_endpoint(0, p_data);
 }
 
-void usb_control_endpoint::driver_on_request(
+void usb::control_endpoint::driver_on_request(
   hal::callback<void(std::span<hal::byte>)> p_callback)
 {
   m_usb->set_out_callback(p_callback, 0);
   set_rx_stat(0, stat::valid);
 }
 
-bool usb_control_endpoint::in_setup_stage()
+bool usb::control_endpoint::in_setup_stage()
 {
   return hal::bit_extract<endpoint::setup_complete>(reg().EP[0].EPR);
 }
 
-// usb_interrupt_in_endpoint implementation
-usb_interrupt_in_endpoint::usb_interrupt_in_endpoint()
+// usb::interrupt_in_endpoint implementation
+usb::interrupt_in_endpoint::interrupt_in_endpoint()
 {
 }
 
-usb_interrupt_in_endpoint::~usb_interrupt_in_endpoint()
+usb::interrupt_in_endpoint::~interrupt_in_endpoint()
 {
 }
 
-void usb_interrupt_in_endpoint::driver_write(
+void usb::interrupt_in_endpoint::driver_write(
   [[maybe_unused]] std::span<hal::byte const> p_data)
 {
   // ... fill this out ...
 }
 
-// usb_bulk_in_endpoint implementation
-usb_bulk_in_endpoint::usb_bulk_in_endpoint()
+// usb::bulk_in_endpoint implementation
+usb::bulk_in_endpoint::bulk_in_endpoint()
 {
 }
 
-usb_bulk_in_endpoint::~usb_bulk_in_endpoint()
+usb::bulk_in_endpoint::~bulk_in_endpoint()
 {
 }
 
-void usb_bulk_in_endpoint::driver_write(
+void usb::bulk_in_endpoint::driver_write(
   [[maybe_unused]] std::span<hal::byte const> p_data)
 {
   // ... fill this out ...
 }
 
-// usb_interrupt_out_endpoint implementation
-usb_interrupt_out_endpoint::usb_interrupt_out_endpoint()
+// usb::interrupt_out_endpoint implementation
+usb::interrupt_out_endpoint::interrupt_out_endpoint()
 {
 }
 
-usb_interrupt_out_endpoint::~usb_interrupt_out_endpoint()
+usb::interrupt_out_endpoint::~interrupt_out_endpoint()
 {
 }
 
-void usb_interrupt_out_endpoint::driver_on_receive(
+void usb::interrupt_out_endpoint::driver_on_receive(
   [[maybe_unused]] hal::callback<void(std::span<hal::byte>)> p_callback)
 {
   // ... fill this out ...
 }
 
-// usb_bulk_out_endpoint implementation
-usb_bulk_out_endpoint::usb_bulk_out_endpoint()
+// usb::bulk_out_endpoint implementation
+usb::bulk_out_endpoint::bulk_out_endpoint()
 {
 }
 
-usb_bulk_out_endpoint::~usb_bulk_out_endpoint()
+usb::bulk_out_endpoint::~bulk_out_endpoint()
 {
 }
 
-void usb_bulk_out_endpoint::driver_on_receive(
+void usb::bulk_out_endpoint::driver_on_receive(
   [[maybe_unused]] hal::callback<void(std::span<hal::byte>)> p_callback)
 {
   // ... fill this out ...

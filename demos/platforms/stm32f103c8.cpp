@@ -19,12 +19,14 @@
 #include <libhal-arm-mcu/stm32f1/constants.hpp>
 #include <libhal-arm-mcu/stm32f1/input_pin.hpp>
 #include <libhal-arm-mcu/stm32f1/output_pin.hpp>
+#include <libhal-arm-mcu/stm32f1/pin.hpp>
 #include <libhal-arm-mcu/stm32f1/spi.hpp>
 #include <libhal-arm-mcu/stm32f1/uart.hpp>
 #include <libhal-arm-mcu/stm32f1/usb.hpp>
 #include <libhal-arm-mcu/system_control.hpp>
 #include <libhal-util/bit_bang_i2c.hpp>
 #include <libhal-util/serial.hpp>
+#include <libhal-util/steady_clock.hpp>
 
 #include <resource_list.hpp>
 
@@ -46,6 +48,7 @@ void initialize_platform(resource_list& p_resource)
   using namespace hal::literals;
 
   p_resource.reset = []() { hal::cortex_m::reset(); };
+  hal::stm32f1::release_jtag_pins();
 
   hal::stm32f1::configure_clocks(hal::stm32f1::clock_tree{
     .high_speed_external = 8.0_MHz,
@@ -71,6 +74,8 @@ void initialize_platform(resource_list& p_resource)
       },
     },
   });
+  hal::stm32f1::activate_mco_pa8(
+    hal::stm32f1::mco_source::pll_clock_divided_by_2);
 
   auto cpu_frequency = hal::stm32f1::frequency(hal::stm32f1::peripheral::cpu);
   static hal::cortex_m::dwt_counter steady_clock(cpu_frequency);
@@ -138,11 +143,22 @@ void initialize_platform(resource_list& p_resource)
 
   hal::print(uart1, "USB test starting in init...\n");
 
+  hal::stm32f1::output_pin signal('A', 0);
+  signal.level(true);
+  hal::stm32f1::output_pin signal2('A', 15);
+  signal.level(true);
   hal::stm32f1::usb usb(steady_clock);
-  hal::stm32f1::usb_control_endpoint control_endpoint(usb);
+  hal::print(uart1, "USB\n");
+  auto control_endpoint = usb.acquire_control_endpoint();
+  hal::print(uart1, "ctrl\n");
 
+  using namespace std::chrono_literals;
   control_endpoint.on_request(my_control_handler);
+  hal::print(uart1, "on_request\n");
+
   control_endpoint.connect(true);
+  hal::print(uart1, "connect\n");
+
   // Device Descriptor
   uint8_t const device_descriptor[] = {
     0x12,        // bLength
@@ -193,23 +209,26 @@ void initialize_platform(resource_list& p_resource)
 
   while (true) {
     if (not act) {
+      signal2.level(not signal2.level());
       continue;
     }
 
     if (buffer[0] == 0x00 && buffer[1] == 0x05) {
-      hal::print(uart1, "ZLP\n");
       control_endpoint.write({});
-      hal::print(uart1, "ZLP+\n");
-      hal::print<32>(uart1, "ADDR (%d)\n", buffer[2]);
       control_endpoint.set_address(buffer[2]);
-      hal::print<32>(uart1, "ADDR (%d)+\n", buffer[2]);
+      hal::print(uart1, "ZLP+\n");
+      hal::print<16>(uart1, "ADDR (%d)+\n", buffer[2]);
     } else if (buffer[0] == 0x80 && buffer[1] == 0x06 && buffer[2] == 0x00 &&
                buffer[3] == 0x01) {
       hal::print(uart1, "S:DD\n");
+      signal.level(not signal.level());
       control_endpoint.write(device_descriptor);
+      signal.level(not signal.level());
       hal::print(uart1, "S:DD+\n");
     } else if (buffer[0] == 0x80 && buffer[1] == 0x06 && buffer[2] == 0x00 &&
                buffer[3] == 0x02) {
+      hal::print(uart1, "NOICE! Now disconnect!\n");
+      control_endpoint.connect(false);
       while (true) {
         continue;
       }

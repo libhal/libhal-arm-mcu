@@ -28,9 +28,26 @@ static constexpr std::size_t usb_endpoint_count = 8;
 /// TODO(kammce): Move to src directory
 struct usb_endpoint_register_t
 {
+  struct [[gnu::packed]] bits
+  {
+    unsigned ea : 4;
+    unsigned stat_tx : 2;
+    unsigned dogtx : 1;
+    unsigned tx_complete : 1;
+    unsigned ep_kind : 1;
+    unsigned ep_type : 2;
+    unsigned setup : 1;
+    unsigned stat_rx : 1;
+    unsigned dtog_rx : 1;
+    unsigned rx_complete : 1;
+  };
   // Write operations should not use read-modify-write but write directly.
   // Writing zeros to this register does not change
-  hal::u32 volatile EPR;
+  union
+  {
+    hal::u32 volatile EPR;
+    bits volatile bit;
+  };
 };
 
 /// TODO(kammce): Move to src directory
@@ -90,9 +107,11 @@ private:
   void write_to_endpoint(std::uint8_t p_endpoint,
                          std::span<hal::byte const> p_data);
   void read_endpoint_and_pass_to_callback(std::uint8_t p_endpoint);
+  void wait_for_endpoint_transfer_completion(std::uint8_t p_endpoint);
 
   std::array<hal::callback<void(std::span<hal::byte>)>, usb_endpoint_count>
     m_out_callbacks;
+  hal::steady_clock* m_clock;
   std::array<bool, usb_endpoint_count> m_tx_busy{};
   std::uint16_t m_available_endpoint_memory;
   std::uint8_t m_in_endpoints_allocated = 0;

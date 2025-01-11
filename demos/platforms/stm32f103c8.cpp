@@ -33,6 +33,16 @@
 std::array<hal::byte, 16> buffer{};
 std::span<hal::byte> usable_data(buffer);
 bool act = false;
+enum class enumeration_state
+{
+  pre_address,
+  post_address,
+  sending_device_descriptor,
+  post_device_descriptor,
+  sending_configure_descriptor,
+  post_configure_descriptor,
+};
+enumeration_state state = enumeration_state::pre_address;
 
 void my_control_handler(std::span<hal::byte> p_data)
 {
@@ -160,21 +170,47 @@ void initialize_platform(resource_list& p_resource)
   hal::print(uart1, "connect\n");
 
   // Device Descriptor
+  // Device Descriptor (18 bytes)
   uint8_t const device_descriptor[] = {
-    0x12,        // bLength
+    0x12,        // bLength (18 bytes)
     0x01,        // bDescriptorType (Device)
-    0x00, 0x02,  // bcdUSB (USB 2.0)
-    0x00,  // bDeviceClass (Use class information in the Interface Descriptors)
-    0x00,  // bDeviceSubClass
-    0x00,  // bDeviceProtocol
-    16,    // bMaxPacketSize0 (64 bytes)
+    0x00, 0x02,  // bcdUSB (2.0)
+    0x00,        // bDeviceClass (0 = defer to interface)
+    0x00,        // bDeviceSubClass
+    0x00,        // bDeviceProtocol
+    18,          // bMaxPacketSize0 (18 bytes)
     0xAD, 0xDE,  // idVendor (0xDEAD)
     0xEF, 0xBE,  // idProduct (0xBEEF)
-    0x00, 0x01,  // bcdDevice
-    0x01,        // iManufacturer (String Index)
-    0x02,        // iProduct (String Index)
-    0x03,        // iSerialNumber (String Index)
+    0x00, 0x01,  // bcdDevice (1.0)
+    0x01,        // iManufacturer (String #1)
+    0x02,        // iProduct (String #2)
+    0x03,        // iSerialNumber (String #3)
     0x01         // bNumConfigurations
+  };
+
+  // Configuration Descriptor (9+9 = 18 bytes total)
+  uint8_t const config_descriptor[] = {
+    // Configuration Descriptor
+    0x09,  // bLength
+    0x02,  // bDescriptorType (Configuration)
+    0x12,
+    0x00,  // wTotalLength (18 bytes)
+    0x01,  // bNumInterfaces
+    0x01,  // bConfigurationValue
+    0x00,  // iConfiguration (No string)
+    0x80,  // bmAttributes (Bus powered)
+    0x32,  // bMaxPower (100mA)
+
+    // Interface Descriptor
+    0x09,  // bLength
+    0x04,  // bDescriptorType (Interface)
+    0x00,  // bInterfaceNumber
+    0x00,  // bAlternateSetting
+    0x00,  // bNumEndpoints
+    0x00,  // bInterfaceClass
+    0x00,  // bInterfaceSubClass
+    0x00,  // bInterfaceProtocol
+    0x00   // iInterface (No string)
   };
 
   // String Descriptor 0 (Language ID)
@@ -210,32 +246,78 @@ void initialize_platform(resource_list& p_resource)
   while (true) {
     if (not act) {
       signal2.level(not signal2.level());
+      control_endpoint.enable_rx();
       continue;
     }
 
-    if (buffer[0] == 0x00 && buffer[1] == 0x05) {
+    // Extract bmRequestType and bRequest
+    uint8_t const bmRequestType = buffer[0];
+    uint8_t const bRequest = buffer[1];
+    uint16_t const wLength = (buffer[7] << 8) | buffer[6];
+
+    if (bmRequestType == 0x00 && bRequest == 0x05) {
       control_endpoint.write({});
-      control_endpoint.set_address(buffer[2]);
       hal::print(uart1, "ZLP+\n");
-      hal::print<16>(uart1, "ADDR (%d)+\n", buffer[2]);
-    } else if (buffer[0] == 0x80 && buffer[1] == 0x06 && buffer[2] == 0x00 &&
-               buffer[3] == 0x01) {
-      hal::print(uart1, "S:DD\n");
-      signal.level(not signal.level());
-      control_endpoint.write(device_descriptor);
-      signal.level(not signal.level());
-      hal::print(uart1, "S:DD+\n");
-    } else if (buffer[0] == 0x80 && buffer[1] == 0x06 && buffer[2] == 0x00 &&
-               buffer[3] == 0x02) {
-      hal::print(uart1, "NOICE! Now disconnect!\n");
-      control_endpoint.connect(false);
-      while (true) {
-        continue;
+      control_endpoint.set_address(buffer[2]);
+      state = enumeration_state::post_address;
+      control_endpoint.enable_rx();
+    } else if (bmRequestType == 0x80) {  // Device-to-host
+      if (bRequest == 0x06) {            // GET_DESCRIPTOR
+        uint8_t descriptor_type = buffer[3];
+        uint8_t descriptor_index = buffer[2];
+
+        switch (descriptor_type) {
+          case 0x01: {  // Device Descriptor
+            state = enumeration_state::sending_device_descriptor;
+            hal::print(uart1, "S:DD\n");
+            signal.level(not signal.level());
+            if (wLength == 8) {
+              control_endpoint.write(
+                std::span(device_descriptor).first(wLength));
+            } else {
+              control_endpoint.write(device_descriptor);
+            }
+            signal.level(not signal.level());
+            state = enumeration_state::post_device_descriptor;
+            hal::print(uart1, "S:DD+\n");
+            break;
+          }
+          case 0x02:  // Configuration Descriptor
+          {
+            state = enumeration_state::sending_configure_descriptor;
+            hal::print(uart1, "S:CD\n");
+            signal.level(not signal.level());
+            control_endpoint.write(config_descriptor);
+            signal.level(not signal.level());
+            state = enumeration_state::post_configure_descriptor;
+            hal::print(uart1, "S:CD+\n");
+            break;
+          }
+          case 0x03:  // String Descriptor
+            switch (descriptor_index) {
+              case 0:
+                control_endpoint.write(lang_descriptor);
+                break;
+              case 1:
+                control_endpoint.write(manufacturer_descriptor);
+                break;
+              case 2:
+                control_endpoint.write(product_descriptor);
+                break;
+              case 3:
+                control_endpoint.write(serial_descriptor);
+                break;
+                // Add cases 1 & 2 for manufacturer & product strings
+            }
+            break;
+        }
+        control_endpoint.enable_rx();
       }
-    } else {
-      while (true) {
-        continue;
-      }
+    } else if (bmRequestType == 0x00 && bRequest == 0x09) {
+      // SET_CONFIGURATION
+      control_endpoint.write({});
+      // Enable endpoints if needed
+      control_endpoint.enable_rx();
     }
 
     act = false;

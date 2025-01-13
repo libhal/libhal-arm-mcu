@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <cinttypes>
+
 #include <libhal-arm-mcu/dwt_counter.hpp>
 #include <libhal-arm-mcu/startup.hpp>
 #include <libhal-arm-mcu/stm32f1/can.hpp>
@@ -31,8 +33,11 @@
 #include <resource_list.hpp>
 
 std::array<hal::byte, 16> buffer{};
+std::array<decltype(buffer), 16> buffer_history{};
+std::size_t history_idx = 0;
 std::span<hal::byte> usable_data(buffer);
 bool act = false;
+
 enum class enumeration_state
 {
   pre_address,
@@ -178,9 +183,9 @@ void initialize_platform(resource_list& p_resource)
     0x00,        // bDeviceClass (0 = defer to interface)
     0x00,        // bDeviceSubClass
     0x00,        // bDeviceProtocol
-    18,          // bMaxPacketSize0 (18 bytes)
-    0xAD, 0xDE,  // idVendor (0xDEAD)
-    0xEF, 0xBE,  // idProduct (0xBEEF)
+    16,          // bMaxPacketSize0 (16 bytes)
+    0xEF, 0xBE,  // idVendor (0xBEEF)
+    0xAD, 0xDE,  // idProduct (0xDEAD)
     0x00, 0x01,  // bcdDevice (1.0)
     0x01,        // iManufacturer (String #1)
     0x02,        // iProduct (String #2)
@@ -193,7 +198,7 @@ void initialize_platform(resource_list& p_resource)
     // Configuration Descriptor
     0x09,  // bLength
     0x02,  // bDescriptorType (Configuration)
-    0x12,
+    18,
     0x00,  // wTotalLength (18 bytes)
     0x01,  // bNumInterfaces
     0x01,  // bConfigurationValue
@@ -214,7 +219,7 @@ void initialize_platform(resource_list& p_resource)
   };
 
   // String Descriptor 0 (Language ID)
-  [[maybe_unused]] uint8_t const lang_descriptor[] = {
+  uint8_t const lang_descriptor[] = {
     0x04,  // bLength
     0x03,  // bDescriptorType (String)
     0x09,
@@ -222,103 +227,108 @@ void initialize_platform(resource_list& p_resource)
   };
 
   // String Descriptor 1 (Manufacturer)
-  [[maybe_unused]] uint8_t const manufacturer_descriptor[] = {
-    0x18,  // bLength
+  uint8_t const manufacturer_descriptor[] = {
+    22,    // bLength
     0x03,  // bDescriptorType (String)
     'l',  0, 'i', 0, 'b', 0, 'h', 0, 'a', 0,
-    'l',  0, ' ', 0, 'i', 0, 'n', 0, 'c', 0
+    'l',  0, ' ', 0, 'i', 0, 'n', 0, 'c', 0,
   };
 
   // String Descriptor 2 (Product)
-  [[maybe_unused]] uint8_t const product_descriptor[] = {
-    0x18,  // bLength
-    0x03,  // bDescriptorType (String)
-    's',  0, 'u', 0, 'p', 0, 'e', 0, 'r', 0, ' ', 0, 'u', 0, 's', 0, 'b', 0
+  uint8_t const product_descriptor[] = {
+    36,          // bLength: 34 bytes (2 + (16 chars * 2))
+    0x03,        // bDescriptorType: String descriptor
+    'l',  0x00,  // Unicode string: "libhal USB device"
+    'i',  0x00, 'b',  0x00, 'h',  0x00, 'a',  0x00, 'l',  0x00, ' ',
+    0x00, 'U',  0x00, 'S',  0x00, 'B',  0x00, ' ',  0x00, 'd',  0x00,
+    'e',  0x00, 'v',  0x00, 'i',  0x00, 'c',  0x00, 'e',  0x00,
   };
 
   // String Descriptor 3 (Serial Number)
-  [[maybe_unused]] uint8_t const serial_descriptor[] = {
-    0x1A,  // bLength
+  uint8_t const serial_descriptor[] = {
+    20,    // bLength
     0x03,  // bDescriptorType (String)
-    '0',  0, '8', 0, '8', 0, '8', 0, '0', 0, '8', 0, '8', 0, '0', 0, '8', 0
+    '0',  0, '8', 0, '8', 0, '8', 0, '0', 0, '8', 0, '8', 0, '0', 0, '8', 0,
   };
+
+  std::array<std::span<uint8_t const>, 4> strings = {
+    lang_descriptor,
+    manufacturer_descriptor,
+    product_descriptor,
+    serial_descriptor,
+  };
+
+  auto toggle = [&signal]() { signal.level(not signal.level()); };
 
   while (true) {
     if (not act) {
       signal2.level(not signal2.level());
-      control_endpoint.enable_rx();
       continue;
     }
 
     // Extract bmRequestType and bRequest
-    uint8_t const bmRequestType = buffer[0];
-    uint8_t const bRequest = buffer[1];
-    uint16_t const wLength = (buffer[7] << 8) | buffer[6];
+    hal::u8 const bmRequestType = buffer[0];
+    hal::u8 const bRequest = buffer[1];
+
+    std::copy_n(
+      buffer.begin(),
+      buffer.size(),
+      buffer_history.at(history_idx++ % buffer_history.size()).begin());
+
+    hal::print<16>(uart1, "ACT[%zu]\n", history_idx);
 
     if (bmRequestType == 0x00 && bRequest == 0x05) {
       control_endpoint.write({});
-      hal::print(uart1, "ZLP+\n");
       control_endpoint.set_address(buffer[2]);
-      state = enumeration_state::post_address;
-      control_endpoint.enable_rx();
+      hal::print(uart1, "ZLP+SET_ADDR\n");
     } else if (bmRequestType == 0x80) {  // Device-to-host
       if (bRequest == 0x06) {            // GET_DESCRIPTOR
-        uint8_t descriptor_type = buffer[3];
-        uint8_t descriptor_index = buffer[2];
+        std::size_t const wLength = (buffer[7] << 8) | buffer[6];
+        hal::u8 descriptor_type = buffer[3];
+        hal::u8 descriptor_index = buffer[2];
 
         switch (descriptor_type) {
           case 0x01: {  // Device Descriptor
-            state = enumeration_state::sending_device_descriptor;
-            hal::print(uart1, "S:DD\n");
-            signal.level(not signal.level());
-            if (wLength == 8) {
-              control_endpoint.write(
-                std::span(device_descriptor).first(wLength));
-            } else {
-              control_endpoint.write(device_descriptor);
-            }
-            signal.level(not signal.level());
-            state = enumeration_state::post_device_descriptor;
-            hal::print(uart1, "S:DD+\n");
+            hal::print<16>(uart1, "DD%" PRIu16 "\n", wLength);
+            toggle();
+            control_endpoint.write(std::span(device_descriptor).first(wLength));
+            toggle();
+            hal::print(uart1, "DD+\n");
             break;
           }
           case 0x02:  // Configuration Descriptor
           {
             state = enumeration_state::sending_configure_descriptor;
-            hal::print(uart1, "S:CD\n");
-            signal.level(not signal.level());
-            control_endpoint.write(config_descriptor);
-            signal.level(not signal.level());
+            hal::print<16>(uart1, "CD%" PRIu16 "\n", wLength);
+            toggle();
+            control_endpoint.write(std::span(config_descriptor).first(wLength));
+            toggle();
             state = enumeration_state::post_configure_descriptor;
-            hal::print(uart1, "S:CD+\n");
+            hal::print(uart1, "CD+\n");
             break;
           }
-          case 0x03:  // String Descriptor
-            switch (descriptor_index) {
-              case 0:
-                control_endpoint.write(lang_descriptor);
-                break;
-              case 1:
-                control_endpoint.write(manufacturer_descriptor);
-                break;
-              case 2:
-                control_endpoint.write(product_descriptor);
-                break;
-              case 3:
-                control_endpoint.write(serial_descriptor);
-                break;
-                // Add cases 1 & 2 for manufacturer & product strings
-            }
+          case 0x03: {  // String Descriptor
+            hal::print<16>(
+              uart1, "S%" PRIu8 ":%" PRIu16 "\n", descriptor_index, wLength);
+            toggle();
+            auto const str = strings.at(descriptor_index);
+            auto const first = std::min(str.size(), wLength);
+            auto const payload_span = str.first(first);
+            control_endpoint.write(payload_span);
+            toggle();
+            hal::print(uart1, "S+\n");
+            break;
+          }
+          default:
             break;
         }
-        control_endpoint.enable_rx();
       }
     } else if (bmRequestType == 0x00 && bRequest == 0x09) {
       // SET_CONFIGURATION
       control_endpoint.write({});
-      // Enable endpoints if needed
-      control_endpoint.enable_rx();
     }
+
+    // control_endpoint.enable_rx();
 
     act = false;
   }

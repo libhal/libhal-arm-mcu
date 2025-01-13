@@ -37,7 +37,7 @@ struct usb_endpoint_register_t
     unsigned ep_kind : 1;
     unsigned ep_type : 2;
     unsigned setup : 1;
-    unsigned stat_rx : 1;
+    unsigned stat_rx : 2;
     unsigned dtog_rx : 1;
     unsigned rx_complete : 1;
   };

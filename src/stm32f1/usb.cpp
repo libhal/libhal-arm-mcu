@@ -167,8 +167,7 @@ constexpr std::size_t initial_packet_buffer_memory =
   packet_buffer_sram_size - buffer_descriptor_table_end;
 
 /// TODO(kammce): make this no longer fixed, maybe...
-constexpr std::uint16_t fixed_endpoint_size = 18;
-constexpr std::uint16_t crc_tail = 2;
+constexpr std::uint16_t fixed_endpoint_size = 16;
 constexpr std::uint16_t rx_endpoint_count_mask =
   hal::bit_value(0U)
     .clear<block_table::block_size>()
@@ -310,16 +309,16 @@ void set_endpoint_register_toggle(std::size_t p_endpoint,
 
 void set_rx_stat(std::size_t p_endpoint, stat p_stat)
 {
-  hal::cortex_m::disable_all_interrupts();
+  // hal::cortex_m::disable_all_interrupts();
   set_endpoint_register_toggle<endpoint::status_rx>(p_endpoint, p_stat);
-  hal::cortex_m::enable_all_interrupts();
+  // hal::cortex_m::enable_all_interrupts();
 }
 
 void set_tx_stat(std::size_t p_endpoint, stat p_stat)
 {
-  hal::cortex_m::disable_all_interrupts();
+  // hal::cortex_m::disable_all_interrupts();
   set_endpoint_register_toggle<endpoint::status_tx>(p_endpoint, p_stat);
-  hal::cortex_m::enable_all_interrupts();
+  // hal::cortex_m::enable_all_interrupts();
 }
 
 [[maybe_unused]] void set_endpoint_address_and_type(std::size_t p_endpoint,
@@ -413,10 +412,10 @@ void usb::interrupt_handler()
       m_tx_busy[endpoint_id] = false;
     } else {
       re_cc++;
-      clear_correct_transfer_for<stm32f1::endpoint::correct_transfer_rx>(
-        endpoint_id);
       // interrupt status clearing is handled by this function
       read_endpoint_and_pass_to_callback(endpoint_id);
+      clear_correct_transfer_for<stm32f1::endpoint::correct_transfer_rx>(
+        endpoint_id);
     }
   }
 
@@ -538,9 +537,10 @@ void usb::read_endpoint_and_pass_to_callback(std::uint8_t p_endpoint)
   }
 #else
   for (size_t i = 0; i < rx_span.size(); i++) {
-    std::uint32_t value = *(rx_iter++);
-    buffer[(i * 2)] = value & 0xFF;
-    buffer[(i * 2) + 1] = (value >> 8) & 0xFF;
+    auto const idx = i * 2;
+    auto const value = *(rx_iter++);
+    buffer[idx] = value & 0xFF;
+    buffer[idx + 1] = (value >> 8) & 0xFF;
   }
 #endif
   auto bytes_span = std::span(buffer).first(descriptor.bytes_received());
@@ -549,7 +549,7 @@ void usb::read_endpoint_and_pass_to_callback(std::uint8_t p_endpoint)
 
 void usb::wait_for_endpoint_transfer_completion(std::uint8_t p_endpoint)
 {
-#if 1
+#if 0
   constexpr auto nak_u32_value = static_cast<hal::u32>(stat::nak);
   auto& endpoint_reg = reg().EP[p_endpoint].EPR;
   auto endpoint_tx_status = hal::bit_extract<endpoint::status_tx>(endpoint_reg);

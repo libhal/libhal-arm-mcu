@@ -7,7 +7,6 @@
 #include <libhal/error.hpp>
 
 #include "dma.hpp"
-#include "libhal-stm32f1/dma.hpp"
 #include "pin.hpp"
 #include "power.hpp"
 #include "uart_reg.hpp"
@@ -115,7 +114,6 @@ uart::uart(std::uint8_t p_port,
       m_id = peripheral::usart1;
       m_dma = 5;
       m_uart = usart1;
-      m_receive_buffer = p_buffer;
       break;
     case 2:
       port_tx = 'A';

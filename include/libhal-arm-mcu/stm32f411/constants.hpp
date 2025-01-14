@@ -16,6 +16,8 @@
 
 #include <cstdint>
 
+#include <libhal-armcortex/interrupt.hpp>
+
 namespace hal::stm32f411 {
 
 /// Number of bits between each enable register
@@ -82,7 +84,7 @@ enum class peripheral : std::uint32_t
 };
 
 /// List of interrupt request numbers for this platform
-enum class irq : std::uint16_t
+enum class irq : cortex_m::irq_t
 {
   /// Window WatchDog
   window_watchdog = 0,

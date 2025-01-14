@@ -64,8 +64,6 @@ void setup_channel(pwm_reg_t* p_reg, uint8_t p_channel)
   bit_modify(p_reg->break_and_deadtime_register)
     .clear(ossr)
     .set(main_output_enable);
-
-  return;
 }
 void setup(timer1_pwm::pwm_pins p_pin)
 {

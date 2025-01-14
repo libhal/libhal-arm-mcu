@@ -223,14 +223,23 @@ dma_channel_stream_t setup_dma_transfer(
   return selected_config;
 };
 
-void set_dma_memory_transfer(peripheral p_dma,
-                             std::span<dma_channel_stream_t> p_stream_channel,
-                             std::span<hal::byte> p_source,
-                             std::span<byte> p_destination)
+void set_dma_memory_transfer(dma_t p_dma,
+                             std::span<byte const> const p_source,
+                             std::span<byte> const p_destination)
 {
+  std::array<dma_channel_stream_t, 8> all_streams = {
+    { { .stream = 0, .channel = 0 },
+      { .stream = 1, .channel = 0 },
+      { .stream = 2, .channel = 0 },
+      { .stream = 3, .channel = 0 },
+      { .stream = 4, .channel = 0 },
+      { .stream = 5, .channel = 0 },
+      { .stream = 6, .channel = 0 },
+      { .stream = 7, .channel = 0 } }
+  };
   dma_settings_t dma_setting = {
-    .source = &p_source,
-    .destination = &p_destination,
+    .source = p_source.data(),
+    .destination = p_destination.data(),
 
     .transfer_length = p_source.size(),
     .flow_controller = dma_flow_controller::dma_controls_flow,
@@ -246,6 +255,7 @@ void set_dma_memory_transfer(peripheral p_dma,
     .peripheral_burst_size = dma_burst_size::single_transfer,
     .memory_burst_size = dma_burst_size::single_transfer
   };
-  setup_dma_transfer(p_dma, p_stream_channel, dma_setting, []() {});
+  setup_dma_transfer(
+    static_cast<peripheral>(p_dma), all_streams, dma_setting, []() {});
 }
 }  // namespace hal::stm32f411

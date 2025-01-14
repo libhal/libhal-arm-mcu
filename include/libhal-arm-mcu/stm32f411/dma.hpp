@@ -21,24 +21,21 @@
 #include "constants.hpp"
 
 namespace hal::stm32f411 {
-struct dma_channel_stream_t
+enum class dma_t : std::uint32_t
 {
-  uint8_t stream;
-  uint8_t channel;
+  dma1 = static_cast<uint32_t>(peripheral::dma1),
+  dma2 = static_cast<uint32_t>(peripheral::dma2),
 };
 /**
  * @brief Sets up the DMA memory to memory transfer mode
  *
  * @param p_dma Select DMA
- * @param p_stream_channel loops through the listed streams until an available
- * stream is found. Will spinlock until spare channel is found
- * @param p_source source address
- * @param p_destination destination address
+ * @param p_source source span of bytes
+ * @param p_destination destination span of bytes
  */
-void set_dma_memory_transfer(peripheral p_dma,
-                             std::span<dma_channel_stream_t> p_stream_channel,
-                             std::span<hal::byte> p_source,
-                             std::span<byte> p_destination);
+void set_dma_memory_transfer(dma_t p_dma,
+                             std::span<byte const> const p_source,
+                             std::span<byte> const p_destination);
 /// Maximum length of a buffer that the stm32f411 series dma controller can
 /// handle.
 constexpr std::uint32_t max_dma_length = 65'535;

@@ -59,6 +59,11 @@ enum class dma_flow_controller : bool
   dma_controls_flow = 0b0U,
   peripheral_controls_flow = 0b1U,
 };
+struct dma_channel_stream_t
+{
+  uint8_t stream;
+  uint8_t channel;
+};
 /// DMA register map
 struct stream_config_t
 {
@@ -170,7 +175,7 @@ static inline dma_config_t* get_dma_reg(peripheral p_dma)
 
 struct dma_settings_t
 {
-  void volatile* source;
+  void const volatile* source;
   void volatile* destination;
 
   size_t transfer_length;

@@ -12,10 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "gpio_reg.hpp"
-#include "power.hpp"
 #include <libhal-arm-mcu/stm32f411/output_pin.hpp>
 #include <libhal-util/bit.hpp>
+
+#include "gpio_reg.hpp"
 
 namespace hal::stm32f411 {
 

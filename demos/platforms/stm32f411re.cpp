@@ -17,6 +17,7 @@
 #include <libhal-arm-mcu/startup.hpp>
 #include <libhal-arm-mcu/stm32f411/clock.hpp>
 #include <libhal-arm-mcu/stm32f411/constants.hpp>
+#include <libhal-arm-mcu/stm32f411/dma.hpp>
 #include <libhal-arm-mcu/stm32f411/input_pin.hpp>
 #include <libhal-arm-mcu/stm32f411/output_pin.hpp>
 #include <libhal-arm-mcu/stm32f411/pin.hpp>
@@ -51,7 +52,6 @@ void initialize_platform(resource_list& p_resources)
   static hal::stm32f411::uart uart2(
     hal::port<2>, hal::buffer<128>, { .baud_rate = 115200 });
   p_resources.console = &uart2;
-
   p_resources.reset = []() { hal::cortex_m::reset(); };
   p_resources.status_led = &led;
   p_resources.clock = &steady_clock;

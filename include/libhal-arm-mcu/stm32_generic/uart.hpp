@@ -47,7 +47,7 @@ public:
    * @param p_frequency Bus frequency
    */
   void configure(serial::settings const& p_settings, hertz p_frequency);
-  uint32_t volatile* data();
+  uint32_t volatile* data_register();
   void flush(std::uint32_t p_dma_cursor_position);
   std::uint32_t buffer_size();
 

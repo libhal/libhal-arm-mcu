@@ -16,12 +16,12 @@
 
 #include <cstdint>
 
+#include <libhal-arm-mcu/stm32_generic/uart.hpp>
 #include <libhal/initializers.hpp>
 #include <libhal/serial.hpp>
 
 #include "constants.hpp"
 #include "dma.hpp"
-#include "libhal-arm-mcu/stm32_generic/uart.hpp"
 
 namespace hal::stm32f411 {
 class uart final : public hal::serial

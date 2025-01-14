@@ -147,7 +147,7 @@ void uart::configure(serial::settings const& p_settings, hertz p_frequency)
   configure_baud_rate(p_frequency, p_settings);
   configure_format(p_settings);
 }
-
+// TODO(#86) Add DMA write support to stm32_generic/uart.cpp
 serial::write_t uart::uart_write(std::span<hal::byte const> p_data)
 {
   auto& uart_reg = *to_usart(m_uart);
@@ -185,7 +185,7 @@ serial::read_t uart::uart_read(std::span<hal::byte>& p_data,
     .capacity = m_receive_buffer.size(),
   };
 }
-uint32_t volatile* uart::data()
+uint32_t volatile* uart::data_register()
 {
   return &to_usart(m_uart)->data;
 }

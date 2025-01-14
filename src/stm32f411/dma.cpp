@@ -21,6 +21,7 @@
 #include <span>
 
 #include <libhal-arm-mcu/stm32f411/constants.hpp>
+#include <libhal-arm-mcu/stm32f411/dma.hpp>
 #include <libhal-arm-mcu/stm32f411/interrupt.hpp>
 #include <libhal-util/atomic_spin_lock.hpp>
 #include <libhal-util/bit.hpp>
@@ -29,6 +30,7 @@
 
 #include "dma.hpp"
 #include "power.hpp"
+
 namespace hal::stm32f411 {
 namespace {
 std::array<hal::callback<void()>, 16> dma_callbacks{};
@@ -138,29 +140,28 @@ dma_channel_stream_t setup_dma_transfer(
   initialize_dma(p_dma);
 
   auto selected_config = set_available_stream(p_dma, p_possible_streams);
-
+  auto& stream = dma_addr->stream[selected_config.stream];
   switch (p_configuration.transfer_type) {
     case dma_transfer_type::peripheral_to_memory:
-      dma_addr->stream[selected_config.stream].peripheral_address =
+      stream.peripheral_address =
         std::bit_cast<std::uintptr_t>(p_configuration.source);
-      dma_addr->stream[selected_config.stream].memory_0_address =
+      stream.memory_0_address =
         std::bit_cast<std::uintptr_t>(p_configuration.destination);
       break;
     case dma_transfer_type::memory_to_peripheral:
-      dma_addr->stream[selected_config.stream].peripheral_address =
+      stream.peripheral_address =
         std::bit_cast<std::uintptr_t>(p_configuration.destination);
-      dma_addr->stream[selected_config.stream].memory_0_address =
+      stream.memory_0_address =
         std::bit_cast<std::uintptr_t>(p_configuration.source);
       break;
     default:
-      dma_addr->stream[selected_config.stream].peripheral_address =
+      stream.peripheral_address =
         std::bit_cast<std::uintptr_t>(p_configuration.source);
-      dma_addr->stream[selected_config.stream].memory_0_address =
+      stream.memory_0_address =
         std::bit_cast<std::uintptr_t>(p_configuration.destination);
   }
 
-  dma_addr->stream[selected_config.stream].transfer_count =
-    p_configuration.transfer_length;
+  stream.transfer_count = p_configuration.transfer_length;
 
   bit_modify(dma_addr->stream[selected_config.stream].configure)
     .insert(dma_stream_config::peripheral_flow_controller,
@@ -222,10 +223,10 @@ dma_channel_stream_t setup_dma_transfer(
   return selected_config;
 };
 
-void set_mem_to_mem(peripheral p_dma,
-                    std::span<dma_channel_stream_t> p_stream_channel,
-                    std::span<hal::byte> p_source,
-                    std::span<byte> p_destination)
+void set_dma_memory_transfer(peripheral p_dma,
+                             std::span<dma_channel_stream_t> p_stream_channel,
+                             std::span<hal::byte> p_source,
+                             std::span<byte> p_destination)
 {
   dma_settings_t dma_setting = {
     .source = &p_source,

@@ -21,16 +21,11 @@
 #include <span>
 
 #include <libhal-arm-mcu/stm32f411/constants.hpp>
+#include <libhal-arm-mcu/stm32f411/dma.hpp>
 #include <libhal-util/bit.hpp>
 #include <libhal/functional.hpp>
 
 namespace hal::stm32f411 {
-struct dma_channel_stream_t
-{
-  uint8_t stream;
-  uint8_t channel;
-};
-
 enum class dma_transfer_type : std::uint8_t
 {
   peripheral_to_memory = 0b00U,

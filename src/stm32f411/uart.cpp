@@ -13,21 +13,22 @@
 // limitations under the License.
 
 #include <array>
+
+#include <libhal-arm-mcu/stm32_generic/uart.hpp>
+#include <libhal-arm-mcu/stm32f411/clock.hpp>
+#include <libhal-arm-mcu/stm32f411/constants.hpp>
 #include <libhal-arm-mcu/stm32f411/pin.hpp>
 #include <libhal-arm-mcu/stm32f411/uart.hpp>
 #include <libhal/units.hpp>
 
 #include "dma.hpp"
-#include "libhal-arm-mcu/stm32_generic/uart.hpp"
-#include "libhal-arm-mcu/stm32f411/clock.hpp"
-#include "libhal-arm-mcu/stm32f411/constants.hpp"
 #include "power.hpp"
 
 namespace hal::stm32f411 {
 namespace {
-inline void* usart1 = (void*)0x4001'1000;
-inline void* usart2 = (void*)0x4000'4400;
-inline void* usart6 = (void*)0x4001'1400;
+inline auto usart1 = reinterpret_cast<void*>(0x4001'1000);
+inline auto usart2 = reinterpret_cast<void*>(0x4000'4400);
+inline auto usart6 = reinterpret_cast<void*>(0x4001'1400);
 }  // namespace
 uart::uart(hal::runtime,
            std::uint8_t p_port,
@@ -108,7 +109,7 @@ uart::uart(std::uint8_t p_port,
 
   /// configure dma here
   dma_settings_t dma_setting = {
-    .source = m_stm32_uart.data(),
+    .source = m_stm32_uart.data_register(),
     .destination = p_buffer.data(),
 
     .transfer_length = p_buffer.size(),
@@ -125,7 +126,6 @@ uart::uart(std::uint8_t p_port,
     .peripheral_burst_size = dma_burst_size::single_transfer,
     .memory_burst_size = dma_burst_size::single_transfer
   };
-  // p *(hal::stm32f411::stream_config_t*)(0x40026088)
 
   m_dma_stream =
     setup_dma_transfer(m_dma, possible_streams, dma_setting, []() {}).stream;

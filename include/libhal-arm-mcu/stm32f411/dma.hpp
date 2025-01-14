@@ -21,7 +21,7 @@
 #include "constants.hpp"
 
 namespace hal::stm32f411 {
-enum class dma_t : std::uint32_t
+enum class dma : std::uint32_t
 {
   dma1 = static_cast<uint32_t>(peripheral::dma1),
   dma2 = static_cast<uint32_t>(peripheral::dma2),
@@ -33,7 +33,7 @@ enum class dma_t : std::uint32_t
  * @param p_source source span of bytes
  * @param p_destination destination span of bytes
  */
-void set_dma_memory_transfer(dma_t p_dma,
+void set_dma_memory_transfer(dma p_dma,
                              std::span<byte const> const p_source,
                              std::span<byte> const p_destination);
 /// Maximum length of a buffer that the stm32f411 series dma controller can

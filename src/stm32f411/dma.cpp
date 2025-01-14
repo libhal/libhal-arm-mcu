@@ -223,8 +223,8 @@ dma_channel_stream_t setup_dma_transfer(
   return selected_config;
 };
 
-void set_dma_memory_transfer(dma_t p_dma,
-                             std::span<byte const> const p_source,
+void set_dma_memory_transfer(dma p_dma,
+                             std::span<byte const> p_source,
                              std::span<byte> const p_destination)
 {
   std::array<dma_channel_stream_t, 8> all_streams = {

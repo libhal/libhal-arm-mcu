@@ -100,3 +100,12 @@ jobs:
       platform_profile_url: .
       platform_profile: v1/stm32f103c8
     secrets: inherit
+
+  demo_check_stm32f411re:
+    uses: libhal/ci/.github/workflows/demo_builder.yml@5.x.y
+    with:
+      compiler_profile_url: https://github.com/libhal/arm-gnu-toolchain.git
+      compiler_profile: v1/arm-gcc-12.3
+      platform_profile_url: .
+      platform_profile: v1/stm32f411re
+    secrets: inherit

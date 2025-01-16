@@ -607,7 +607,7 @@ void usb::write_to_endpoint(std::uint8_t p_endpoint,
   }
 
   if (p_endpoint == 0) {
-    set_rx_stat(p_endpoint, stat::valid);
+    // set_rx_stat(p_endpoint, stat::valid);
   }
 }
 

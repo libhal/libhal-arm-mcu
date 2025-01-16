@@ -328,7 +328,7 @@ void initialize_platform(resource_list& p_resource)
       control_endpoint.write({});
     }
 
-    // control_endpoint.enable_rx();
+    control_endpoint.enable_rx();
 
     act = false;
   }

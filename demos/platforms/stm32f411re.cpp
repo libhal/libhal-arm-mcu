@@ -35,7 +35,7 @@ void initialize_platform(resource_list& p_resources)
   using namespace hal::literals;
   hal::stm32f411::maximum_speed_using_internal_oscillator();
 
-  auto cpu_frequency =
+  auto const cpu_frequency =
     hal::stm32f411::frequency(hal::stm32f411::peripheral::cpu);
   static hal::cortex_m::dwt_counter steady_clock(cpu_frequency / 8);
 
@@ -46,8 +46,8 @@ void initialize_platform(resource_list& p_resources)
   static hal::stm32f411::output_pin led(hal::stm32f411::peripheral::gpio_a, 5);
 
   static hal::stm32f411::spi spi(hal::runtime{}, 2, {});
-  hal::stm32f411::output_pin chip_select(hal::stm32f411::peripheral::gpio_b,
-                                         13);
+  static hal::stm32f411::output_pin chip_select(
+    hal::stm32f411::peripheral::gpio_b, 13);
 
   static hal::stm32f411::uart uart2(
     hal::port<2>, hal::buffer<128>, { .baud_rate = 115200 });

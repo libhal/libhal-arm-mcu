@@ -89,7 +89,7 @@ nxpprog --control --binary demos/lpc4078/blinker.elf.bin --device /dev/tty.usbse
 ### Flashing STM32 Processors
 
 [`stm32loader`](https://pypi.org/project/stm32loader/) is a script for
-programming and flashing LPC40 series chips over serial/UART. Using it will
+programming and flashing STM32 series chips over serial/UART. Using it will
 require a USB to serial/uart adaptor.
 
 For more information, please refer to the README of

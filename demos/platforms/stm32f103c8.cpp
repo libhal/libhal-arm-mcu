@@ -27,7 +27,9 @@
 #include <libhal-util/inert_drivers/inert_adc.hpp>
 #include <libhal-util/steady_clock.hpp>
 #include <libhal/output_pin.hpp>
+#include <libhal/pwm.hpp>
 #include <libhal/units.hpp>
+#include <libhal-arm-mcu/stm32f1/timer1_pwm.hpp>
 
 #include <resource_list.hpp>
 
@@ -104,6 +106,10 @@ void initialize_platform(resource_list& p_resources)
                                                     .copi = &copi,
                                                     .cipo = &cipo };
 
+  hal::stm32f1::timer1_pwm pwm(hal::stm32f1::timer1_pwm::pwm_pins::pa8);
+
+  p_resources.pwm = &pwm;
+  
   static hal::spi::settings bit_bang_spi_settings{
     .clock_rate = 250.0_kHz,
     .clock_polarity = false,

@@ -193,10 +193,11 @@ void timer1_pwm::driver_duty_cycle(float p_duty_cycle)
 {
   auto const peripheral_id = get_peripheral_id(m_pin);
   pwm_reg_t* reg = get_pwm_reg(peripheral_id);
-
-  std::uint16_t desired_ccr_value =
-    (static_cast<std::uint16_t>(reg->auto_reload_register) *
-     static_cast<std::uint16_t>(p_duty_cycle));
+  
+  // std::uint16_t desired_ccr_value =
+  //   (static_cast<std::uint16_t>(reg->auto_reload_register) *
+  //    static_cast<std::uint16_t>(p_duty_cycle));
+  std::uint16_t desired_ccr_value = static_cast<std::uint16_t>(reg->auto_reload_register * p_duty_cycle);
 
   *m_compare_register_addr = desired_ccr_value;
 }

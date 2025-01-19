@@ -25,6 +25,7 @@
 #include <libhal-util/bit_bang_i2c.hpp>
 #include <libhal-util/bit_bang_spi.hpp>
 #include <libhal-util/inert_drivers/inert_adc.hpp>
+#include <libhal-util/serial.hpp>
 #include <libhal-util/steady_clock.hpp>
 #include <libhal/units.hpp>
 
@@ -46,25 +47,6 @@ void initialize_platform(resource_list& p_resources)
 
   static hal::stm32f1::uart uart1(hal::port<1>, hal::buffer<128>);
   p_resources.console = &uart1;
-
-  static hal::stm32f1::can_peripheral_manager can(
-    100_kHz, hal::stm32f1::can_pins::pb9_pb8);
-
-  can.enable_self_test(true);
-
-  static std::array<hal::can_message, 8> receive_buffer{};
-  static auto can_transceiver = can.acquire_transceiver(receive_buffer);
-  p_resources.can_transceiver = &can_transceiver;
-
-  static auto can_bus_manager = can.acquire_bus_manager();
-  p_resources.can_bus_manager = &can_bus_manager;
-
-  static auto can_interrupt = can.acquire_interrupt();
-  p_resources.can_interrupt = &can_interrupt;
-
-  // Allow all messages
-  static auto mask_id_filters_x2 = can.acquire_mask_filter();
-  mask_id_filters_x2.filter[0].allow({ { .id = 0, .mask = 0 } });
 
   static hal::stm32f1::output_pin led('C', 13);
   p_resources.status_led = &led;
@@ -123,4 +105,39 @@ void initialize_platform(resource_list& p_resources)
     spi = &spi1;
   }
   p_resources.spi = spi;
+
+  hal::print(uart1, "Before can init\n");
+
+  try {
+    using namespace std::chrono_literals;
+    static hal::stm32f1::can_peripheral_manager can(
+      100_kHz, steady_clock, 1ms, hal::stm32f1::can_pins::pb9_pb8);
+
+    // Self test allows the can transceiver to see its own messages as if they
+    // were received on the bus. This also prevents messages from being received
+    // from the bus. Set to `false` if you want to get actual CAN messages from
+    // the bus and not the device's own messages.
+    can.enable_self_test(true);
+
+    static std::array<hal::can_message, 8> receive_buffer{};
+    static auto can_transceiver = can.acquire_transceiver(receive_buffer);
+    p_resources.can_transceiver = &can_transceiver;
+
+    static auto can_bus_manager = can.acquire_bus_manager();
+    p_resources.can_bus_manager = &can_bus_manager;
+
+    static auto can_interrupt = can.acquire_interrupt();
+    p_resources.can_interrupt = &can_interrupt;
+
+    // Allow all messages
+    static auto mask_id_filters_x2 = can.acquire_mask_filter();
+    mask_id_filters_x2.filter[0].allow({ { .id = 0, .mask = 0 } });
+  } catch (hal::timed_out&) {
+    hal::print(
+      uart1,
+      "`hal::stm32f1::can_peripheral_manager` timed out during construction!\n"
+      "CAN implementations will not be available! \n"
+      " If your  application requires CAN BUS to operate, ensure that the\n"
+      "CANRX and CANTX pins are connected to a CAN BUS transceiver!\n");
+  }
 }

@@ -14,6 +14,7 @@
 
 #include <bitset>
 #include <cstdint>
+#include <libhal/steady_clock.hpp>
 #include <libhal/units.hpp>
 #include <optional>
 
@@ -28,6 +29,7 @@
 #include <libhal-util/can.hpp>
 #include <libhal-util/enum.hpp>
 #include <libhal-util/static_callable.hpp>
+#include <libhal-util/steady_clock.hpp>
 #include <libhal/can.hpp>
 #include <libhal/error.hpp>
 #include <nonstd/scope.hpp>
@@ -72,6 +74,21 @@ void exit_initialization()
   while (get_master_status(master_status::initialization_acknowledge)) {
     continue;
   }
+}
+
+void timed_exit_initialization(hal::steady_clock& p_clock,
+                               hal::time_duration p_timeout_time)
+{
+  // Leave Initialization mode
+  set_master_mode(master_control::initialization_request, false);
+
+  auto const deadline = hal::future_deadline(p_clock, p_timeout_time);
+  while (deadline > p_clock.uptime()) {
+    if (not get_master_status(master_status::initialization_acknowledge)) {
+      return;
+    }
+  }
+  hal::safe_throw(hal::timed_out(nullptr));
 }
 
 void configure_baud_rate(hal::u32 p_baud_rate)
@@ -327,6 +344,45 @@ void setup_can(hal::u32 p_baud_rate, can_pins p_pins)
   }
 
   remap_pins(p_pins);
+}
+
+void setup_can(hal::u32 p_baud_rate,
+               can_pins p_pins,
+               can_peripheral_manager::self_test p_enable_self_test,
+               hal::steady_clock& p_clock,
+               hal::time_duration p_timeout_time)
+{
+  power_on(peripheral::can1);
+
+  set_master_mode(master_control::sleep_mode_request, false);
+  set_master_mode(master_control::no_automatic_retransmission, false);
+  set_master_mode(master_control::automatic_bus_off_management, false);
+
+  enter_initialization();
+
+  configure_baud_rate(p_baud_rate);
+
+  switch (p_pins) {
+    case can_pins::pa11_pa12:
+      configure_pin({ .port = 'A', .pin = 11 }, input_pull_up);
+      configure_pin({ .port = 'A', .pin = 12 }, push_pull_alternative_output);
+      break;
+    case can_pins::pb9_pb8:
+      configure_pin({ .port = 'B', .pin = 8 }, input_pull_up);
+      configure_pin({ .port = 'B', .pin = 9 }, push_pull_alternative_output);
+      break;
+    case can_pins::pd0_pd1:
+      configure_pin({ .port = 'D', .pin = 0 }, input_pull_up);
+      configure_pin({ .port = 'D', .pin = 1 }, push_pull_alternative_output);
+      break;
+  }
+
+  bit_modify(can1_reg->BTR)
+    .insert<bus_timing::loop_back_mode>(hal::value(p_enable_self_test));
+
+  remap_pins(p_pins);
+
+  timed_exit_initialization(p_clock, p_timeout_time);
 }
 
 can::message_t read_receive_mailbox()
@@ -672,6 +728,31 @@ can_peripheral_manager::can_peripheral_manager(hal::u32 p_baud_rate,
   current_baud_rate = p_baud_rate;
   disable_id = p_disabled_ids;
   setup_can(p_baud_rate, p_pins);
+
+  initialize_interrupts();
+
+  // Setup interrupt service routines
+  cortex_m::enable_interrupt(irq::can1_rx0, handler_circular_buffer_interrupt);
+  cortex_m::enable_interrupt(irq::can1_rx1, handler_circular_buffer_interrupt);
+  cortex_m::enable_interrupt(irq::can1_sce, handler_status_change_interrupt);
+
+  bit_modify(can1_reg->IER)
+    .set<interrupt_enable_register::fifo0_message_pending>();
+  bit_modify(can1_reg->IER)
+    .set<interrupt_enable_register::fifo1_message_pending>();
+}
+
+can_peripheral_manager::can_peripheral_manager(
+  hal::u32 p_baud_rate,
+  hal::steady_clock& p_clock,
+  hal::time_duration p_timeout_time,
+  can_pins p_pins,
+  self_test p_enable_self_test,
+  disable_ids p_disabled_ids)
+{
+  current_baud_rate = p_baud_rate;
+  disable_id = p_disabled_ids;
+  setup_can(p_baud_rate, p_pins, p_enable_self_test, p_clock, p_timeout_time);
 
   initialize_interrupts();
 

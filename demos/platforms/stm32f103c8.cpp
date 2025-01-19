@@ -27,7 +27,10 @@
 #include <libhal-util/inert_drivers/inert_adc.hpp>
 #include <libhal-util/serial.hpp>
 #include <libhal-util/steady_clock.hpp>
+#include <libhal/output_pin.hpp>
+#include <libhal/pwm.hpp>
 #include <libhal/units.hpp>
+#include <libhal-arm-mcu/stm32f1/timer1_pwm.hpp>
 
 #include <resource_list.hpp>
 
@@ -49,6 +52,7 @@ void initialize_platform(resource_list& p_resources)
   p_resources.console = &uart1;
 
   static hal::stm32f1::output_pin led('C', 13);
+
   p_resources.status_led = &led;
 
   // pin G0 on the STM micromod is port B, pin 4
@@ -71,6 +75,7 @@ void initialize_platform(resource_list& p_resources)
     .scl = &scl_output_pin,
   };
   static hal::bit_bang_i2c bit_bang_i2c(bit_bang_pins, steady_clock);
+
   p_resources.i2c = &bit_bang_i2c;
 
   static hal::stm32f1::output_pin spi_chip_select('A', 4);
@@ -83,6 +88,10 @@ void initialize_platform(resource_list& p_resources)
                                                     .copi = &copi,
                                                     .cipo = &cipo };
 
+  hal::stm32f1::timer1_pwm pwm(hal::stm32f1::timer1_pwm::pwm_pins::pa8);
+
+  p_resources.pwm = &pwm;
+  
   static hal::spi::settings bit_bang_spi_settings{
     .clock_rate = 250.0_kHz,
     .clock_polarity = false,

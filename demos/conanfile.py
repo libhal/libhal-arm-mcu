@@ -23,6 +23,6 @@ class demos(ConanFile):
 
     def requirements(self):
         bootstrap = self.python_requires["libhal-bootstrap"]
-        self.requires("libhal-arm-mcu/[^1.5.0 || latest]")
+        self.requires("libhal-arm-mcu/[1.5.0 || latest]")
         self.requires("minimp3/cci.20211201")
         bootstrap.module.add_demo_requirements(self, is_platform=True)

@@ -51,19 +51,25 @@ namespace {
 void setup_channel(pwm_reg_t* p_reg, uint8_t p_channel)
 {
 
-  static constexpr auto main_output_enable = bit_mask::from<15>();
-  static constexpr auto ossr = bit_mask::from<11>();
+  // static constexpr auto main_output_enable = bit_mask::from<15>();
+  // static constexpr auto ossr = bit_mask::from<11>();
+  // OCx polarity is software programmable using the CCxP bit in the TIMx_CCER
+  // register. It
+  // can be programmed as active high or active low. OCx output is enabled by
+  // the CCxE bit in the TIMx_CCER register. Refer to the TIMx_CCERx register
+  // description for more details.
   uint8_t start_pos = (p_channel - 1) * 4;
-  auto const cc_enable_value = 0b01U;
+  auto const cc_enable_value = 0b10U;
   static auto ccer_polarity_enable_mask =
     bit_mask::from(start_pos, start_pos + 1);
 
   bit_modify(p_reg->cc_enable_register)
     .insert(ccer_polarity_enable_mask, cc_enable_value);
+  // bit_modify(p_reg->cc_enable_register).set(ccer_polarity_enable_mask);
 
-  bit_modify(p_reg->break_and_deadtime_register)
-    .clear(ossr)
-    .set(main_output_enable);
+  // bit_modify(p_reg->break_and_deadtime_register)
+  //   .clear(ossr)
+  //   .set(main_output_enable);
 }
 void setup(timer1_pwm::pwm_pins p_pin)
 {
@@ -75,6 +81,7 @@ void setup(timer1_pwm::pwm_pins p_pin)
   static constexpr auto output_compare_odd = bit_mask::from<4, 6>();
   static constexpr auto output_compare_even = bit_mask::from<12, 14>();
   static constexpr auto counter_enable = bit_mask::from<0>();
+  static constexpr auto auto_reload_preload_enable = bit_mask::from<7>();
   static constexpr auto odd_channel_preload_enable = bit_mask::from<3>();
   static constexpr auto even_channel_preload_enable = bit_mask::from<11>();
   auto const pwm_mode_1 = 0b110U;
@@ -112,7 +119,7 @@ void setup(timer1_pwm::pwm_pins p_pin)
   }
 
   bit_modify(reg->control_register).set(counter_enable);
-
+  bit_modify(reg->control_register).set(auto_reload_preload_enable);
   reg->prescale_register = 0x0U;
 
   // Set counter value to 0 because it upcounts.
@@ -193,11 +200,12 @@ void timer1_pwm::driver_duty_cycle(float p_duty_cycle)
 {
   auto const peripheral_id = get_peripheral_id(m_pin);
   pwm_reg_t* reg = get_pwm_reg(peripheral_id);
-  
+
   // std::uint16_t desired_ccr_value =
   //   (static_cast<std::uint16_t>(reg->auto_reload_register) *
   //    static_cast<std::uint16_t>(p_duty_cycle));
-  std::uint16_t desired_ccr_value = static_cast<std::uint16_t>(reg->auto_reload_register * p_duty_cycle);
+  std::uint16_t desired_ccr_value =
+    static_cast<std::uint16_t>(reg->auto_reload_register * p_duty_cycle);
 
   *m_compare_register_addr = desired_ccr_value;
 }

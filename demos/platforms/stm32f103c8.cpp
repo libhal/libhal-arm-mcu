@@ -50,24 +50,24 @@ void initialize_platform(resource_list& p_resources)
   static hal::stm32f1::uart uart1(hal::port<1>, hal::buffer<128>);
   p_resources.console = &uart1;
 
-  static hal::stm32f1::can_peripheral_manager can(
-    100_kHz, hal::stm32f1::can_pins::pb9_pb8);
+  // static hal::stm32f1::can_peripheral_manager can(
+  //   100_kHz, hal::stm32f1::can_pins::pb9_pb8);
 
-  can.enable_self_test(true);
+  // can.enable_self_test(true);
 
-  static std::array<hal::can_message, 8> receive_buffer{};
-  static auto can_transceiver = can.acquire_transceiver(receive_buffer);
-  p_resources.can_transceiver = &can_transceiver;
+  // static std::array<hal::can_message, 8> receive_buffer{};
+  // static auto can_transceiver = can.acquire_transceiver(receive_buffer);
+  // p_resources.can_transceiver = &can_transceiver;
 
-  static auto can_bus_manager = can.acquire_bus_manager();
-  p_resources.can_bus_manager = &can_bus_manager;
+  // static auto can_bus_manager = can.acquire_bus_manager();
+  // p_resources.can_bus_manager = &can_bus_manager;
 
-  static auto can_interrupt = can.acquire_interrupt();
-  p_resources.can_interrupt = &can_interrupt;
+  // static auto can_interrupt = can.acquire_interrupt();
+  // p_resources.can_interrupt = &can_interrupt;
 
-  // Allow all messages
-  static auto mask_id_filters_x2 = can.acquire_mask_filter();
-  mask_id_filters_x2.filter[0].allow({ { .id = 0, .mask = 0 } });
+  // // Allow all messages
+  // static auto mask_id_filters_x2 = can.acquire_mask_filter();
+  // mask_id_filters_x2.filter[0].allow({ { .id = 0, .mask = 0 } });
 
   static hal::stm32f1::output_pin led('C', 13);
 
@@ -106,10 +106,10 @@ void initialize_platform(resource_list& p_resources)
                                                     .copi = &copi,
                                                     .cipo = &cipo };
 
-  hal::stm32f1::timer1_pwm pwm(hal::stm32f1::timer1_pwm::pwm_pins::pa8);
+  static hal::stm32f1::timer1_pwm pwm(hal::stm32f1::timer1_pwm::pwm_pins::pa8);
 
   p_resources.pwm = &pwm;
-  
+
   static hal::spi::settings bit_bang_spi_settings{
     .clock_rate = 250.0_kHz,
     .clock_polarity = false,

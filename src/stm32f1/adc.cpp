@@ -1,19 +1,7 @@
-// Copyright 2024 Khalil Estell
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//      http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+#include <cstdint>
 
 #include <array>
-#include <cstdint>
+#include <mutex>
 
 #include <libhal-arm-mcu/stm32f1/adc.hpp>
 #include <libhal-arm-mcu/stm32f1/clock.hpp>
@@ -22,6 +10,8 @@
 #include <libhal-util/bit_limits.hpp>
 #include <libhal-util/enum.hpp>
 #include <libhal/error.hpp>
+#include <libhal/lock.hpp>
+#include <libhal/units.hpp>
 
 #include "pin.hpp"
 #include "power.hpp"
@@ -67,7 +57,7 @@ struct adc_reg_t
 };
 
 /// Namespace containing the bit_mask objects that are use to manipulate the
-/// stm32f1 ADC Status register
+/// stm32f1 ADC Status register.
 namespace adc_status_register {
 /// This bit is set by hardware when the converted voltage crosses the values
 /// programmed in the ADC_LTR and ADC_HTR registers. It is cleared by software.
@@ -95,7 +85,7 @@ static constexpr auto end_of_conversion = hal::bit_mask::from(1);
 };  // namespace adc_status_register
 
 /// Namespace containing the bit_mask objects that are use to manipulate the
-/// stm32f1 ADC Control register 2
+/// stm32f1 ADC Control register 2.
 namespace adc_control_register_2 {
 /// This bit is set and cleared by software. If this bit holds a value of zero
 /// and a 1 is written to it then it wakes up the ADC from Power Down state.
@@ -134,7 +124,7 @@ static constexpr auto ad_calibration = hal::bit_mask::from(2);
 [[maybe_unused]] static constexpr auto data_alignment = hal::bit_mask::from(11);
 
 /// These bits select the external event used to trigger the start of conversion
-/// of an injected group
+/// of an injected group.
 [[maybe_unused]] static constexpr auto external_event_select_injected_group =
   hal::bit_mask::from(12, 14);
 
@@ -173,34 +163,34 @@ static constexpr auto ad_calibration = hal::bit_mask::from(2);
 };  // namespace adc_control_register_2
 
 /// Namespace containing the bit_mask objects that are use to manipulate the
-/// stm32f1 ADC Regular Sequence register 3
+/// stm32f1 ADC Regular Sequence register 3.
 namespace adc_regular_sequence_register_3 {
-/// First channel conversion in regular sequence
+/// First channel conversion in regular sequence.
 static constexpr auto first_conversion = hal::bit_mask::from(0, 4);
 
-/// Second channel conversion in regular sequence
+/// Second channel conversion in regular sequence.
 [[maybe_unused]] static constexpr auto second_conversion =
   hal::bit_mask::from(5, 9);
 
-/// Third channel conversion in regular sequence
+/// Third channel conversion in regular sequence.
 [[maybe_unused]] static constexpr auto third_conversion =
   hal::bit_mask::from(10, 14);
 
-/// Fourth channel conversion in regular sequence
+/// Fourth channel conversion in regular sequence.
 [[maybe_unused]] static constexpr auto fourth_conversion =
   hal::bit_mask::from(15, 19);
 
-/// Fifth channel conversion in regular sequence
+/// Fifth channel conversion in regular sequence.
 [[maybe_unused]] static constexpr auto fifth_conversion =
   hal::bit_mask::from(20, 24);
 
-/// Sixth channel conversion in regular sequence
+/// Sixth channel conversion in regular sequence.
 [[maybe_unused]] static constexpr auto sixth_conversion =
   hal::bit_mask::from(25, 29);
 };  // namespace adc_regular_sequence_register_3
 
 /// Namespace containing the bit_mask objects that are use to manipulate the
-/// stm32f1 ADC Regular Data register
+/// stm32f1 ADC Regular Data register.
 namespace adc_regular_data_register {
 /// These bits are read only. They contain the conversion result from the
 /// regular channels. The data is left or right-aligned depending on bit 11 in
@@ -214,21 +204,44 @@ static constexpr auto regular_data = hal::bit_mask::from(0, 15);
   hal::bit_mask::from(16, 31);
 };  // namespace adc_regular_data_register
 
-constexpr std::uintptr_t stm_apb2_base = 0x40000000UL;
-constexpr std::uintptr_t stm_adc_addr = stm_apb2_base + 0x12400;
-inline auto* adc_reg = reinterpret_cast<adc_reg_t*>(stm_adc_addr);
-
-void setup(adc::pins const& p_pin)
+// Function to setup and initialize the specified adc.
+void setup_adc(hal::stm32f1::peripheral const& p_adc_peripheral,
+               adc_reg_t* p_adc_reg)
 {
-  auto const adc_frequency = frequency(hal::stm32f1::peripheral::adc1);
+  // Verify adc's clock is not higher than the maximum frequency.
+  auto const adc_frequency = frequency(p_adc_peripheral);
   if (adc_frequency > 14.0_MHz) {
     hal::safe_throw(hal::operation_not_supported(nullptr));
   }
 
-  // Power on adc clock
-  power_on(peripheral::adc1);
+  // Power on adc clock.
+  power_on(p_adc_peripheral);
 
-  // Derive port and pin from enum
+  // Turns on and calibrates the adc only if its the first time power-on. This
+  // is to prevent accidentally toggling the start of a new conversion as it
+  // uses the same bit.
+  if (bit_extract<adc_control_register_2::ad_converter_on>(
+        p_adc_reg->control_2) == 0) {
+    // Power on the adc.
+    hal::bit_modify(p_adc_reg->control_2)
+      .set<adc_control_register_2::ad_converter_on>();
+
+    // Start adc calibration. ADC must have been in power-on state for a minimum
+    // of 2 clock cycles before starting calibration.
+    hal::bit_modify(p_adc_reg->control_2)
+      .set<adc_control_register_2::ad_calibration>();
+
+    // Wait for calibration to complete.
+    while (bit_extract<adc_control_register_2::ad_calibration>(
+             p_adc_reg->control_2) == 1) {
+    }
+  }
+}
+
+// Function to setup and initialize the specified pin to analog input mode.
+void setup_pin(adc_peripheral_manager::pins const& p_pin)
+{
+  // Derive port and pin from the enum.
   hal::u8 port, pin;
   if (hal::value(p_pin) <= 7) {
     port = 'A';
@@ -241,59 +254,89 @@ void setup(adc::pins const& p_pin)
     pin = hal::value(p_pin) - 10;
   }
 
-  // Set specified pin to analog input mode
+  // Set specified pin to analog input mode.
   configure_pin({ .port = port, .pin = pin }, input_analog);
-
-  // Turns on and calibrates ADC only if its first time power-up
-  if (bit_extract<adc_control_register_2::ad_converter_on>(
-        adc_reg->control_2) == 0) {
-    // Power on adc
-    hal::bit_modify(adc_reg->control_2)
-      .set<adc_control_register_2::ad_converter_on>();
-
-    // Start adc calibration. ADC must have been in power-on state for a minimum
-    // of 2 clock cycles before starting calibration.
-    hal::bit_modify(adc_reg->control_2)
-      .set<adc_control_register_2::ad_calibration>();
-
-    // Wait for calibration to complete
-    while (bit_extract<adc_control_register_2::ad_calibration>(
-             adc_reg->control_2) == 1) {
-    }
-  }
 }
 }  // namespace
 
-adc::adc(pins const& p_pin)
-  : m_pin(p_pin)
+adc_peripheral_manager::adc_peripheral_manager(adc_selection p_adc_selection,
+                                               hal::basic_lock& p_lock)
+  : m_lock(&p_lock)
 {
-  setup(m_pin);
+  // Base address for apb2 bus.
+  constexpr std::uintptr_t stm_apb2_base = 0x40000000UL;
+  // Determines the appropriate adc peripheral to use and its memory offset.
+  int adc_offset;
+  hal::stm32f1::peripheral adc_peripheral;
+  switch (p_adc_selection) {
+    case adc_selection::adc1:
+      adc_offset = 12400;
+      adc_peripheral = peripheral::adc1;
+      break;
+    case adc_selection::adc2:
+      adc_offset = 12800;
+      adc_peripheral = peripheral::adc2;
+      break;
+    default:
+      adc_offset = 12400;
+      adc_peripheral = peripheral::adc1;
+      break;
+  }
+  // Stores address of specified adc peripheral's config registers to the
+  // manager object. NOLINTNEXTLINE(performance-no-int-to-ptr)
+  adc_reg_location = reinterpret_cast<void*>(stm_apb2_base + adc_offset);
+
+  // NOLINTNEXTLINE(performance-no-int-to-ptr)
+  setup_adc(adc_peripheral, reinterpret_cast<adc_reg_t*>(adc_reg_location));
 }
 
-float adc::driver_read()
+adc_peripheral_manager::channel adc_peripheral_manager::acquire_channel(
+  pins p_pin)
 {
-  // Set the specified channel to be sampled
+  return { *this, p_pin };
+}
+
+float adc_peripheral_manager::read_channel(pins p_pin)
+{
+  // Lock the lock.
+  std::lock_guard<hal::basic_lock> acquire_lock(*m_lock);
+
+  auto adc_reg = reinterpret_cast<adc_reg_t*>(adc_reg_location);
+  // Set the specified channel to be sampled.
   hal::bit_modify(adc_reg->regular_sequence_3)
     .insert<adc_regular_sequence_register_3::first_conversion>(
-      hal::value(m_pin));
+      hal::value(p_pin));
 
-  // Start adc conversion
+  // Start adc conversion.
   hal::bit_modify(adc_reg->control_2)
     .set<adc_control_register_2::ad_converter_on>();
 
-  // Wait for conversion to complete
+  // Wait for conversion to complete.
   while (bit_extract<adc_status_register::end_of_conversion>(adc_reg->status) ==
          0) {
   }
 
   auto constexpr full_scale_max = bit_limits<12, size_t>::max();
   auto constexpr full_scale_float = static_cast<float>(full_scale_max);
-  // Read sample from peripheral memory
+  // Read sample from peripheral's memory.
   auto const sample_integer =
     hal::bit_extract<adc_regular_data_register::regular_data>(
       adc_reg->regular_data);
   auto sample = static_cast<float>(sample_integer);
   return sample / full_scale_float;
+}
+
+adc_peripheral_manager::channel::channel(adc_peripheral_manager& p_manager,
+                                         adc_peripheral_manager::pins p_pin)
+  : m_manager(&p_manager)
+  , m_pin(p_pin)
+{
+  setup_pin(m_pin);
+}
+
+float adc_peripheral_manager::channel::driver_read()
+{
+  return m_manager->read_channel(m_pin);
 }
 
 }  // namespace hal::stm32f1

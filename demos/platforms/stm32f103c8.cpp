@@ -69,67 +69,73 @@ void initialize_platform(resource_list& p_resources)
   // static auto mask_id_filters_x2 = can.acquire_mask_filter();
   // mask_id_filters_x2.filter[0].allow({ { .id = 0, .mask = 0 } });
 
-  static hal::stm32f1::output_pin led('C', 13);
+  // static hal::stm32f1::output_pin led('A', 0);
 
-  p_resources.status_led = &led;
+  // p_resources.status_led = &led;
 
-  // pin G0 on the STM micromod is port B, pin 4
-  static hal::stm32f1::input_pin input_pin('B', 4);
-  p_resources.input_pin = &input_pin;
+  // // pin G0 on the STM micromod is port B, pin 4
+  // static hal::stm32f1::input_pin input_pin('B', 4);
+  // p_resources.input_pin = &input_pin;
 
-  static hal::stm32f1::output_pin sda_output_pin('A', 0);
-  static hal::stm32f1::output_pin scl_output_pin('A', 15);
+  // static hal::stm32f1::output_pin sda_output_pin('A', 0);
+  // static hal::stm32f1::output_pin scl_output_pin('A', 15);
 
-  sda_output_pin.configure({
-    .resistor = hal::pin_resistor::pull_up,
-    .open_drain = true,
-  });
-  scl_output_pin.configure({
-    .resistor = hal::pin_resistor::pull_up,
-    .open_drain = true,
-  });
-  static hal::bit_bang_i2c::pins bit_bang_pins{
-    .sda = &sda_output_pin,
-    .scl = &scl_output_pin,
-  };
-  static hal::bit_bang_i2c bit_bang_i2c(bit_bang_pins, steady_clock);
+  // sda_output_pin.configure({
+  //   .resistor = hal::pin_resistor::pull_up,
+  //   .open_drain = true,
+  // });
+  // scl_output_pin.configure({
+  //   .resistor = hal::pin_resistor::pull_up,
+  //   .open_drain = true,
+  // });
+  // static hal::bit_bang_i2c::pins bit_bang_pins{
+  //   .sda = &sda_output_pin,
+  //   .scl = &scl_output_pin,
+  // };
+  // static hal::bit_bang_i2c bit_bang_i2c(bit_bang_pins, steady_clock);
 
-  p_resources.i2c = &bit_bang_i2c;
+  // p_resources.i2c = &bit_bang_i2c;
 
-  static hal::stm32f1::output_pin spi_chip_select('A', 4);
-  p_resources.spi_chip_select = &spi_chip_select;
-  static hal::stm32f1::output_pin sck('A', 5);
-  static hal::stm32f1::output_pin copi('A', 6);
-  static hal::stm32f1::input_pin cipo('A', 7);
+  // static hal::stm32f1::output_pin spi_chip_select('A', 4);
+  // p_resources.spi_chip_select = &spi_chip_select;
+  // static hal::stm32f1::output_pin sck('A', 5);
+  // static hal::stm32f1::output_pin copi('A', 6);
+  // static hal::stm32f1::input_pin cipo('A', 7);
 
-  static hal::bit_bang_spi::pins bit_bang_spi_pins{ .sck = &sck,
-                                                    .copi = &copi,
-                                                    .cipo = &cipo };
+  // static hal::bit_bang_spi::pins bit_bang_spi_pins{ .sck = &sck,
+  //                                                   .copi = &copi,
+  //                                                   .cipo = &cipo };
 
   static hal::stm32f1::timer1_pwm pwm(hal::stm32f1::timer1_pwm::pwm_pins::pa8);
 
   p_resources.pwm = &pwm;
 
-  static hal::spi::settings bit_bang_spi_settings{
-    .clock_rate = 250.0_kHz,
-    .clock_polarity = false,
-    .clock_phase = false,
-  };
+  static hal::stm32f1::timer1_pwm pwm2(hal::stm32f1::timer1_pwm::pwm_pins::pa1);
 
-  hal::spi* spi = nullptr;
+  p_resources.pwm2 = &pwm2;
 
-  if constexpr (use_bit_bang_spi) {
-    static hal::bit_bang_spi bit_bang_spi(
-      bit_bang_spi_pins, steady_clock, bit_bang_spi_settings);
-    spi = &bit_bang_spi;
-  } else {
-    static hal::stm32f1::spi spi1(hal::bus<1>,
-                                  {
-                                    .clock_rate = 250.0_kHz,
-                                    .clock_polarity = false,
-                                    .clock_phase = false,
-                                  });
-    spi = &spi1;
-  }
-  p_resources.spi = spi;
+  
+
+  // static hal::spi::settings bit_bang_spi_settings{
+  //   .clock_rate = 250.0_kHz,
+  //   .clock_polarity = false,
+  //   .clock_phase = false,
+  // };
+
+  // hal::spi* spi = nullptr;
+
+  // if constexpr (use_bit_bang_spi) {
+  //   static hal::bit_bang_spi bit_bang_spi(
+  //     bit_bang_spi_pins, steady_clock, bit_bang_spi_settings);
+  //   spi = &bit_bang_spi;
+  // } else {
+  //   static hal::stm32f1::spi spi1(hal::bus<1>,
+  //                                 {
+  //                                   .clock_rate = 250.0_kHz,
+  //                                   .clock_polarity = false,
+  //                                   .clock_phase = false,
+  //                                 });
+  //   spi = &spi1;
+  // }
+  // p_resources.spi = spi;
 }

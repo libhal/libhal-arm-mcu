@@ -63,23 +63,43 @@ struct pwm_reg_t
   std::uint32_t volatile dma_address_register;
 };
 
-inline pwm_reg_t* pwm_timer8 = reinterpret_cast<pwm_reg_t*>(
-  0x4001'3400);  // TIM8 timer (Does not exist on stm32f103c8 chip)
 inline pwm_reg_t* pwm_timer1 =
   reinterpret_cast<pwm_reg_t*>(0x4001'2C00);  // TIM1 timer
-
+inline pwm_reg_t* pwm_timer2 = reinterpret_cast<pwm_reg_t*>(0x4000'0000);
+inline pwm_reg_t* pwm_timer3 = reinterpret_cast<pwm_reg_t*>(0x4000'0400);
+inline pwm_reg_t* pwm_timer4 = reinterpret_cast<pwm_reg_t*>(0x4000'0800);
+inline pwm_reg_t* pwm_timer5 = reinterpret_cast<pwm_reg_t*>(
+  0x4000'0C00);  // does not exist on the stm32f103x8 chips
+inline pwm_reg_t* pwm_timer8 = reinterpret_cast<pwm_reg_t*>(
+  0x4001'3400);  // TIM8 timer (Does not exist on stm32f103c8 chip)
+// Note: Timers 6 and 7 do not have pwm functionality.
+// Note: Timers 9/12 have only 2 channels of pwm available
+// Note: Timers 10,11,13,14 have 1 channel of pwm.
 class timer1_pwm final : public hal::pwm
 {
 public:
+
   /**
-   * @brief Default pins for pwm tim1 channels
+   * @brief Default pins for the various pwm channels
    */
   enum class pwm_pins : std::uint8_t
   {
-    pa8 = 0b00,
-    pa9 = 0b01,
-    pa10 = 0b10,
-    pa11 = 0b11,
+    pa0 = 0,
+    pa1 = 1,
+    pa2 = 2,
+    pa3 = 3,
+    pa6 = 4,
+    pa7 = 5,
+    pa8 = 6,
+    pa9 = 7,
+    pa10 = 8,
+    pa11 = 9,
+    pb0 = 10,
+    pb1 = 11,
+    pb6 = 12,
+    pb7 = 13,
+    pb8 = 14,
+    pb9 = 15,
   };
   timer1_pwm(pwm_pins pwm_pin);
 

@@ -50,6 +50,8 @@ struct resource_list
   std::optional<hal::i2c*> i2c;
   std::optional<hal::interrupt_pin*> interrupt_pin;
   std::optional<hal::pwm*> pwm;
+  std::optional<hal::pwm*> pwm2;
+
   std::optional<hal::spi*> spi;
   std::optional<hal::output_pin*> spi_chip_select;
   std::optional<hal::stream_dac_u8*> stream_dac;

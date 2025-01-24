@@ -15,9 +15,6 @@
 #include <cstdint>
 
 #include <libhal-arm-mcu/stm32f411/input_pin.hpp>
-
-#include "gpio_reg.hpp"
-#include "power.hpp"
 #include <libhal-util/bit.hpp>
 
 #include "gpio_reg.hpp"

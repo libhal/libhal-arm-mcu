@@ -46,6 +46,7 @@ libhal_test_and_make_library(
 
   # stm32_generic
   src/stm32_generic/spi.cpp
+  src/stm32_generic/uart.cpp
 
   # stm32f1
   src/stm32f1/can_reg.hpp
@@ -67,12 +68,15 @@ libhal_test_and_make_library(
   src/stm32f1/adc.cpp
 
   # stm32f411
+  src/stm32f411/clock.cpp
+  src/stm32f411/dma.cpp
   src/stm32f411/input_pin.cpp
+  src/stm32f411/interrupt.cpp
   src/stm32f411/output_pin.cpp
   src/stm32f411/pin.cpp
   src/stm32f411/power.cpp
   src/stm32f411/spi.cpp
-  src/stm32f411/clock.cpp
+  src/stm32f411/uart.cpp
 
   # stm32f40
   src/stm32f40/output_pin.cpp

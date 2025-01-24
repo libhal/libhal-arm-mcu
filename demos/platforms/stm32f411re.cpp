@@ -17,10 +17,12 @@
 #include <libhal-arm-mcu/startup.hpp>
 #include <libhal-arm-mcu/stm32f411/clock.hpp>
 #include <libhal-arm-mcu/stm32f411/constants.hpp>
+#include <libhal-arm-mcu/stm32f411/dma.hpp>
 #include <libhal-arm-mcu/stm32f411/input_pin.hpp>
 #include <libhal-arm-mcu/stm32f411/output_pin.hpp>
 #include <libhal-arm-mcu/stm32f411/pin.hpp>
 #include <libhal-arm-mcu/stm32f411/spi.hpp>
+#include <libhal-arm-mcu/stm32f411/uart.hpp>
 #include <libhal-arm-mcu/system_control.hpp>
 #include <libhal/initializers.hpp>
 #include <libhal/output_pin.hpp>
@@ -33,7 +35,7 @@ void initialize_platform(resource_list& p_resources)
   using namespace hal::literals;
   hal::stm32f411::maximum_speed_using_internal_oscillator();
 
-  auto cpu_frequency =
+  auto const cpu_frequency =
     hal::stm32f411::frequency(hal::stm32f411::peripheral::cpu);
   static hal::cortex_m::dwt_counter steady_clock(cpu_frequency / 8);
 
@@ -44,9 +46,12 @@ void initialize_platform(resource_list& p_resources)
   static hal::stm32f411::output_pin led(hal::stm32f411::peripheral::gpio_a, 5);
 
   static hal::stm32f411::spi spi(hal::runtime{}, 2, {});
-  hal::stm32f411::output_pin chip_select(hal::stm32f411::peripheral::gpio_b,
-                                         13);
+  static hal::stm32f411::output_pin chip_select(
+    hal::stm32f411::peripheral::gpio_b, 13);
 
+  static hal::stm32f411::uart uart2(
+    hal::port<2>, hal::buffer<128>, { .baud_rate = 115200 });
+  p_resources.console = &uart2;
   p_resources.reset = []() { hal::cortex_m::reset(); };
   p_resources.status_led = &led;
   p_resources.clock = &steady_clock;

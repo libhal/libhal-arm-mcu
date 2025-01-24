@@ -100,7 +100,7 @@ private:
   hal::basic_lock* m_lock;
   /// A pointer to track the location of the registers for the specified adc
   /// peripheral.
-  void* adc_reg_location;
+  std::uintptr_t adc_reg_location;
 };
 
 /**

@@ -270,21 +270,21 @@ adc_peripheral_manager::adc_peripheral_manager(adc_selection p_adc_selection,
   hal::stm32f1::peripheral adc_peripheral;
   switch (p_adc_selection) {
     case adc_selection::adc1:
-      adc_offset = 12400;
+      adc_offset = 0x12400;
       adc_peripheral = peripheral::adc1;
       break;
     case adc_selection::adc2:
-      adc_offset = 12800;
+      adc_offset = 0x12800;
       adc_peripheral = peripheral::adc2;
       break;
     default:
-      adc_offset = 12400;
+      adc_offset = 0x12400;
       adc_peripheral = peripheral::adc1;
       break;
   }
   // Stores address of specified adc peripheral's config registers to the
   // manager object. NOLINTNEXTLINE(performance-no-int-to-ptr)
-  adc_reg_location = reinterpret_cast<void*>(stm_apb2_base + adc_offset);
+  adc_reg_location = stm_apb2_base + adc_offset;
 
   // NOLINTNEXTLINE(performance-no-int-to-ptr)
   setup_adc(adc_peripheral, reinterpret_cast<adc_reg_t*>(adc_reg_location));

@@ -301,6 +301,7 @@ float adc_peripheral_manager::read_channel(pins p_pin)
   // Lock the lock.
   std::lock_guard<hal::basic_lock> acquire_lock(*m_lock);
 
+  // NOLINTNEXTLINE(performance-no-int-to-ptr)
   auto adc_reg = reinterpret_cast<adc_reg_t*>(adc_reg_location);
   // Set the specified channel to be sampled.
   hal::bit_modify(adc_reg->regular_sequence_3)

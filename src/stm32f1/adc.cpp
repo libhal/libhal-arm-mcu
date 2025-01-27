@@ -239,8 +239,8 @@ void setup_adc(hal::stm32f1::peripheral p_adc_peripheral, void* p_address)
   // Turns on and calibrates the adc only if its the first time power-on. This
   // is to prevent accidentally toggling the start of a new conversion as it
   // uses the same bit.
-  if (bit_extract<adc_control_register_2::ad_converter_on>(
-        adc_reg.control_2) == 0) {
+  if (bit_extract<adc_control_register_2::ad_converter_on>(adc_reg.control_2) ==
+      0) {
     // Power on the adc.
     hal::bit_modify(adc_reg.control_2)
       .set<adc_control_register_2::ad_converter_on>();
@@ -303,6 +303,7 @@ adc_peripheral_manager::adc_peripheral_manager(adc_selection p_adc_selection,
   }
   // Stores address of specified adc peripheral's config registers to the
   // manager object.
+  // NOLINTNEXTLINE(performance-no-int-to-ptr)
   adc_reg_location = reinterpret_cast<void*>(stm_apb2_base + adc_offset);
 
   setup_adc(adc_peripheral, adc_reg_location);

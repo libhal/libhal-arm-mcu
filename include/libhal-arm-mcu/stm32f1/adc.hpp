@@ -58,7 +58,9 @@ public:
 
   /**
    * @brief Defines the available adc peripherals that CAN be onboard the MCU.
-   * Note that the XL-density stm32f1 MCU's only have adc1.
+   * Having two adc's provides the capability to do dual-channel conversions, as
+   * well as do simultaneous sampling through dual-mode (not currently
+   * supported). Note that the XL-density stm32f1 MCU's only have adc1.
    *
    */
   enum class adc_selection : hal::u8
@@ -83,9 +85,17 @@ public:
    * peripheral manager.
    *
    * @param p_pin - The pin to be used for the channels analog input.
-   * @return channel - object that can be read for analog input .
+   * @return channel - is an implementation of the `hal::adc` interface that
+   * represents a channel on the ADC peripheral.
    */
   channel acquire_channel(pins p_pin);
+
+  adc_peripheral_manager(adc_peripheral_manager const& p_other) = delete;
+  adc_peripheral_manager& operator=(adc_peripheral_manager const& p_other) =
+    delete;
+  adc_peripheral_manager(adc_peripheral_manager&& p_other) noexcept = delete;
+  adc_peripheral_manager& operator=(adc_peripheral_manager&& p_other) noexcept =
+    delete;
 
 private:
   /**
@@ -100,18 +110,24 @@ private:
   hal::basic_lock* m_lock;
   /// A pointer to track the location of the registers for the specified adc
   /// peripheral.
-  std::uintptr_t adc_reg_location;
+  void* adc_reg_location;
 };
 
 /**
- * @brief Creates channels to be used by the adc peripheral manager to read
- * certain pins' analog input.
+ * @brief This class implements the `hal::adc` abstract base class. It creates
+ * channels to be used by the adc peripheral manager to read certain pins'
+ * analog input.
  *
  */
 class adc_peripheral_manager::channel : public hal::adc
 {
+public:
+  channel(channel const& p_other) = delete;
+  channel& operator=(channel const& p_other) = delete;
+  channel(channel&& p_other) noexcept = delete;
+  channel& operator=(channel&& p_other) noexcept = delete;
+
 private:
-  /// Gives adc_peripheral_manager access to channel's private members.
   friend class adc_peripheral_manager;
 
   // Constructor for channel. Needs to configure the given pin

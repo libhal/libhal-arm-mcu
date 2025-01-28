@@ -71,7 +71,7 @@ namespace {
 
   return (static_cast<float>(compare_value) / static_cast<float>(arr_value));
 }
-void setup_channel(pwm_reg_t* p_reg, uint8_t p_channel)
+void setup_channel(pwm_reg_t* p_reg, uint8_t p_channel, peripheral p_timer)
 {
 
   // static constexpr auto main_output_enable = bit_mask::from<15>();
@@ -85,14 +85,17 @@ void setup_channel(pwm_reg_t* p_reg, uint8_t p_channel)
   // auto const cc_enable_value = 0b10U;
   // static auto ccer_polarity_enable_mask =
   //   bit_mask::from(start_pos, start_pos + 1);
-  static auto cc_enable = bit_mask::from(start_pos);
-  static auto cc_polarity = bit_mask::from(start_pos+1);
-
-  bit_modify(p_reg->cc_enable_register).clear(cc_enable); // this is confusing why it doesn't work.
-  bit_modify(p_reg->cc_enable_register).set(cc_polarity);
-
-  // bit_modify(p_reg->cc_enable_register)
-  //   .insert(ccer_polarity_enable_mask, cc_enable_value);
+  auto cc_enable = bit_mask::from(start_pos);
+  auto cc_polarity = bit_mask::from(start_pos + 1);
+  if (p_timer != peripheral::timer1) {
+    bit_modify(p_reg->cc_enable_register)
+      .set(cc_enable);
+    bit_modify(p_reg->cc_enable_register).clear(cc_polarity);
+  } else {
+    bit_modify(p_reg->cc_enable_register)
+      .clear(cc_enable); // if it is timer1, then we need to clear this bit.
+    bit_modify(p_reg->cc_enable_register).set(cc_polarity);
+  }
 
   return;
 }
@@ -107,7 +110,7 @@ void setup(timer1_pwm::pwm_pins p_pin)
   static constexpr auto output_compare_even = bit_mask::from<12, 14>();
   static constexpr auto channel_output_select_odd = bit_mask::from<0, 1>();
   static constexpr auto channel_output_select_even = bit_mask::from<8, 9>();
-  
+
   static constexpr auto counter_enable = bit_mask::from<0>();
   static constexpr auto auto_reload_preload_enable = bit_mask::from<7>();
   static constexpr auto odd_channel_preload_enable = bit_mask::from<3>();
@@ -132,8 +135,8 @@ void setup(timer1_pwm::pwm_pins p_pin)
       .insert<output_compare_odd>(pwm_mode_1)
       .insert<channel_output_select_odd>(set_output)
       .set(odd_channel_preload_enable);
-      
-    setup_channel(reg, 1);
+
+    setup_channel(reg, 1, peripheral_id);
   } else if (p_pin == timer1_pwm::pwm_pins::pa9 ||
              p_pin == timer1_pwm::pwm_pins::pa1 ||
              p_pin == timer1_pwm::pwm_pins::pa7 ||
@@ -142,7 +145,7 @@ void setup(timer1_pwm::pwm_pins p_pin)
       .insert<output_compare_even>(pwm_mode_1)
       .insert<channel_output_select_even>(set_output)
       .set(even_channel_preload_enable);
-    setup_channel(reg, 2);
+    setup_channel(reg, 2, peripheral_id);
 
   } else if (p_pin == timer1_pwm::pwm_pins::pa10 ||
              p_pin == timer1_pwm::pwm_pins::pa2 ||
@@ -152,7 +155,7 @@ void setup(timer1_pwm::pwm_pins p_pin)
       .insert<output_compare_odd>(pwm_mode_1)
       .insert<channel_output_select_odd>(set_output)
       .set(odd_channel_preload_enable);
-    setup_channel(reg, 3);
+    setup_channel(reg, 3, peripheral_id);
 
   } else if (p_pin == timer1_pwm::pwm_pins::pa11 ||
              p_pin == timer1_pwm::pwm_pins::pa3 ||
@@ -163,7 +166,7 @@ void setup(timer1_pwm::pwm_pins p_pin)
       .insert<channel_output_select_even>(set_output)
 
       .set(even_channel_preload_enable);
-    setup_channel(reg, 4);
+    setup_channel(reg, 4, peripheral_id);
   }
   bit_modify(reg->event_generator_register).set(ug_bit);
   bit_modify(reg->control_register).set(counter_enable);

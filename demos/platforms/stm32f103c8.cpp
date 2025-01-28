@@ -110,7 +110,7 @@ void initialize_platform(resource_list& p_resources)
 
   p_resources.pwm = &pwm;
 
-  static hal::stm32f1::timer1_pwm pwm2(hal::stm32f1::timer1_pwm::pwm_pins::pa1);
+  static hal::stm32f1::timer1_pwm pwm2(hal::stm32f1::timer1_pwm::pwm_pins::pa1); // PWM 1 - timer 2 channel 2
 
   p_resources.pwm2 = &pwm2;
 

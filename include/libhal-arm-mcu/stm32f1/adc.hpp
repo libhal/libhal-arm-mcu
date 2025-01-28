@@ -98,12 +98,6 @@ public:
     delete;
 
 private:
-  /**
-   * @brief Takes an analog input reading.
-   *
-   * @param p_pin - The pin to read from.
-   * @return float - The sampled adc value.
-   */
   float read_channel(pins p_pin);
 
   /// The lock to be used for thread safety with adc reads.
@@ -130,22 +124,15 @@ public:
 private:
   friend class adc_peripheral_manager;
 
-  // Constructor for channel. Needs to configure the given pin
   /**
    * @brief Constructs a channel object.
    *
-   * @param p_manager - The adc peripheral manager that will be managing this
-   * channel resource.
+   * @param p_manager - The adc peripheral manager that this channel belongs to.
    * @param p_pin - The pin that will be used for this channels analog input.
    */
   channel(adc_peripheral_manager& p_manager,
           adc_peripheral_manager::pins p_pin);
 
-  /**
-   * @brief Takes an analog input reading.
-   *
-   * @return float - The sampled adc value.
-   */
   float driver_read() override;
 
   /// The adc peripheral manager that manages this channel.

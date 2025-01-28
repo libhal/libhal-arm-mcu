@@ -333,6 +333,7 @@ float adc_peripheral_manager::read_channel(pins p_pin)
   // Wait for conversion to complete.
   while (
     not bit_extract<adc_status_register::end_of_conversion>(adc_reg.status)) {
+    continue;
   }
 
   auto constexpr full_scale_max = bit_limits<12, size_t>::max();

@@ -280,13 +280,12 @@ void initialize_platform(resource_list& p_resource)
     if (bmRequestType == 0x00 && bRequest == 0x05) {
       control_endpoint.write({});
       control_endpoint.set_address(buffer[2]);
-      hal::print(uart1, "ZLP+SET_ADDR\n");
+      hal::print<32>(uart1, "ZLP+SET_ADDR[%d]\n", buffer[2]);
     } else if (bmRequestType == 0x80) {  // Device-to-host
       if (bRequest == 0x06) {            // GET_DESCRIPTOR
         std::size_t const wLength = (buffer[7] << 8) | buffer[6];
         hal::u8 descriptor_type = buffer[3];
         hal::u8 descriptor_index = buffer[2];
-
         switch (descriptor_type) {
           case 0x01: {  // Device Descriptor
             hal::print<16>(uart1, "DD%" PRIu16 "\n", wLength);

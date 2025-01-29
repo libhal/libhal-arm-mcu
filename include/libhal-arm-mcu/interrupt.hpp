@@ -21,7 +21,7 @@
 #include <libhal/error.hpp>
 
 /**
- * @defgroup Enum2 APIs involving enumerations
+ * @defgroup Enum APIs involving enumerations
  *
  */
 namespace hal::cortex_m {

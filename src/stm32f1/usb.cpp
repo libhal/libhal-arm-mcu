@@ -167,12 +167,14 @@ constexpr std::size_t initial_packet_buffer_memory =
   packet_buffer_sram_size - buffer_descriptor_table_end;
 
 /// TODO(kammce): make this no longer fixed, maybe...
-constexpr std::uint16_t fixed_endpoint_size = 16;
-constexpr std::uint16_t rx_endpoint_count_mask =
+constexpr hal::u16 crc_byte_length = 2;
+constexpr hal::u16 fixed_endpoint_size = 16;
+constexpr auto endpoint_memory_size = fixed_endpoint_size + crc_byte_length;
+constexpr auto rx_endpoint_count_mask =
   hal::bit_value(0U)
     .clear<block_table::block_size>()
     .insert<block_table::number_of_blocks>(9U)
-    .to<std::uint16_t>();
+    .to<hal::u16>();
 
 std::span<std::uint8_t> usb_packet_buffer_sram()
 {
@@ -190,15 +192,15 @@ std::span<hal::u32> usb_packet_buffer_sram_u32()
            packet_buffer_sram_size / sizeof(hal::u16) };
 }
 
-constexpr std::uint16_t tx_endpoint_memory_address(std::size_t p_endpoint)
+constexpr hal::u16 tx_endpoint_memory_address(std::size_t p_endpoint)
 {
-  auto const offset = (p_endpoint * 2) * fixed_endpoint_size;
+  auto const offset = (p_endpoint * 2) * endpoint_memory_size;
   return buffer_descriptor_table_end + offset;
 }
 
-constexpr std::uint16_t rx_endpoint_memory_address(std::size_t p_endpoint)
+constexpr hal::u16 rx_endpoint_memory_address(std::size_t p_endpoint)
 {
-  auto const offset = ((p_endpoint * 2) + 1) * fixed_endpoint_size;
+  auto const offset = ((p_endpoint * 2) + 1) * endpoint_memory_size;
   return buffer_descriptor_table_end + offset;
 }
 
@@ -212,19 +214,19 @@ struct buffer_descriptor_block
   void setup_descriptor_for(std::uint8_t p_endpoint)
   {
     tx_address = tx_endpoint_memory_address(p_endpoint);
-    tx_count = fixed_endpoint_size;
+    tx_count = endpoint_memory_size;
 
     rx_address = rx_endpoint_memory_address(p_endpoint);
     rx_count = rx_endpoint_count_mask;
   }
 
-  std::uint16_t bytes_received()
+  hal::u16 bytes_received()
   {
     auto const bytes_received = hal::bit_extract<block_table::count>(rx_count);
     return bytes_received;
   }
 
-  std::uint16_t rx_address_offset()
+  hal::u16 rx_address_offset()
   {
     return rx_address;
   }
@@ -236,7 +238,7 @@ struct buffer_descriptor_block
     return usb_packet_buffer_sram_u32().subspan(offset, size);
   }
 
-  std::uint16_t tx_address_offset()
+  hal::u16 tx_address_offset()
   {
     return tx_address;
   }
@@ -248,7 +250,7 @@ struct buffer_descriptor_block
     return usb_packet_buffer_sram_u32().subspan(offset, size);
   }
 
-  void set_count_tx(std::uint16_t p_transfer_size)
+  void set_count_tx(hal::u16 p_transfer_size)
   {
     tx_count = p_transfer_size;
   }
@@ -584,6 +586,7 @@ void usb::write_to_endpoint(std::uint8_t p_endpoint,
   auto tx_span = descriptor.tx_span();
 
   while (not p_data.empty()) {
+    m_tx_busy[p_endpoint] = true;
     constexpr std::size_t mtu = fixed_endpoint_size;
     auto tx_iter = tx_span.begin();
     auto const min = std::min(p_data.size(), mtu);
@@ -601,13 +604,12 @@ void usb::write_to_endpoint(std::uint8_t p_endpoint,
     }
 
     p_data = p_data.subspan(min);
-    m_tx_busy[p_endpoint] = true;
     set_tx_stat(p_endpoint, stat::valid);
     wait_for_endpoint_transfer_completion(p_endpoint);
   }
 
   if (p_endpoint == 0) {
-    // set_rx_stat(p_endpoint, stat::valid);
+    set_rx_stat(p_endpoint, stat::valid);
   }
 }
 

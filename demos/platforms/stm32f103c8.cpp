@@ -32,11 +32,10 @@
 
 #include <resource_list.hpp>
 
-std::array<hal::byte, 16> buffer{};
-std::array<decltype(buffer), 16> buffer_history{};
+using setup_command_buffer = std::array<hal::byte, 16>;
+std::array<setup_command_buffer, 16> buffer_history{};
 std::size_t history_idx = 0;
-std::span<hal::byte> usable_data(buffer);
-bool act = false;
+std::size_t current_idx = 0;
 
 enum class enumeration_state
 {
@@ -51,11 +50,25 @@ enumeration_state state = enumeration_state::pre_address;
 
 void my_control_handler(std::span<hal::byte> p_data)
 {
+  // Ignore zero length messages from the host.
+  if (p_data.empty()) {
+    return;
+  }
+  auto& buffer = buffer_history[history_idx++ % buffer_history.size()];
   auto const min = std::min(buffer.size(), p_data.size());
   std::copy_n(p_data.begin(), min, buffer.begin());
-  usable_data = buffer;
-  usable_data = usable_data.first(min);
-  act = true;
+};
+
+auto get_latest_host_command() -> auto&
+{
+  decltype(current_idx) setup_command_select = 0;
+  if (history_idx == 0) {
+    setup_command_select = buffer_history.size() - 1;
+  } else {
+    setup_command_select = history_idx - 1;
+  }
+
+  return buffer_history[setup_command_select % buffer_history.size()];
 };
 
 void initialize_platform(resource_list& p_resource)
@@ -158,10 +171,6 @@ void initialize_platform(resource_list& p_resource)
 
   hal::print(uart1, "USB test starting in init...\n");
 
-  hal::stm32f1::output_pin signal('A', 0);
-  signal.level(true);
-  hal::stm32f1::output_pin signal2('A', 15);
-  signal.level(true);
   hal::stm32f1::usb usb(steady_clock);
   hal::print(uart1, "USB\n");
   auto control_endpoint = usb.acquire_control_endpoint();
@@ -173,6 +182,7 @@ void initialize_platform(resource_list& p_resource)
 
   control_endpoint.connect(true);
   hal::print(uart1, "connect\n");
+  control_endpoint.enable_rx();
 
   // Device Descriptor
   // Device Descriptor (18 bytes)
@@ -245,11 +255,14 @@ void initialize_platform(resource_list& p_resource)
   };
 
   // String Descriptor 3 (Serial Number)
-  uint8_t const serial_descriptor[] = {
-    20,    // bLength
+  constexpr uint8_t serial_descriptor[] = {
+    14,    // bLength
     0x03,  // bDescriptorType (String)
-    '0',  0, '8', 0, '8', 0, '8', 0, '0', 0, '8', 0, '8', 0, '0', 0, '8', 0,
+    'a',  0, 'b', 0, 'c', 0, 'd', 0, 'e', 0, 'f', 0,
   };
+
+  // I love that you can just do that
+  static_assert(sizeof(serial_descriptor) == serial_descriptor[0]);
 
   std::array<std::span<uint8_t const>, 4> strings = {
     lang_descriptor,
@@ -258,40 +271,36 @@ void initialize_platform(resource_list& p_resource)
     serial_descriptor,
   };
 
-  auto toggle = [&signal]() { signal.level(not signal.level()); };
-
   while (true) {
-    if (not act) {
-      signal2.level(not signal2.level());
+    // Wait for a new setup message to come in.
+    if (current_idx == history_idx) {
       continue;
     }
+    current_idx = history_idx;
+    auto& buffer = get_latest_host_command();
 
     // Extract bmRequestType and bRequest
     hal::u8 const bmRequestType = buffer[0];
     hal::u8 const bRequest = buffer[1];
 
-    std::copy_n(
-      buffer.begin(),
-      buffer.size(),
-      buffer_history.at(history_idx++ % buffer_history.size()).begin());
-
-    hal::print<16>(uart1, "ACT[%zu]\n", history_idx);
-
     if (bmRequestType == 0x00 && bRequest == 0x05) {
       control_endpoint.write({});
       control_endpoint.set_address(buffer[2]);
       hal::print<32>(uart1, "ZLP+SET_ADDR[%d]\n", buffer[2]);
+    } else if (bmRequestType == 0x00 && bRequest == 0x09) {
+      hal::u8 const descriptor_index = buffer[2];
+      // SET_CONFIGURATION
+      control_endpoint.write({});
+      hal::print<16>(uart1, "SC%" PRIu8 "\n", descriptor_index);
     } else if (bmRequestType == 0x80) {  // Device-to-host
       if (bRequest == 0x06) {            // GET_DESCRIPTOR
         std::size_t const wLength = (buffer[7] << 8) | buffer[6];
-        hal::u8 descriptor_type = buffer[3];
-        hal::u8 descriptor_index = buffer[2];
+        hal::u8 const descriptor_index = buffer[2];
+        hal::u8 const descriptor_type = buffer[3];
         switch (descriptor_type) {
           case 0x01: {  // Device Descriptor
             hal::print<16>(uart1, "DD%" PRIu16 "\n", wLength);
-            toggle();
             control_endpoint.write(std::span(device_descriptor).first(wLength));
-            toggle();
             hal::print(uart1, "DD+\n");
             break;
           }
@@ -299,22 +308,18 @@ void initialize_platform(resource_list& p_resource)
           {
             state = enumeration_state::sending_configure_descriptor;
             hal::print<16>(uart1, "CD%" PRIu16 "\n", wLength);
-            toggle();
             control_endpoint.write(std::span(config_descriptor).first(wLength));
-            toggle();
             state = enumeration_state::post_configure_descriptor;
-            hal::print(uart1, "CD+\n");
+            hal::print(uart1, "CD!\n");
             break;
           }
           case 0x03: {  // String Descriptor
             hal::print<16>(
               uart1, "S%" PRIu8 ":%" PRIu16 "\n", descriptor_index, wLength);
-            toggle();
             auto const str = strings.at(descriptor_index);
             auto const first = std::min(str.size(), wLength);
             auto const payload_span = str.first(first);
             control_endpoint.write(payload_span);
-            toggle();
             hal::print(uart1, "S+\n");
             break;
           }
@@ -322,13 +327,8 @@ void initialize_platform(resource_list& p_resource)
             break;
         }
       }
-    } else if (bmRequestType == 0x00 && bRequest == 0x09) {
-      // SET_CONFIGURATION
-      control_endpoint.write({});
     }
 
-    control_endpoint.enable_rx();
-
-    act = false;
+    hal::print<16>(uart1, "ACT[%zu]\n", history_idx);
   }
 }

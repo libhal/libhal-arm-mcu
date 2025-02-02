@@ -23,7 +23,7 @@ namespace hal::stm32f1 {
 
 namespace {
 
-enum class endpoint_type : std::uint8_t
+enum class endpoint_type : u8
 {
   bulk = 0b00,
   control = 0b01,
@@ -131,7 +131,7 @@ struct endpoint  // NOLINT
 
 struct block_table
 {
-  static constexpr std::array<std::uint8_t, 2> block_size_table{
+  static constexpr std::array<u8, 2> block_size_table{
     2,
     32,
   };
@@ -176,9 +176,9 @@ constexpr auto rx_endpoint_count_mask =
     .insert<block_table::number_of_blocks>(9U)
     .to<hal::u16>();
 
-std::span<std::uint8_t> usb_packet_buffer_sram()
+std::span<u8> usb_packet_buffer_sram()
 {
-  return { std::bit_cast<std::uint8_t*>(0x4000'6000), packet_buffer_sram_size };
+  return { std::bit_cast<u8*>(0x4000'6000), packet_buffer_sram_size };
 }
 
 std::span<hal::u32> usb_packet_buffer_sram_u32()
@@ -206,12 +206,12 @@ constexpr hal::u16 rx_endpoint_memory_address(std::size_t p_endpoint)
 
 struct buffer_descriptor_block
 {
-  std::uint32_t tx_address;
-  std::uint32_t tx_count;
-  std::uint32_t rx_address;
-  std::uint32_t rx_count;
+  u32 tx_address;
+  u32 tx_count;
+  u32 rx_address;
+  u32 rx_count;
 
-  void setup_descriptor_for(std::uint8_t p_endpoint)
+  void setup_descriptor_for(u8 p_endpoint)
   {
     tx_address = tx_endpoint_memory_address(p_endpoint);
     tx_count = endpoint_memory_size;
@@ -272,7 +272,7 @@ constexpr auto endpoint_invariant_mask = hal::bit_value(0U)
                                            .to<std::uint32_t>();
 
 /// Same stat value for rx and tex
-enum class stat : std::uint8_t
+enum class stat : u8
 {
   // all reception requests addressed to this endpoint are ignored.
   disabled = 0b00,
@@ -282,7 +282,7 @@ enum class stat : std::uint8_t
 };
 
 /// Same stat value for rx and tex
-enum class dtog : std::uint8_t
+enum class dtog : u8
 {
   // all reception requests addressed to this endpoint are ignored.
   tog0 = 0b0,
@@ -338,7 +338,7 @@ void set_tx_stat(std::size_t p_endpoint, stat p_stat)
 }
 
 template<hal::bit_mask mask>
-void clear_correct_transfer_for(std::uint8_t endpoint_id)
+void clear_correct_transfer_for(u8 endpoint_id)
 {
   auto& endpoint_reg = reg().EP[endpoint_id].EPR;
   auto const endpoint_value = endpoint_reg;
@@ -394,6 +394,7 @@ void handle_bus_reset()
 
   hal::bit_modify(reg().DADDR).set(device_address::enable_function);
 }
+
 void usb::interrupt_handler()
 {
   auto& interrupt_reg = reg().ISTR;
@@ -409,15 +410,13 @@ void usb::interrupt_handler()
   if (transfer_completed) {
     if (direction == 0 /* meaning tx */) {
       tcc++;
-      clear_correct_transfer_for<stm32f1::endpoint::correct_transfer_tx>(
-        endpoint_id);
+      clear_correct_transfer_for<endpoint::correct_transfer_tx>(endpoint_id);
       m_tx_busy[endpoint_id] = false;
     } else {
       re_cc++;
       // interrupt status clearing is handled by this function
       read_endpoint_and_pass_to_callback(endpoint_id);
-      clear_correct_transfer_for<stm32f1::endpoint::correct_transfer_rx>(
-        endpoint_id);
+      clear_correct_transfer_for<endpoint::correct_transfer_rx>(endpoint_id);
     }
   }
 
@@ -521,7 +520,7 @@ usb::usb(hal::steady_clock& p_clock, hal::time_duration p_power_on_time)
   handle_bus_reset();
 }
 
-void usb::read_endpoint_and_pass_to_callback(std::uint8_t p_endpoint)
+void usb::read_endpoint_and_pass_to_callback(u8 p_endpoint)
 {
   auto& descriptor = endpoint_descriptor_block(p_endpoint);
   auto const rx_span = descriptor.rx_span();
@@ -530,7 +529,7 @@ void usb::read_endpoint_and_pass_to_callback(std::uint8_t p_endpoint)
 
 #if 0
   for (size_t i = 0; i < rx_span.size(); i++) {
-    std::uint32_t shift_amount = 0;
+    u32 shift_amount = 0;
     if (i & 1) {
       shift_amount = 8;
     }
@@ -549,7 +548,7 @@ void usb::read_endpoint_and_pass_to_callback(std::uint8_t p_endpoint)
   m_out_callbacks[p_endpoint](bytes_span);
 }
 
-void usb::wait_for_endpoint_transfer_completion(std::uint8_t p_endpoint)
+void usb::wait_for_endpoint_transfer_completion(u8 p_endpoint)
 {
 #if 0
   constexpr auto nak_u32_value = static_cast<hal::u32>(stat::nak);
@@ -565,8 +564,71 @@ void usb::wait_for_endpoint_transfer_completion(std::uint8_t p_endpoint)
 #endif
 }
 
-void usb::write_to_endpoint(std::uint8_t p_endpoint,
-                            std::span<hal::byte const> p_data)
+bool usb::wait_for_ctrl_endpoint_transfer_completion()
+{
+  while (m_tx_busy[0]) {
+#if 0
+    if (new_setup_incoming) {
+      new_setup_incoming = false;
+      return false;
+    }
+#else
+    continue;
+#endif
+  }
+  return true;
+}
+
+void usb::write_to_control_endpoint(std::span<hal::byte const> p_data)
+{
+  constexpr auto ctrl_endpoint = 0;
+  auto& descriptor = endpoint_descriptor_block(ctrl_endpoint);
+  set_rx_stat(ctrl_endpoint, stat::stall);
+
+  if (p_data.empty()) {
+    // send zero length message
+    descriptor.set_count_tx(0);
+    m_tx_busy[ctrl_endpoint] = true;
+    set_tx_stat(ctrl_endpoint, stat::valid);
+
+    wait_for_endpoint_transfer_completion(0);
+
+    set_rx_stat(ctrl_endpoint, stat::valid);
+    set_tx_stat(ctrl_endpoint, stat::stall);
+    return;
+  }
+
+  constexpr std::size_t mtu = fixed_endpoint_size;
+  auto tx_span = descriptor.tx_span();
+
+  while (not p_data.empty()) {
+    m_tx_busy[ctrl_endpoint] = true;
+
+    auto tx_iter = tx_span.begin();
+    auto const min = std::min(p_data.size(), mtu);
+
+    descriptor.set_count_tx(min);
+
+    auto const even_min = min & ~1;
+    for (std::size_t i = 0; i < even_min; i += 2) {
+      u32 const temp = (p_data[i + 1] << 8) | p_data[i];
+      *(tx_iter++) = temp;
+    }
+    if (min & 1) {
+      u32 const temp = p_data[min - 1];
+      *tx_iter = temp;
+    }
+
+    p_data = p_data.subspan(min);
+    set_tx_stat(ctrl_endpoint, stat::valid);
+    wait_for_endpoint_transfer_completion(0);
+  }
+
+  set_tx_stat(ctrl_endpoint, stat::stall);
+  set_rx_stat(ctrl_endpoint, stat::valid);
+}
+
+void usb::write_to_endpoint(u8 p_endpoint, std::span<hal::byte const> p_data)
 {
   auto& descriptor = endpoint_descriptor_block(p_endpoint);
 
@@ -580,14 +642,16 @@ void usb::write_to_endpoint(std::uint8_t p_endpoint,
     m_tx_busy[p_endpoint] = true;
     set_tx_stat(p_endpoint, stat::valid);
     wait_for_endpoint_transfer_completion(p_endpoint);
+    set_rx_stat(p_endpoint, stat::valid);
     return;
   }
 
+  constexpr std::size_t mtu = fixed_endpoint_size;
   auto tx_span = descriptor.tx_span();
 
   while (not p_data.empty()) {
     m_tx_busy[p_endpoint] = true;
-    constexpr std::size_t mtu = fixed_endpoint_size;
+
     auto tx_iter = tx_span.begin();
     auto const min = std::min(p_data.size(), mtu);
 
@@ -595,11 +659,11 @@ void usb::write_to_endpoint(std::uint8_t p_endpoint,
 
     auto const even_min = min & ~1;
     for (std::size_t i = 0; i < even_min; i += 2) {
-      std::uint32_t temp = (p_data[i + 1] << 8) | p_data[i];
+      u32 temp = (p_data[i + 1] << 8) | p_data[i];
       *(tx_iter++) = temp;
     }
     if (min & 1) {
-      std::uint32_t temp = p_data[min - 1];
+      u32 temp = p_data[min - 1];
       *tx_iter = temp;
     }
 
@@ -623,7 +687,7 @@ usb::~usb()
 }
 
 void usb::set_out_callback(hal::callback<void(std::span<hal::byte>)> p_callback,
-                           std::uint8_t p_endpoint)
+                           u8 p_endpoint)
 {
   if (p_endpoint < m_out_callbacks.size()) {
     m_out_callbacks[p_endpoint] = p_callback;
@@ -650,7 +714,7 @@ void usb::control_endpoint::driver_connect(bool p_should_connect)
     .insert<device_address::enable_function>(p_should_connect);
 }
 
-void usb::control_endpoint::driver_set_address(std::uint8_t p_address)
+void usb::control_endpoint::driver_set_address(u8 p_address)
 {
   hal::bit_modify(reg().DADDR)
     .set(device_address::enable_function)

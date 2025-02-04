@@ -85,7 +85,7 @@ namespace {
   }
 }
 [[nodiscard]] peripheral get_peripheral_id(
-  general_purpose_timer::pwm::pwm_pins p_pin)
+  general_purpose_timer::pwm::pwm_pins p_pin) noexcept
 {
   if (p_pin == general_purpose_timer::pwm::pwm_pins::pa8 ||
       p_pin == general_purpose_timer::pwm::pwm_pins::pa9 ||
@@ -107,9 +107,12 @@ namespace {
              p_pin == general_purpose_timer::pwm::pwm_pins::pb8 ||
              p_pin == general_purpose_timer::pwm::pwm_pins::pb9) {
     return peripheral::timer4;
-  } else {
-    hal::safe_throw(hal::operation_not_supported(nullptr));
   }
+  return peripheral::timer8;  // this is a placeholder, to prevent the
+                              // destructor from throwing an exception. The
+                              // error will still be caught because the
+                              // get_pwm_reg function will not recognize it and
+                              // throw an exception
 }
 
 [[nodiscard]] float get_duty_cycle(general_purpose_timer::pwm::pwm_pins p_pin,
@@ -244,8 +247,12 @@ general_purpose_timer::pwm::pwm(general_purpose_timer::pwm::pwm_pins p_pin)
 {
   // config pin to alternate function push - pull
   auto const p_id = get_peripheral_id(p_pin);
+  m_peripheral_id = p_id;
   auto const p_reg = get_pwm_reg(p_id);
-  pwm_availability.set((int)p_pin);
+  // pwm_availability.set((int)p_pin);
+  auto const pwm_pin_mask = bit_mask{ .position = (hal::u16)p_pin, .width = 1 };
+  bit_modify(pwm_availability).set(pwm_pin_mask);
+
   power_on(p_id);
   switch (p_pin) {
     case general_purpose_timer::pwm::pwm_pins::pa10:
@@ -319,10 +326,9 @@ general_purpose_timer::pwm::pwm(general_purpose_timer::pwm::pwm_pins p_pin)
 }
 void general_purpose_timer::pwm::driver_frequency(hertz p_frequency)
 {
-  auto const peripheral_id = get_peripheral_id(m_pin);
-  pwm_reg_t* reg = get_pwm_reg(peripheral_id);
+  pwm_reg_t* reg = get_pwm_reg(m_peripheral_id);
 
-  auto const current_clock = hal::stm32f1::frequency(peripheral_id);
+  auto const current_clock = hal::stm32f1::frequency(m_peripheral_id);
 
   auto const previous_duty_cycle =
     get_duty_cycle(m_pin, m_compare_register_addr);
@@ -353,20 +359,21 @@ void general_purpose_timer::pwm::driver_frequency(hertz p_frequency)
 }
 void general_purpose_timer::pwm::driver_duty_cycle(float p_duty_cycle)
 {
-  auto const peripheral_id = get_peripheral_id(m_pin);
-  pwm_reg_t* reg = get_pwm_reg(peripheral_id);
+  pwm_reg_t* reg = get_pwm_reg(m_peripheral_id);
   // the output changes from high to low when the counter > ccr, therefore, we
-  // simply make the ccr high for p_duty_cycle*ARR reg
-  std::uint16_t desired_ccr_value =
-    static_cast<std::uint16_t>(reg->auto_reload_register * p_duty_cycle);
+  // simply make the CCR equal to the required duty cycle fraction of the ARR
+  // value.
+  auto desired_ccr_value = static_cast<std::uint16_t>(
+    static_cast<float>(reg->auto_reload_register) * p_duty_cycle);
 
   *m_compare_register_addr = desired_ccr_value;
 }
 
-general_purpose_timer::pwm::~pwm()
+general_purpose_timer::pwm::~pwm() noexcept
 {
-  auto const p_id = get_peripheral_id(m_pin);
-  pwm_availability.reset((int)m_pin);
-  power_off(p_id);
+
+  auto const pwm_pin_mask = bit_mask{ .position = (hal::u16)m_pin, .width = 1 };
+  bit_modify(pwm_availability).clear(pwm_pin_mask);
+  power_off(m_peripheral_id);
 }
 }  // namespace hal::stm32f1

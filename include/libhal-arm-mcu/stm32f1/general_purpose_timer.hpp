@@ -20,6 +20,7 @@
 #include <libhal-arm-mcu/stm32f1/constants.hpp>
 #include <libhal-util/bit.hpp>
 #include <libhal/pwm.hpp>
+#include <libhal/units.hpp>
 
 namespace hal::stm32f1 {
 /** @brief This class takes in any Pin capable of performing PWM with timers
@@ -60,7 +61,8 @@ public:
     pwm& operator=(pwm const& p_other) = delete;
     pwm(pwm&& p_other) noexcept = delete;
     pwm& operator=(pwm&& p_other) noexcept = delete;
-    ~pwm();  // when it is destroyed the corresponding peripheral is powered off
+    ~pwm() noexcept;  // when it is destroyed the corresponding peripheral is
+                      // powered off
 
   private:
     void driver_frequency(hertz p_frequency) override;
@@ -68,6 +70,7 @@ public:
 
     uint32_t volatile* m_compare_register_addr;
     pwm_pins m_pin;
+    peripheral m_peripheral_id;
   };
 
   general_purpose_timer(peripheral p_peripheral);
@@ -77,7 +80,7 @@ public:
                            // to acquire it again, the same channel won't be
                            // available until destructor is called
 
-  static std::bitset<16> pwm_availability;
+  static hal::u16 pwm_availability;
 };
 
 }  // namespace hal::stm32f1

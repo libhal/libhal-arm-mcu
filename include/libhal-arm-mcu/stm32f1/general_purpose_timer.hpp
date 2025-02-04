@@ -60,7 +60,8 @@ public:
     pwm& operator=(pwm const& p_other) = delete;
     pwm(pwm&& p_other) noexcept = delete;
     pwm& operator=(pwm&& p_other) noexcept = delete;
-    ~pwm();  // when it is destroyed the corresponding peripheral is powered off
+    ~pwm() noexcept;  // when it is destroyed the corresponding peripheral is
+                      // powered off
 
   private:
     void driver_frequency(hertz p_frequency) override;
@@ -68,6 +69,7 @@ public:
 
     uint32_t volatile* m_compare_register_addr;
     pwm_pins m_pin;
+    peripheral m_peripheral_id;
   };
 
   general_purpose_timer(peripheral p_peripheral);

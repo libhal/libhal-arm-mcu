@@ -20,7 +20,7 @@ general_purpose_timer::pwm general_purpose_timer::acquire_pwm(
   general_purpose_timer::pwm::pwm_pins p_pin)
 {
   if (not pwm_availability.test((int)p_pin)) {
-    return pwm(p_pin);
+    return { p_pin };
   } else {
     hal::safe_throw(hal::resource_unavailable_try_again(nullptr));
   }

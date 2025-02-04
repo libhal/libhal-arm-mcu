@@ -111,8 +111,6 @@ private:
   void write_to_control_endpoint(std::span<hal::byte const> p_data);
   void read_endpoint_and_pass_to_callback(std::uint8_t p_endpoint);
   void wait_for_endpoint_transfer_completion(std::uint8_t p_endpoint);
-  // returns false if the transmission was interrupted by a setup command
-  bool wait_for_ctrl_endpoint_transfer_completion();
 
   std::array<hal::callback<void(std::span<hal::byte>)>, usb_endpoint_count>
     m_out_callbacks;

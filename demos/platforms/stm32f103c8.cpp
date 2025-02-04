@@ -310,7 +310,7 @@ void initialize_platform(resource_list& p_resource)
             hal::print<16>(uart1, "CD%" PRIu16 "\n", wLength);
             control_endpoint.write(std::span(config_descriptor).first(wLength));
             state = enumeration_state::post_configure_descriptor;
-            hal::print(uart1, "CD!\n");
+            hal::print(uart1, "CD+\n");
             break;
           }
           case 0x03: {  // String Descriptor

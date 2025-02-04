@@ -564,65 +564,14 @@ void usb::wait_for_endpoint_transfer_completion(u8 p_endpoint)
 #endif
 }
 
-bool usb::wait_for_ctrl_endpoint_transfer_completion()
-{
-  while (m_tx_busy[0]) {
-#if 0
-    if (new_setup_incoming) {
-      new_setup_incoming = false;
-      return false;
-    }
-#else
-    continue;
-#endif
-  }
-  return true;
-}
-
 void usb::write_to_control_endpoint(std::span<hal::byte const> p_data)
 {
   constexpr auto ctrl_endpoint = 0;
-  auto& descriptor = endpoint_descriptor_block(ctrl_endpoint);
+
   set_rx_stat(ctrl_endpoint, stat::stall);
+  set_tx_stat(ctrl_endpoint, stat::nak);
 
-  if (p_data.empty()) {
-    // send zero length message
-    descriptor.set_count_tx(0);
-    m_tx_busy[ctrl_endpoint] = true;
-    set_tx_stat(ctrl_endpoint, stat::valid);
-
-    wait_for_endpoint_transfer_completion(0);
-
-    set_rx_stat(ctrl_endpoint, stat::valid);
-    set_tx_stat(ctrl_endpoint, stat::stall);
-    return;
-  }
-
-  constexpr std::size_t mtu = fixed_endpoint_size;
-  auto tx_span = descriptor.tx_span();
-
-  while (not p_data.empty()) {
-    m_tx_busy[ctrl_endpoint] = true;
-
-    auto tx_iter = tx_span.begin();
-    auto const min = std::min(p_data.size(), mtu);
-
-    descriptor.set_count_tx(min);
-
-    auto const even_min = min & ~1;
-    for (std::size_t i = 0; i < even_min; i += 2) {
-      u32 const temp = (p_data[i + 1] << 8) | p_data[i];
-      *(tx_iter++) = temp;
-    }
-    if (min & 1) {
-      u32 const temp = p_data[min - 1];
-      *tx_iter = temp;
-    }
-
-    p_data = p_data.subspan(min);
-    set_tx_stat(ctrl_endpoint, stat::valid);
-    wait_for_endpoint_transfer_completion(0);
-  }
+  write_to_endpoint(ctrl_endpoint, p_data);
 
   set_tx_stat(ctrl_endpoint, stat::stall);
   set_rx_stat(ctrl_endpoint, stat::valid);
@@ -631,10 +580,6 @@ void usb::write_to_control_endpoint(std::span<hal::byte const> p_data)
 void usb::write_to_endpoint(u8 p_endpoint, std::span<hal::byte const> p_data)
 {
   auto& descriptor = endpoint_descriptor_block(p_endpoint);
-
-  if (p_endpoint == 0) {
-    set_rx_stat(p_endpoint, stat::stall);
-  }
 
   if (p_data.empty()) {
     // send zero length message
@@ -670,10 +615,6 @@ void usb::write_to_endpoint(u8 p_endpoint, std::span<hal::byte const> p_data)
     p_data = p_data.subspan(min);
     set_tx_stat(p_endpoint, stat::valid);
     wait_for_endpoint_transfer_completion(p_endpoint);
-  }
-
-  if (p_endpoint == 0) {
-    set_rx_stat(p_endpoint, stat::valid);
   }
 }
 
@@ -723,7 +664,7 @@ void usb::control_endpoint::driver_set_address(u8 p_address)
 
 void usb::control_endpoint::driver_write(std::span<hal::byte const> p_data)
 {
-  m_usb->write_to_endpoint(0, p_data);
+  m_usb->write_to_control_endpoint(p_data);
 }
 
 void usb::control_endpoint::driver_on_request(

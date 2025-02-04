@@ -23,24 +23,15 @@ void application(resource_list& p_map)
   using namespace hal::literals;
 
   auto& pwm = *p_map.pwm.value();
-  auto& serial = *p_map.console.value();
   auto& clock = *p_map.clock.value();
-  auto& pwm2 = *p_map.pwm2.value();
-  // auto& led = *p_map.status_led.value();
-  hal::print(serial, "PWM Application starting...\n");
 
   while (true) {
-
-    hal::print(serial, "Setting PWM frequency to 1kHz\n");
     pwm.frequency(1.0_kHz);
-    pwm2.frequency(1.0_kHz);
 
     for (unsigned iteration = 0; iteration <= 100; iteration += 1) {
       auto duty_cycle = static_cast<float>(iteration) / 100.0f;
       pwm.duty_cycle(duty_cycle);
-      pwm2.duty_cycle(duty_cycle);
-      // led.level(true);
-      hal::delay(clock, 10ms);
+      hal::delay(clock, 100ms);
     }
 
     pwm.duty_cycle(0.5f);
@@ -48,9 +39,6 @@ void application(resource_list& p_map)
     for (unsigned iteration = 0; iteration < 100; iteration++) {
       auto frequency = 100.0_Hz * (static_cast<float>(iteration) * 10);
       pwm.frequency(frequency);
-      pwm2.frequency(frequency);
-      // led.level(false);
-
       hal::delay(clock, 100ms);
     }
   }

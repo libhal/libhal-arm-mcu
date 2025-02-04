@@ -25,11 +25,9 @@
 #include <libhal-util/bit_bang_i2c.hpp>
 #include <libhal-util/bit_bang_spi.hpp>
 #include <libhal-util/inert_drivers/inert_adc.hpp>
+#include <libhal-util/serial.hpp>
 #include <libhal-util/steady_clock.hpp>
-#include <libhal/output_pin.hpp>
-#include <libhal/pwm.hpp>
 #include <libhal/units.hpp>
-#include <libhal-arm-mcu/stm32f1/timer1_pwm.hpp>
 
 #include <resource_list.hpp>
 
@@ -50,92 +48,93 @@ void initialize_platform(resource_list& p_resources)
   static hal::stm32f1::uart uart1(hal::port<1>, hal::buffer<128>);
   p_resources.console = &uart1;
 
-  // static hal::stm32f1::can_peripheral_manager can(
-  //   100_kHz, hal::stm32f1::can_pins::pb9_pb8);
+  static hal::stm32f1::output_pin led('C', 13);
+  p_resources.status_led = &led;
 
-  // can.enable_self_test(true);
+  // pin G0 on the STM micromod is port B, pin 4
+  static hal::stm32f1::input_pin input_pin('B', 4);
+  p_resources.input_pin = &input_pin;
 
-  // static std::array<hal::can_message, 8> receive_buffer{};
-  // static auto can_transceiver = can.acquire_transceiver(receive_buffer);
-  // p_resources.can_transceiver = &can_transceiver;
+  static hal::stm32f1::output_pin sda_output_pin('A', 0);
+  static hal::stm32f1::output_pin scl_output_pin('A', 15);
 
-  // static auto can_bus_manager = can.acquire_bus_manager();
-  // p_resources.can_bus_manager = &can_bus_manager;
+  sda_output_pin.configure({
+    .resistor = hal::pin_resistor::pull_up,
+    .open_drain = true,
+  });
+  scl_output_pin.configure({
+    .resistor = hal::pin_resistor::pull_up,
+    .open_drain = true,
+  });
+  static hal::bit_bang_i2c::pins bit_bang_pins{
+    .sda = &sda_output_pin,
+    .scl = &scl_output_pin,
+  };
+  static hal::bit_bang_i2c bit_bang_i2c(bit_bang_pins, steady_clock);
+  p_resources.i2c = &bit_bang_i2c;
 
-  // static auto can_interrupt = can.acquire_interrupt();
-  // p_resources.can_interrupt = &can_interrupt;
+  static hal::stm32f1::output_pin spi_chip_select('A', 4);
+  p_resources.spi_chip_select = &spi_chip_select;
+  static hal::stm32f1::output_pin sck('A', 5);
+  static hal::stm32f1::output_pin copi('A', 6);
+  static hal::stm32f1::input_pin cipo('A', 7);
 
-  // // Allow all messages
-  // static auto mask_id_filters_x2 = can.acquire_mask_filter();
-  // mask_id_filters_x2.filter[0].allow({ { .id = 0, .mask = 0 } });
+  static hal::bit_bang_spi::pins bit_bang_spi_pins{ .sck = &sck,
+                                                    .copi = &copi,
+                                                    .cipo = &cipo };
 
-  // static hal::stm32f1::output_pin led('A', 0);
+  static hal::spi::settings bit_bang_spi_settings{
+    .clock_rate = 250.0_kHz,
+    .clock_polarity = false,
+    .clock_phase = false,
+  };
 
-  // p_resources.status_led = &led;
+  hal::spi* spi = nullptr;
 
-  // // pin G0 on the STM micromod is port B, pin 4
-  // static hal::stm32f1::input_pin input_pin('B', 4);
-  // p_resources.input_pin = &input_pin;
+  if constexpr (use_bit_bang_spi) {
+    static hal::bit_bang_spi bit_bang_spi(
+      bit_bang_spi_pins, steady_clock, bit_bang_spi_settings);
+    spi = &bit_bang_spi;
+  } else {
+    static hal::stm32f1::spi spi1(hal::bus<1>,
+                                  {
+                                    .clock_rate = 250.0_kHz,
+                                    .clock_polarity = false,
+                                    .clock_phase = false,
+                                  });
+    spi = &spi1;
+  }
+  p_resources.spi = spi;
 
-  // static hal::stm32f1::output_pin sda_output_pin('A', 0);
-  // static hal::stm32f1::output_pin scl_output_pin('A', 15);
+  try {
+    using namespace std::chrono_literals;
+    static hal::stm32f1::can_peripheral_manager can(
+      100_kHz, steady_clock, 1ms, hal::stm32f1::can_pins::pb9_pb8);
 
-  // sda_output_pin.configure({
-  //   .resistor = hal::pin_resistor::pull_up,
-  //   .open_drain = true,
-  // });
-  // scl_output_pin.configure({
-  //   .resistor = hal::pin_resistor::pull_up,
-  //   .open_drain = true,
-  // });
-  // static hal::bit_bang_i2c::pins bit_bang_pins{
-  //   .sda = &sda_output_pin,
-  //   .scl = &scl_output_pin,
-  // };
-  // static hal::bit_bang_i2c bit_bang_i2c(bit_bang_pins, steady_clock);
+    // Self test allows the can transceiver to see its own messages as if they
+    // were received on the bus. This also prevents messages from being received
+    // from the bus. Set to `false` if you want to get actual CAN messages from
+    // the bus and not the device's own messages.
+    can.enable_self_test(true);
 
-  // p_resources.i2c = &bit_bang_i2c;
+    static std::array<hal::can_message, 8> receive_buffer{};
+    static auto can_transceiver = can.acquire_transceiver(receive_buffer);
+    p_resources.can_transceiver = &can_transceiver;
 
-  // static hal::stm32f1::output_pin spi_chip_select('A', 4);
-  // p_resources.spi_chip_select = &spi_chip_select;
-  // static hal::stm32f1::output_pin sck('A', 5);
-  // static hal::stm32f1::output_pin copi('A', 6);
-  // static hal::stm32f1::input_pin cipo('A', 7);
+    static auto can_bus_manager = can.acquire_bus_manager();
+    p_resources.can_bus_manager = &can_bus_manager;
 
-  // static hal::bit_bang_spi::pins bit_bang_spi_pins{ .sck = &sck,
-  //                                                   .copi = &copi,
-  //                                                   .cipo = &cipo };
+    static auto can_interrupt = can.acquire_interrupt();
+    p_resources.can_interrupt = &can_interrupt;
 
-  static hal::stm32f1::timer1_pwm pwm(hal::stm32f1::timer1_pwm::pwm_pins::pa8);
-
-  p_resources.pwm = &pwm;
-
-  static hal::stm32f1::timer1_pwm pwm2(hal::stm32f1::timer1_pwm::pwm_pins::pa1); // PWM 1 - timer 2 channel 2
-
-  p_resources.pwm2 = &pwm2;
-
-  
-
-  // static hal::spi::settings bit_bang_spi_settings{
-  //   .clock_rate = 250.0_kHz,
-  //   .clock_polarity = false,
-  //   .clock_phase = false,
-  // };
-
-  // hal::spi* spi = nullptr;
-
-  // if constexpr (use_bit_bang_spi) {
-  //   static hal::bit_bang_spi bit_bang_spi(
-  //     bit_bang_spi_pins, steady_clock, bit_bang_spi_settings);
-  //   spi = &bit_bang_spi;
-  // } else {
-  //   static hal::stm32f1::spi spi1(hal::bus<1>,
-  //                                 {
-  //                                   .clock_rate = 250.0_kHz,
-  //                                   .clock_polarity = false,
-  //                                   .clock_phase = false,
-  //                                 });
-  //   spi = &spi1;
-  // }
-  // p_resources.spi = spi;
+    // Allow all messages
+    static auto mask_id_filters_x2 = can.acquire_mask_filter();
+    mask_id_filters_x2.filter[0].allow({ { .id = 0, .mask = 0 } });
+  } catch (hal::timed_out&) {
+    hal::print(
+      uart1,
+      "⚠️ CAN peripheral timeout error!\n"
+      "- CAN disabled - check CANRX/CANTX connections to transceiver.\n"
+      "- System will operate normally if CAN is NOT required.\n\n");
+  }
 }

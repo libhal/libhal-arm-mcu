@@ -20,6 +20,10 @@
 
 #include <libhal/error.hpp>
 
+/**
+ * @defgroup Enum APIs involving enumerations
+ *
+ */
 namespace hal::cortex_m {
 /// Used specifically for defining an interrupt vector table of addresses.
 using interrupt_pointer = void (*)();

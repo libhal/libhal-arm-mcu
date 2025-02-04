@@ -14,7 +14,9 @@
 
 #pragma once
 
+#include <chrono>
 #include <libhal/can.hpp>
+#include <libhal/steady_clock.hpp>
 #include <libhal/units.hpp>
 
 #include "pin.hpp"
@@ -41,6 +43,16 @@ private:
  */
 struct can_peripheral_manager final
 {
+  /**
+   * @brief Named parameter for enabling self test at driver construction
+   *
+   */
+  enum class self_test : hal::u8
+  {
+    off = 0,
+    on = 1,
+  };
+
   /**
    * @brief Contains a filter and word index, used by filter implementations to
    * determine which bits in the filter registers to modify.
@@ -354,15 +366,48 @@ struct can_peripheral_manager final
   /**
    * @brief Construct a new can peripheral manager object
    *
+   * @deprecated Calling this constructor is problematic as it can halt the
+   * system if a hardware can transceiver is not connected to the CAN RX and CAN
+   * TX pins. Use the constructor that accepts a `hal::steady_clock` and timeout
+   * time instead.
+   *
    * @param p_baud_rate - set baud rate of the device
    * @param p_pins - CAN bus RX and TX pin selection
    * @param p_disabled_ids - IDs to use as filtering values when a filter is set
    * to be disabled. Choose IDs you expect will never appear on the CAN BUS.
    * @throw hal::operation_not_supported - if the baud rate is not usable
    */
+  [[deprecated("Calling this constructor is problematic as it can halt the "
+               "system if a hardware can transceiver is not connected to the "
+               "CAN RX and CAN TX pins. Use the constructor that accepts a "
+               "`hal::steady_clock` and timeout time instead.")]]
   can_peripheral_manager(
     hal::u32 p_baud_rate,
     can_pins p_pins = can_pins::pa11_pa12,
+    disable_ids p_disabled_ids = disable_ids{ .standard = 0, .extended = 0 });
+
+  /**
+   * @brief Construct a new can peripheral manager object
+   *
+   * @param p_baud_rate - set baud rate of the device
+   * @param p_clock - a steady clock used to determine if initialization has
+   * exceeded the p_timeout_time.
+   * @param p_timeout_time - the amount of time to wait for initialization
+   * before throwing `hal::timed_out`.
+   * @param p_pins - CAN bus RX and TX pin selection
+   * @param p_enable_self_test - determines if self test is enabled at
+   * construction.
+   * @param p_disabled_ids - IDs to use as filtering values when a filter is set
+   * to be disabled. Choose IDs you expect will never appear on the CAN BUS.
+   * @throw hal::operation_not_supported - if the baud rate is not usable
+   * @throw hal::timed_out - if can peripheral initialization
+   */
+  can_peripheral_manager(
+    hal::u32 p_baud_rate,
+    hal::steady_clock& p_clock,
+    hal::time_duration p_timeout_time = std::chrono::milliseconds(1),
+    can_pins p_pins = can_pins::pa11_pa12,
+    self_test p_enable_self_test = self_test::off,
     disable_ids p_disabled_ids = disable_ids{ .standard = 0, .extended = 0 });
 
   can_peripheral_manager(can_peripheral_manager const&) = delete;

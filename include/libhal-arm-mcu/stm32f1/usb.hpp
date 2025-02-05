@@ -115,11 +115,10 @@ private:
   std::array<hal::callback<void(std::span<hal::byte>)>, usb_endpoint_count>
     m_out_callbacks;
   hal::steady_clock* m_clock;
-  std::array<bool, usb_endpoint_count> m_tx_busy{};
   std::uint16_t m_available_endpoint_memory;
-  std::uint8_t m_in_endpoints_allocated = 0;
-  std::uint8_t m_out_endpoints_allocated = 0;
-  bool m_disrupted = false;
+  // Starts at 1 because endpoint 0 is always occupied by the control endpoint
+  std::uint8_t m_in_endpoints_allocated = 1;
+  std::uint8_t m_out_endpoints_allocated = 1;
 };
 
 /**
@@ -153,6 +152,7 @@ private:
   void driver_write(std::span<hal::byte const> p_data) override;
   void driver_on_request(
     hal::callback<void(std::span<hal::byte>)> p_callback) override;
+  hal::experimental::endpoint_info driver_info() override;
 
   usb* m_usb;
 };
@@ -173,12 +173,16 @@ class usb::interrupt_in_endpoint
   : public hal::experimental::usb_interrupt_in_endpoint
 {
 public:
-  interrupt_in_endpoint();
   ~interrupt_in_endpoint();
 
 private:
   friend class usb;
+  interrupt_in_endpoint(usb& p_usb, u8 p_endpoint_number);
   void driver_write(std::span<hal::byte const> p_data) override;
+  hal::experimental::endpoint_info driver_info() override;
+
+  usb* m_usb;
+  u8 m_endpoint_number;
 };
 
 /**
@@ -196,12 +200,18 @@ private:
 class usb::bulk_in_endpoint : public hal::experimental::usb_bulk_in_endpoint
 {
 public:
-  bulk_in_endpoint();
-  ~bulk_in_endpoint();
+  ~bulk_in_endpoint() override;
 
 private:
   friend class usb;
+
+  bulk_in_endpoint(usb& p_usb, u8 p_endpoint_number);
+
   void driver_write(std::span<hal::byte const> p_data) override;
+  hal::experimental::endpoint_info driver_info() override;
+
+  usb* m_usb;
+  u8 m_endpoint_number;
 };
 
 /**
@@ -220,13 +230,19 @@ class usb::interrupt_out_endpoint
   : public hal::experimental::usb_interrupt_out_endpoint
 {
 public:
-  interrupt_out_endpoint();
   ~interrupt_out_endpoint();
 
 private:
   friend class usb;
+
+  interrupt_out_endpoint(usb& p_usb, u8 p_endpoint_number);
+
   void driver_on_receive(
     hal::callback<void(std::span<hal::byte>)> p_callback) override;
+  hal::experimental::endpoint_info driver_info() override;
+
+  usb* m_usb;
+  u8 m_endpoint_number;
 };
 
 /**
@@ -244,12 +260,18 @@ private:
 class usb::bulk_out_endpoint : public hal::experimental::usb_bulk_out_endpoint
 {
 public:
-  bulk_out_endpoint();
   ~bulk_out_endpoint();
 
 private:
   friend class usb;
+
+  bulk_out_endpoint(usb& p_usb, u8 p_endpoint_number);
+
   void driver_on_receive(
     hal::callback<void(std::span<hal::byte>)> p_callback) override;
+  hal::experimental::endpoint_info driver_info() override;
+
+  usb* m_usb;
+  u8 m_endpoint_number;
 };
 }  // namespace hal::stm32f1

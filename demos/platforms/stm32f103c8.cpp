@@ -171,9 +171,14 @@ void initialize_platform(resource_list& p_resource)
 
   hal::print(uart1, "USB test starting in init...\n");
 
-  hal::stm32f1::usb usb(steady_clock);
+  static hal::stm32f1::usb usb(steady_clock);
   hal::print(uart1, "USB\n");
-  auto control_endpoint = usb.acquire_control_endpoint();
+  static auto control_endpoint = usb.acquire_control_endpoint();
+#if 0
+  static auto data_tx_ep = usb.acquire_bulk_in_endpoint();
+  static auto data_rx_ep = usb.acquire_bulk_out_endpoint();
+  static auto status_ep = usb.acquire_interrupt_in_endpoint();
+#endif
   hal::print(uart1, "ctrl\n");
 
   using namespace std::chrono_literals;

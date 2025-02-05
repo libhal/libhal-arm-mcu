@@ -211,11 +211,23 @@ struct buffer_descriptor_block
   u32 rx_address;
   u32 rx_count;
 
-  void setup_descriptor_for(u8 p_endpoint)
+  void setup_ctrl_descriptor()
+  {
+    tx_address = tx_endpoint_memory_address(0);
+    tx_count = endpoint_memory_size;
+
+    rx_address = rx_endpoint_memory_address(0);
+    rx_count = rx_endpoint_count_mask;
+  }
+
+  void setup_in_endpoint_for(u8 p_endpoint)
   {
     tx_address = tx_endpoint_memory_address(p_endpoint);
     tx_count = endpoint_memory_size;
+  }
 
+  void setup_out_endpoint_for(u8 p_endpoint)
+  {
     rx_address = rx_endpoint_memory_address(p_endpoint);
     rx_count = rx_endpoint_count_mask;
   }
@@ -373,7 +385,7 @@ void handle_bus_reset()
   // buffer.
   reg().BTABLE = buffer_descriptor_table_start;
 
-  endpoint_descriptor_block(0).setup_descriptor_for(0);
+  endpoint_descriptor_block(0).setup_ctrl_descriptor();
   set_endpoint_address_and_type(0, endpoint_type::control);
   set_rx_stat(0, stat::nak);
   set_tx_stat(0, stat::nak);
@@ -411,7 +423,7 @@ void usb::interrupt_handler()
     if (direction == 0 /* meaning tx */) {
       tcc++;
       clear_correct_transfer_for<endpoint::correct_transfer_tx>(endpoint_id);
-      m_tx_busy[endpoint_id] = false;
+
     } else {
       re_cc++;
       // interrupt status clearing is handled by this function
@@ -527,41 +539,25 @@ void usb::read_endpoint_and_pass_to_callback(u8 p_endpoint)
   std::array<hal::byte, 64> buffer{};
   auto rx_iter = rx_span.begin();
 
-#if 0
-  for (size_t i = 0; i < rx_span.size(); i++) {
-    u32 shift_amount = 0;
-    if (i & 1) {
-      shift_amount = 8;
-    }
-    auto rx_word = rx_endpoint_memory_span[i / 2];
-    buffer[i] = (rx_word >> shift_amount) & 0xFF;
-  }
-#else
   for (size_t i = 0; i < rx_span.size(); i++) {
     auto const idx = i * 2;
     auto const value = *(rx_iter++);
     buffer[idx] = value & 0xFF;
     buffer[idx + 1] = (value >> 8) & 0xFF;
   }
-#endif
+
   auto bytes_span = std::span(buffer).first(descriptor.bytes_received());
   m_out_callbacks[p_endpoint](bytes_span);
 }
 
 void usb::wait_for_endpoint_transfer_completion(u8 p_endpoint)
 {
-#if 0
   constexpr auto nak_u32_value = static_cast<hal::u32>(stat::nak);
   auto& endpoint_reg = reg().EP[p_endpoint].EPR;
   auto endpoint_tx_status = hal::bit_extract<endpoint::status_tx>(endpoint_reg);
   while (endpoint_tx_status != nak_u32_value) {
     endpoint_tx_status = hal::bit_extract<endpoint::status_tx>(endpoint_reg);
   }
-#else
-  while (m_tx_busy[p_endpoint]) {
-    continue;
-  }
-#endif
 }
 
 void usb::write_to_control_endpoint(std::span<hal::byte const> p_data)
@@ -584,7 +580,6 @@ void usb::write_to_endpoint(u8 p_endpoint, std::span<hal::byte const> p_data)
   if (p_data.empty()) {
     // send zero length message
     descriptor.set_count_tx(0);
-    m_tx_busy[p_endpoint] = true;
     set_tx_stat(p_endpoint, stat::valid);
     wait_for_endpoint_transfer_completion(p_endpoint);
     set_rx_stat(p_endpoint, stat::valid);
@@ -595,7 +590,6 @@ void usb::write_to_endpoint(u8 p_endpoint, std::span<hal::byte const> p_data)
   auto tx_span = descriptor.tx_span();
 
   while (not p_data.empty()) {
-    m_tx_busy[p_endpoint] = true;
 
     auto tx_iter = tx_span.begin();
     auto const min = std::min(p_data.size(), mtu);
@@ -638,6 +632,24 @@ void usb::set_out_callback(hal::callback<void(std::span<hal::byte>)> p_callback,
 usb::control_endpoint usb::acquire_control_endpoint()
 {
   return { *this };
+}
+
+usb::bulk_in_endpoint usb::acquire_bulk_in_endpoint()
+{
+  // TODO(kammce): should throw if the system runs out of endpoints
+  return { *this, m_in_endpoints_allocated++ };
+}
+
+usb::bulk_out_endpoint usb::acquire_bulk_out_endpoint()
+{
+  // TODO(kammce): should throw if the system runs out of endpoints
+  return { *this, m_out_endpoints_allocated++ };
+}
+
+usb::interrupt_out_endpoint usb::acquire_interrupt_out_endpoint()
+{
+  // TODO(kammce): should throw if the system runs out of endpoints
+  return { *this, m_out_endpoints_allocated++ };
 }
 
 usb::control_endpoint::control_endpoint(usb& p_usb)
@@ -685,43 +697,52 @@ void usb::control_endpoint::enable_rx()
 }
 
 // usb::interrupt_in_endpoint implementation
-usb::interrupt_in_endpoint::interrupt_in_endpoint()
+usb::interrupt_in_endpoint::interrupt_in_endpoint(usb& p_usb,
+                                                  u8 p_endpoint_number)
+  : m_usb(&p_usb)
+  , m_endpoint_number(p_endpoint_number)
 {
+  auto const endpoint = m_endpoint_number;
+  endpoint_descriptor_block(endpoint).setup_in_endpoint_for(endpoint);
+  set_endpoint_address_and_type(endpoint, endpoint_type::interrupt);
 }
 
-usb::interrupt_in_endpoint::~interrupt_in_endpoint()
-{
-}
+usb::interrupt_in_endpoint::~interrupt_in_endpoint() = default;
 
-void usb::interrupt_in_endpoint::driver_write(
-  [[maybe_unused]] std::span<hal::byte const> p_data)
+void usb::interrupt_in_endpoint::driver_write(std::span<hal::byte const> p_data)
 {
-  // ... fill this out ...
+  m_usb->write_to_endpoint(m_endpoint_number, p_data);
 }
 
 // usb::bulk_in_endpoint implementation
-usb::bulk_in_endpoint::bulk_in_endpoint()
+usb::bulk_in_endpoint::bulk_in_endpoint(usb& p_usb, u8 p_endpoint_number)
+  : m_usb(&p_usb)
+  , m_endpoint_number(p_endpoint_number)
 {
+  auto const endpoint = m_endpoint_number;
+  endpoint_descriptor_block(endpoint).setup_in_endpoint_for(endpoint);
+  set_endpoint_address_and_type(endpoint, endpoint_type::bulk);
 }
 
-usb::bulk_in_endpoint::~bulk_in_endpoint()
-{
-}
+usb::bulk_in_endpoint::~bulk_in_endpoint() = default;
 
-void usb::bulk_in_endpoint::driver_write(
-  [[maybe_unused]] std::span<hal::byte const> p_data)
+void usb::bulk_in_endpoint::driver_write(std::span<hal::byte const> p_data)
 {
-  // ... fill this out ...
+  m_usb->write_to_endpoint(m_endpoint_number, p_data);
 }
 
 // usb::interrupt_out_endpoint implementation
-usb::interrupt_out_endpoint::interrupt_out_endpoint()
+usb::interrupt_out_endpoint::interrupt_out_endpoint(usb& p_usb,
+                                                    u8 p_endpoint_number)
+  : m_usb(&p_usb)
+  , m_endpoint_number(p_endpoint_number)
 {
+  auto const endpoint = m_endpoint_number;
+  endpoint_descriptor_block(endpoint).setup_out_endpoint_for(endpoint);
+  set_endpoint_address_and_type(endpoint, endpoint_type::interrupt);
 }
 
-usb::interrupt_out_endpoint::~interrupt_out_endpoint()
-{
-}
+usb::interrupt_out_endpoint::~interrupt_out_endpoint() = default;
 
 void usb::interrupt_out_endpoint::driver_on_receive(
   [[maybe_unused]] hal::callback<void(std::span<hal::byte>)> p_callback)
@@ -730,17 +751,41 @@ void usb::interrupt_out_endpoint::driver_on_receive(
 }
 
 // usb::bulk_out_endpoint implementation
-usb::bulk_out_endpoint::bulk_out_endpoint()
+usb::bulk_out_endpoint::bulk_out_endpoint(usb& p_usb, u8 p_endpoint_number)
+  : m_usb(&p_usb)
+  , m_endpoint_number(p_endpoint_number)
 {
+  auto const endpoint = m_endpoint_number;
+  endpoint_descriptor_block(endpoint).setup_out_endpoint_for(endpoint);
+  set_endpoint_address_and_type(endpoint, endpoint_type::bulk);
 }
 
-usb::bulk_out_endpoint::~bulk_out_endpoint()
-{
-}
+usb::bulk_out_endpoint::~bulk_out_endpoint() = default;
 
 void usb::bulk_out_endpoint::driver_on_receive(
   [[maybe_unused]] hal::callback<void(std::span<hal::byte>)> p_callback)
 {
   // ... fill this out ...
+}
+
+hal::experimental::endpoint_info usb::control_endpoint::driver_info()
+{
+  return { .size = fixed_endpoint_size, .number = 0 };
+}
+hal::experimental::endpoint_info usb::bulk_out_endpoint::driver_info()
+{
+  return { .size = fixed_endpoint_size, .number = m_endpoint_number };
+}
+hal::experimental::endpoint_info usb::bulk_in_endpoint::driver_info()
+{
+  return { .size = fixed_endpoint_size, .number = m_endpoint_number };
+}
+hal::experimental::endpoint_info usb::interrupt_out_endpoint::driver_info()
+{
+  return { .size = fixed_endpoint_size, .number = m_endpoint_number };
+}
+hal::experimental::endpoint_info usb::interrupt_in_endpoint::driver_info()
+{
+  return { .size = fixed_endpoint_size, .number = m_endpoint_number };
 }
 }  // namespace hal::stm32f1

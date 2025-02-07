@@ -1,6 +1,7 @@
 #include <cstdint>
 
 #include <bit>
+#include <memory>
 #include <utility>
 
 #include <libhal-arm-mcu/interrupt.hpp>
@@ -133,7 +134,7 @@ struct endpoint  // NOLINT
 
 struct block_table
 {
-  static constexpr std::array<u8, 2> block_size_table{
+  [[maybe_unused]] static constexpr std::array<u8, 2> block_size_table{
     2,
     32,
   };
@@ -169,18 +170,18 @@ constexpr std::size_t initial_packet_buffer_memory =
   packet_buffer_sram_size - buffer_descriptor_table_end;
 
 /// TODO(kammce): make this no longer fixed, maybe...
-constexpr hal::u16 crc_byte_length = 2;
 constexpr hal::u16 fixed_endpoint_size = 16;
-constexpr auto endpoint_memory_size = fixed_endpoint_size + crc_byte_length;
+constexpr auto endpoint_memory_size = fixed_endpoint_size;
+constexpr auto block_number = fixed_endpoint_size / 2U;
 constexpr auto rx_endpoint_count_mask =
   hal::bit_value(0U)
-    .clear<block_table::block_size>()
-    .insert<block_table::number_of_blocks>(9U)
+    .clear<block_table::block_size>()  // each number of blocks = 2x
+    .insert<block_table::number_of_blocks>(block_number)
     .to<hal::u16>();
 
 std::span<u8> usb_packet_buffer_sram()
 {
-  return { std::bit_cast<u8*>(0x4000'6000), packet_buffer_sram_size };
+  return { reinterpret_cast<u8*>(0x4000'6000), packet_buffer_sram_size };
 }
 
 std::span<hal::u32> usb_packet_buffer_sram_u32()
@@ -190,7 +191,7 @@ std::span<hal::u32> usb_packet_buffer_sram_u32()
   // processor. This means that each u16 has padding of an additional u16 that
   // goes nowhere. The number of u16 blocks in this memory region is equal to
   // the u32 blocks and thats why we do the division here.
-  return { std::bit_cast<hal::u32*>(0x4000'6000),
+  return { reinterpret_cast<hal::u32*>(0x4000'6000),
            packet_buffer_sram_size / sizeof(hal::u16) };
 }
 

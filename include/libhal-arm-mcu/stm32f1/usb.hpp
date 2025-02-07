@@ -15,6 +15,7 @@
 #pragma once
 
 #include <chrono>
+#include <utility>
 
 #include <libhal/experimental/usb.hpp>
 #include <libhal/output_pin.hpp>
@@ -89,10 +90,9 @@ public:
   ~usb();
 
   control_endpoint acquire_control_endpoint();
-  interrupt_in_endpoint acquire_interrupt_in_endpoint();
-  bulk_in_endpoint acquire_bulk_in_endpoint();
-  interrupt_out_endpoint acquire_interrupt_out_endpoint();
-  bulk_out_endpoint acquire_bulk_out_endpoint();
+  std::pair<interrupt_in_endpoint, interrupt_out_endpoint>
+  acquire_interrupt_endpoint();
+  std::pair<bulk_in_endpoint, bulk_out_endpoint> acquire_bulk_endpoint();
 
   bool disrupted();
 
@@ -117,8 +117,7 @@ private:
   hal::steady_clock* m_clock;
   std::uint16_t m_available_endpoint_memory;
   // Starts at 1 because endpoint 0 is always occupied by the control endpoint
-  std::uint8_t m_in_endpoints_allocated = 1;
-  std::uint8_t m_out_endpoints_allocated = 1;
+  std::uint8_t m_endpoints_allocated = 1;
 };
 
 /**
@@ -143,6 +142,7 @@ public:
 
   bool in_setup_stage();
   void enable_rx();
+  bool stalled();
 
 private:
   friend class usb;
@@ -174,6 +174,8 @@ class usb::interrupt_in_endpoint
 {
 public:
   ~interrupt_in_endpoint();
+  void reset();
+  bool stalled();
 
 private:
   friend class usb;
@@ -201,6 +203,8 @@ class usb::bulk_in_endpoint : public hal::experimental::usb_bulk_in_endpoint
 {
 public:
   ~bulk_in_endpoint() override;
+  void reset();
+  bool stalled();
 
 private:
   friend class usb;
@@ -231,6 +235,8 @@ class usb::interrupt_out_endpoint
 {
 public:
   ~interrupt_out_endpoint();
+  void reset();
+  bool stalled();
 
 private:
   friend class usb;
@@ -261,6 +267,8 @@ class usb::bulk_out_endpoint : public hal::experimental::usb_bulk_out_endpoint
 {
 public:
   ~bulk_out_endpoint();
+  void reset();
+  bool stalled();
 
 private:
   friend class usb;

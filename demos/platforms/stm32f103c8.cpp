@@ -26,16 +26,23 @@
 #include <libhal-arm-mcu/stm32f1/uart.hpp>
 #include <libhal-arm-mcu/stm32f1/usb.hpp>
 #include <libhal-arm-mcu/system_control.hpp>
+#include <libhal-util/as_bytes.hpp>
+#include <libhal-util/bit.hpp>
 #include <libhal-util/bit_bang_i2c.hpp>
 #include <libhal-util/serial.hpp>
 #include <libhal-util/steady_clock.hpp>
+#include <nonstd/ring_span.hpp>
 
 #include <resource_list.hpp>
 
-using setup_command_buffer = std::array<hal::byte, 16>;
-std::array<setup_command_buffer, 16> buffer_history{};
+using setup_command_buffer = std::array<hal::byte, 8>;
+std::array<setup_command_buffer, 8> buffer_history{};
 std::size_t history_idx = 0;
 std::size_t current_idx = 0;
+
+std::array<hal::byte, 512> serial_buffer{};
+nonstd::ring_span<hal::byte> serial_circular_buffer(serial_buffer.begin(),
+                                                    serial_buffer.end());
 
 enum class enumeration_state
 {
@@ -174,11 +181,8 @@ void initialize_platform(resource_list& p_resource)
   static hal::stm32f1::usb usb(steady_clock);
   hal::print(uart1, "USB\n");
   static auto control_endpoint = usb.acquire_control_endpoint();
-#if 0
-  static auto data_tx_ep = usb.acquire_bulk_in_endpoint();
-  static auto data_rx_ep = usb.acquire_bulk_out_endpoint();
-  static auto status_ep = usb.acquire_interrupt_in_endpoint();
-#endif
+  static auto serial_data_ep = usb.acquire_bulk_endpoint();
+  static auto status_ep = usb.acquire_interrupt_endpoint();
   hal::print(uart1, "ctrl\n");
 
   using namespace std::chrono_literals;
@@ -208,6 +212,7 @@ void initialize_platform(resource_list& p_resource)
     0x01         // bNumConfigurations
   };
 
+#if 0
   // Configuration Descriptor (9+9 = 18 bytes total)
   uint8_t const config_descriptor[] = {
     // Configuration Descriptor
@@ -232,6 +237,106 @@ void initialize_platform(resource_list& p_resource)
     0x00,  // bInterfaceProtocol
     0x00   // iInterface (No string)
   };
+#else  // CDC ACM Serial
+  static uint8_t constexpr config_descriptor[] = {
+    // Configuration Descriptor
+    0x09,  // bLength
+    0x02,  // bDescriptorType (Configuration)
+    75,
+    0,     // wTotalLength (75 bytes)
+    0x02,  // bNumInterfaces
+    0x01,  // bConfigurationValue
+    0x00,  // iConfiguration (String Index)
+    0x80,  // bmAttributes (Bus Powered)
+    0x32,  // bMaxPower (100mA)
+
+    // Interface Association Descriptor
+    0x08,  // bLength
+    0x0B,  // bDescriptorType (Interface Association)
+    0x00,  // bFirstInterface
+    0x02,  // bInterfaceCount
+    0x02,  // bFunctionClass (CDC)
+    0x02,  // bFunctionSubClass (Abstract Control Model)
+    0x01,  // bFunctionProtocol
+    0x00,  // iFunction (String Index)
+
+    // Interface Descriptor (Control)
+    0x09,  // bLength
+    0x04,  // bDescriptorType (Interface)
+    0x00,  // bInterfaceNumber
+    0x00,  // bAlternateSetting
+    0x01,  // bNumEndpoints
+    0x02,  // bInterfaceClass (CDC)
+    0x02,  // bInterfaceSubClass (Abstract Control Model)
+    0x01,  // bInterfaceProtocol (AT Commands V.250)
+    0x00,  // iInterface (String Index)
+
+    // CDC Header Functional Descriptor
+    0x05,  // bLength
+    0x24,  // bDescriptorType (CS_INTERFACE)
+    0x00,  // bDescriptorSubtype (Header)
+    0x10,
+    0x01,  // bcdCDC (1.10)
+
+    // CDC ACM Functional Descriptor
+    0x04,  // bLength
+    0x24,  // bDescriptorType (CS_INTERFACE)
+    0x02,  // bDescriptorSubtype (Abstract Control Management)
+    0x02,  // bmCapabilities
+
+    // CDC Union Functional Descriptor
+    0x05,  // bLength
+    0x24,  // bDescriptorType (CS_INTERFACE)
+    0x06,  // bDescriptorSubtype (Union)
+    0x00,  // bControlInterface
+    0x01,  // bSubordinateInterface0
+
+    // CDC Call Management Functional Descriptor
+    0x05,  // bLength
+    0x24,  // bDescriptorType (CS_INTERFACE)
+    0x01,  // bDescriptorSubtype (Call Management)
+    0x00,  // bmCapabilities
+    0x01,  // bDataInterface
+
+    // Endpoint Descriptor (Control IN)
+    0x07,  // bLength
+    0x05,  // bDescriptorType (Endpoint)
+    0x82,  // bEndpointAddress (IN 2)
+    0x03,  // bmAttributes (Interrupt)
+    0x08,
+    0x10,  // wMaxPacketSize 16
+    0x10,  // bInterval (16 ms)
+
+    // Interface Descriptor (Data)
+    0x09,  // bLength
+    0x04,  // bDescriptorType (Interface)
+    0x01,  // bInterfaceNumber
+    0x00,  // bAlternateSetting
+    0x02,  // bNumEndpoints
+    0x0A,  // bInterfaceClass (CDC-Data)
+    0x00,  // bInterfaceSubClass
+    0x00,  // bInterfaceProtocol
+    0x00,  // iInterface (String Index)
+
+    // Endpoint Descriptor (Data OUT)
+    0x07,  // bLength
+    0x05,  // bDescriptorType (Endpoint)
+    0x01,  // bEndpointAddress (OUT + 1)
+    0x02,  // bmAttributes (Bulk)
+    0x40,
+    0x10,  // wMaxPacketSize 16
+    0x00,  // bInterval (Ignored for Bulk)
+
+    // Endpoint Descriptor (Data IN)
+    0x07,  // bLength
+    0x05,  // bDescriptorType (Endpoint)
+    0x81,  // bEndpointAddress (OUT + 1)
+    0x02,  // bmAttributes (Bulk)
+    0x40,
+    0x10,  // wMaxPacketSize 16
+    0x00   // bInterval (Ignored for Bulk)
+  };
+#endif
 
   // String Descriptor 0 (Language ID)
   uint8_t const lang_descriptor[] = {
@@ -263,11 +368,24 @@ void initialize_platform(resource_list& p_resource)
   constexpr uint8_t serial_descriptor[] = {
     14,    // bLength
     0x03,  // bDescriptorType (String)
-    'a',  0, 'b', 0, 'c', 0, 'd', 0, 'e', 0, 'f', 0,
+    '0',  0, '0', 0, '0', 0, '0', 0, '1', 0, '.', 0,
   };
 
   // I love that you can just do that
   static_assert(sizeof(serial_descriptor) == serial_descriptor[0]);
+  auto constexpr w_total_length =
+    config_descriptor[3] << 8 | config_descriptor[2];
+  static_assert(sizeof(config_descriptor) == w_total_length);
+
+  // Example notification with DSR and DCD set
+  [[maybe_unused]] static uint8_t constexpr serial_state_notification[] = {
+    0xA1,        // bmRequestType (Device to Host | Class | Interface)
+    0x20,        // bNotification (SERIAL_STATE)
+    0x00, 0x00,  // wValue (zero)
+    0x00, 0x00,  // wIndex (Interface number)
+    0x02, 0x00,  // wLength (2 bytes of data)
+    0x03, 0x00   // serialState (DCD | DSR = 0x03)
+  };
 
   std::array<std::span<uint8_t const>, 4> strings = {
     lang_descriptor,
@@ -276,17 +394,138 @@ void initialize_platform(resource_list& p_resource)
     serial_descriptor,
   };
 
+  serial_data_ep.second.on_receive([](std::span<hal::byte> p_data) {
+    for (auto const byte : p_data) {
+      serial_circular_buffer.push_back(byte);
+    }
+  });
+
+  hal::u8 configuration = 0;
+
+  auto handle_serial = []() {
+    // status_ep.first.write(serial_state_notification);
+    if (not serial_circular_buffer.empty()) {
+      auto const byte = serial_circular_buffer.pop_front();
+      uart1.write({ &byte, 1 });
+    }
+  };
+
+  // CDC Class-Specific Request Codes
+  constexpr hal::u8 CDC_SET_LINE_CODING = 0x20;
+  constexpr hal::u8 CDC_GET_LINE_CODING = 0x21;
+  constexpr hal::u8 CDC_SET_CONTROL_LINE_STATE = 0x22;
+  constexpr hal::u8 CDC_SEND_BREAK = 0x23;
+
+  // Line Coding Structure (7 bytes)
+  static auto line_coding = std::to_array<uint8_t>({
+    0x00,
+    0x96,
+    0x00,
+    0x00,  // Baud rate: 38400 (Little Endian)
+    0x00,  // Stop bits: 1
+    0x00,  // Parity: None
+    0x08   // Data bits: 8
+  });
+
+  // Example handler for CDC class-specific setup packets
+  auto handle_cdc_setup =
+    [](hal::u8 bmRequestType, hal::u8 bRequest, hal::u16 wValue) -> bool {
+    switch (bRequest) {
+      case CDC_GET_LINE_CODING:
+        if (bmRequestType == 0xA1) {  // Direction: Device to Host
+          // Send current line coding
+          control_endpoint.write(line_coding);
+          hal::print(uart1, "CDC_GET_LINE_CODING\n");
+          return true;
+        }
+        break;
+
+      case CDC_SET_LINE_CODING:
+        if (bmRequestType == 0x21) {  // Direction: Host to Device
+          control_endpoint.enable_rx();
+          while (current_idx == history_idx) {
+            continue;
+          }
+          current_idx = history_idx;
+          auto& buffer = get_latest_host_command();
+          hal::print(uart1, "{{ ");
+          for (auto const byte : buffer) {
+            hal::print<8>(uart1, "0x%" PRIx8 ", ", byte);
+          }
+          hal::print(uart1, "}}\n");
+          std::copy_n(buffer.begin(),
+                      std::min(buffer.size(), line_coding.size()),
+                      line_coding.begin());
+          control_endpoint.write({});
+          hal::print(uart1, "CDC_SET_LINE_CODING+\n");
+          return true;
+        }
+        break;
+
+      case CDC_SET_CONTROL_LINE_STATE:
+        if (bmRequestType == 0x21) {  // Direction: Host to Device
+          // wValue contains the control signals:
+          // Bit 0: DTR state
+          // Bit 1: RTS state
+          bool const dtr = wValue & 0x01;
+          bool const rts = wValue & 0x02;
+          // Handle control line state change
+          // Most basic implementation just returns success
+          control_endpoint.write({});
+          hal::print<32>(uart1, "DTR = %d, RTS = %d\n", dtr, rts);
+          return true;
+        }
+        break;
+
+      case CDC_SEND_BREAK:
+        if (bmRequestType == 0x21) {  // Direction: Host to Device
+          // wValue contains break duration in milliseconds
+          // Most basic implementation just returns success
+          control_endpoint.write({});
+          hal::print(uart1, "SEND_BREAK\n");
+          return true;
+        }
+        break;
+    }
+
+    return false;  // Command not handled
+  };
+
+  // Wait for the message number to increment
+  auto deadline = hal::future_deadline(steady_clock, 1s);
+
   while (true) {
     // Wait for a new setup message to come in.
     if (current_idx == history_idx) {
+
+      if (configuration == 1 && not serial_data_ep.second.stalled()) {
+        handle_serial();
+        // Send a '.' every second
+        if (deadline < steady_clock.uptime()) {
+          using namespace std::string_view_literals;
+          serial_data_ep.first.write(hal::as_bytes("."sv));
+          hal::print(uart1, ">");
+          deadline = hal::future_deadline(steady_clock, 1s);
+        }
+      }
       continue;
     }
+
     current_idx = history_idx;
     auto& buffer = get_latest_host_command();
+
+    auto print_buffer = [&buffer]() {
+      for (auto const byte : buffer) {
+        hal::print<8>(uart1, "0x%" PRIx8 ", ", byte);
+      }
+    };
 
     // Extract bmRequestType and bRequest
     hal::u8 const bmRequestType = buffer[0];
     hal::u8 const bRequest = buffer[1];
+    std::size_t const wValue = (buffer[3] << 8) | buffer[2];
+    std::size_t const wIndex = (buffer[5] << 8) | buffer[4];
+    std::size_t const wLength = (buffer[7] << 8) | buffer[6];
 
     if (bmRequestType == 0x00 && bRequest == 0x05) {
       control_endpoint.write({});
@@ -295,11 +534,13 @@ void initialize_platform(resource_list& p_resource)
     } else if (bmRequestType == 0x00 && bRequest == 0x09) {
       hal::u8 const descriptor_index = buffer[2];
       // SET_CONFIGURATION
+      configuration = descriptor_index;
       control_endpoint.write({});
+      serial_data_ep.first.reset();
+      status_ep.first.reset();
       hal::print<16>(uart1, "SC%" PRIu8 "\n", descriptor_index);
     } else if (bmRequestType == 0x80) {  // Device-to-host
       if (bRequest == 0x06) {            // GET_DESCRIPTOR
-        std::size_t const wLength = (buffer[7] << 8) | buffer[6];
         hal::u8 const descriptor_index = buffer[2];
         hal::u8 const descriptor_type = buffer[3];
         switch (descriptor_type) {
@@ -312,7 +553,7 @@ void initialize_platform(resource_list& p_resource)
           case 0x02:  // Configuration Descriptor
           {
             state = enumeration_state::sending_configure_descriptor;
-            hal::print<16>(uart1, "CD%" PRIu16 "\n", wLength);
+            hal::print<32>(uart1, "CD%" PRIu16 "\n", wLength);
             control_endpoint.write(std::span(config_descriptor).first(wLength));
             state = enumeration_state::post_configure_descriptor;
             hal::print(uart1, "CD+\n");
@@ -329,11 +570,106 @@ void initialize_platform(resource_list& p_resource)
             break;
           }
           default:
+            hal::print(uart1, "bmRequestType?\n");
             break;
         }
       }
+    } else if (hal::bit_extract<hal::bit_mask::from(5, 6)>(bmRequestType) ==
+               0x1) {
+      // Class-specific request
+      auto const handled = handle_cdc_setup(bmRequestType, bRequest, wValue);
+      if (handled) {
+        hal::print(uart1, "CDC-CLASS+\n");
+      } else {
+        hal::print(uart1, "CDC-CLASS!\n");
+      }
+    } else if (bmRequestType == 0x02) {
+      hal::print(uart1, "[EP");
+
+      // Standard USB request codes
+      constexpr hal::u8 get_status = 0x00;
+      constexpr hal::u8 clear_feature = 0x01;
+      constexpr hal::u8 set_feature = 0x03;
+
+      auto const ep_select = wIndex & 0xF;
+      auto const direction = hal::bit_extract<hal::bit_mask::from(7)>(wIndex);
+      hal::print<8>(uart1, "%" PRIu8, ep_select);
+      hal::print<8>(uart1, "]:[%" PRIu8 "]", direction);
+
+      switch (bRequest) {
+        case get_status:
+          switch (ep_select) {
+            case 1:
+              switch (direction) {
+                case 0:  // out
+                  control_endpoint.write(std::to_array<hal::byte>(
+                    { serial_data_ep.first.stalled(), 0 }));
+                  hal::print<8>(
+                    uart1, "STALLED:%d\n", serial_data_ep.first.stalled());
+                  break;
+                case 1:  // in
+                  control_endpoint.write(std::to_array<hal::byte>(
+                    { serial_data_ep.second.stalled(), 0 }));
+                  hal::print<8>(
+                    uart1, " STALLED:%d\n", serial_data_ep.first.stalled());
+                  break;
+              }
+              break;
+            case 2:
+              switch (direction) {
+                case 0:  // out
+                  break;
+                case 1:  // in
+                  control_endpoint.write(
+                    std::to_array<hal::byte>({ status_ep.first.stalled(), 0 }));
+                  hal::print<8>(
+                    uart1, "STALLED:%d\n", serial_data_ep.first.stalled());
+                  break;
+              }
+              break;
+          }
+          break;
+        case clear_feature:
+          switch (ep_select) {
+            case 1:
+              switch (direction) {
+                case 0:  // out
+                  serial_data_ep.first.reset();
+                  control_endpoint.write({});
+                  hal::print(uart1, "CLEAR\n");
+                  break;
+                case 1:  // in
+                  serial_data_ep.second.reset();
+                  control_endpoint.write({});
+                  hal::print(uart1, "CLEAR\n");
+                  break;
+              }
+              break;
+            case 2:
+              switch (direction) {
+                case 0:  // out
+                  break;
+                case 1:  // in
+                  status_ep.first.reset();
+                  control_endpoint.write({});
+                  hal::print(uart1, "CLEAR\n");
+                  break;
+              }
+              break;
+          }
+          break;
+        case set_feature:
+          hal::print(uart1, "SET_FEATURE\n");
+          break;
+        default:
+          hal::print<16>(uart1, "DEFAULT:0x%02X\n", bRequest);
+          break;
+      }
+      hal::print(uart1, "\n");
     }
 
-    hal::print<16>(uart1, "ACT[%zu]\n", history_idx);
+    hal::print<16>(uart1, "ACT[%zu]: {", history_idx);
+    print_buffer();
+    hal::print(uart1, "}\n");
   }
 }

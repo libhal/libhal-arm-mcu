@@ -212,12 +212,12 @@ void initialize_platform(resource_list& p_resource)
     0x00   // iInterface (No string)
   };
 #else  // CDC ACM Serial
-  static uint8_t constexpr config_descriptor[] = {
+  hal::u8 config_descriptor[] = {
     // Configuration Descriptor
     0x09,  // bLength
     0x02,  // bDescriptorType (Configuration)
     75,
-    0,     // wTotalLength (75 bytes)
+    0x00,  // wTotalLength (75 bytes)
     0x02,  // bNumInterfaces
     0x01,  // bConfigurationValue
     0x00,  // iConfiguration (String Index)
@@ -273,12 +273,12 @@ void initialize_platform(resource_list& p_resource)
     0x01,  // bDataInterface
 
     // Endpoint Descriptor (Control IN)
-    0x07,  // bLength
-    0x05,  // bDescriptorType (Endpoint)
-    0x82,  // bEndpointAddress (IN 2)
-    0x03,  // bmAttributes (Interrupt)
-    0x08,
-    0x10,  // wMaxPacketSize 16
+    0x07,                            // bLength
+    0x05,                            // bDescriptorType (Endpoint)
+    status_ep.second.info().number,  // bEndpointAddress (IN 2)
+    0x03,                            // bmAttributes (Interrupt)
+    static_cast<hal::u8>(status_ep.second.info().size),
+    0x00,  // wMaxPacketSize 16
     0x10,  // bInterval (16 ms)
 
     // Interface Descriptor (Data)
@@ -293,24 +293,43 @@ void initialize_platform(resource_list& p_resource)
     0x00,  // iInterface (String Index)
 
     // Endpoint Descriptor (Data OUT)
-    0x07,  // bLength
-    0x05,  // bDescriptorType (Endpoint)
-    0x01,  // bEndpointAddress (OUT + 1)
-    0x02,  // bmAttributes (Bulk)
-    0x40,
-    0x10,  // wMaxPacketSize 16
+    0x07,                                // bLength
+    0x05,                                // bDescriptorType (Endpoint)
+    serial_data_ep.first.info().number,  // bEndpointAddress (OUT + 1)
+    0x02,                                // bmAttributes (Bulk)
+    static_cast<hal::u8>(serial_data_ep.first.info().size),
+    0x00,  // wMaxPacketSize 16
     0x00,  // bInterval (Ignored for Bulk)
 
     // Endpoint Descriptor (Data IN)
-    0x07,  // bLength
-    0x05,  // bDescriptorType (Endpoint)
-    0x81,  // bEndpointAddress (IN + 1)
-    0x02,  // bmAttributes (Bulk)
-    0x40,
-    0x10,  // wMaxPacketSize 16
+    0x07,                                 // bLength
+    0x05,                                 // bDescriptorType (Endpoint)
+    serial_data_ep.second.info().number,  // bEndpointAddress (IN + 1)
+    0x02,                                 // bmAttributes (Bulk)
+    static_cast<hal::u8>(serial_data_ep.second.info().size),
+    0x00,  // wMaxPacketSize 16
     0x00   // bInterval (Ignored for Bulk)
   };
 #endif
+
+  hal::print<64>(uart1,
+                 ">>>> status_ep.second.info().number = 0x%02X\n",
+                 status_ep.second.info().number);
+  hal::print<64>(uart1,
+                 ">>>> status_ep.second.info().size = %d\n",
+                 status_ep.second.info().size);
+  hal::print<64>(uart1,
+                 ">>>> serial_data_ep.first.info().number = 0x%02X\n",
+                 serial_data_ep.first.info().number);
+  hal::print<64>(uart1,
+                 ">>>> serial_data_ep.first.info().size = %d\n",
+                 serial_data_ep.first.info().size);
+  hal::print<64>(uart1,
+                 ">>>> serial_data_ep.second.info().number = 0x%02X\n",
+                 serial_data_ep.second.info().number);
+  hal::print<64>(uart1,
+                 ">>>> serial_data_ep.second.info().size = %d\n",
+                 serial_data_ep.second.info().size);
 
   // String Descriptor 0 (Language ID)
   uint8_t const lang_descriptor[] = {
@@ -347,9 +366,6 @@ void initialize_platform(resource_list& p_resource)
 
   // I love that you can just do that
   static_assert(sizeof(serial_descriptor) == serial_descriptor[0]);
-  auto constexpr w_total_length =
-    config_descriptor[3] << 8 | config_descriptor[2];
-  static_assert(sizeof(config_descriptor) == w_total_length);
 
   // Example notification with DSR and DCD set
   [[maybe_unused]] static uint8_t constexpr serial_state_notification[] = {

@@ -928,7 +928,7 @@ hal::experimental::usb_endpoint_info usb::bulk_in_endpoint::driver_info() const
 {
   return {
     .size = fixed_endpoint_size,
-    .number = m_endpoint_number,
+    .number = static_cast<u8>(m_endpoint_number | (1U << 7U)),
     .stalled = stalled(),
   };
 }
@@ -948,7 +948,7 @@ hal::experimental::usb_endpoint_info usb::interrupt_in_endpoint::driver_info()
 {
   return {
     .size = fixed_endpoint_size,
-    .number = m_endpoint_number,
+    .number = static_cast<u8>(m_endpoint_number | (1U << 7U)),
     .stalled = stalled(),
   };
 }

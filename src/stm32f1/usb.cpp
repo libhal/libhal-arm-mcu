@@ -505,8 +505,9 @@ void usb::interrupt_handler() noexcept
   }
 }
 
-usb::usb(hal::steady_clock& p_clock, hal::time_duration p_power_on_time)
+usb::usb(hal::steady_clock& p_clock, hal::time_duration p_write_timeout)
   : m_clock(&p_clock)
+  , m_write_timeout(p_write_timeout)
   , m_available_endpoint_memory(initial_packet_buffer_memory)
 {
   // USB already active by some other means
@@ -542,18 +543,20 @@ usb::usb(hal::steady_clock& p_clock, hal::time_duration p_power_on_time)
 
   power_on(peripheral::usb);
 
-  hal::delay(p_clock, p_power_on_time);
+  using namespace std::chrono_literals;
+
+  hal::delay(p_clock, 1ms);
   // Perform reset
   hal::bit_modify(reg().CNTR)
     .set(control::power_down)
     .set(control::force_reset);
-  hal::delay(p_clock, p_power_on_time);
+  hal::delay(p_clock, 1ms);
 
   // The USB peripheral sets this bit on system reset, we need to clear it to
   // allow the device to power on. We must wait approximately 1us before we can
   // proceed for the stm32f103.
   hal::bit_modify(reg().CNTR).clear(control::power_down);
-  hal::delay(p_clock, p_power_on_time);
+  hal::delay(p_clock, 1ms);
 
   // Clears everything including the force reset, enabling the USB device.
   reg().CNTR = 0;
@@ -607,8 +610,12 @@ void usb::wait_for_endpoint_transfer_completion(u8 p_endpoint)
   constexpr auto nak_u32_value = static_cast<hal::u32>(stat::nak);
   auto& endpoint_reg = reg().EP[p_endpoint].EPR;
   auto endpoint_tx_status = hal::bit_extract<endpoint::status_tx>(endpoint_reg);
+  auto const deadline = hal::future_deadline(*m_clock, m_write_timeout);
   while (endpoint_tx_status != nak_u32_value) {
     endpoint_tx_status = hal::bit_extract<endpoint::status_tx>(endpoint_reg);
+    if (m_clock->uptime() >= deadline) {
+      hal::safe_throw(hal::timed_out(this));
+    }
   }
 }
 

@@ -87,7 +87,7 @@ public:
   class bulk_out_endpoint;
 
   usb(hal::steady_clock& p_clock,
-      hal::time_duration p_power_on_time = std::chrono::microseconds(1));
+      hal::time_duration p_write_timeout = std::chrono::milliseconds(5));
   usb(usb&) = delete;
   usb operator=(usb&) = delete;
   usb(usb&&) = delete;
@@ -130,6 +130,7 @@ private:
                  hal::callback<void(interrupt_receive_tag)>>;
   std::array<callback_variant_t, usb_endpoint_count> m_out_callbacks;
   hal::steady_clock* m_clock;
+  hal::time_duration m_write_timeout;
   std::uint16_t m_available_endpoint_memory;
   // Starts at 1 because endpoint 0 is always occupied by the control endpoint
   std::uint8_t m_endpoints_allocated = 1;

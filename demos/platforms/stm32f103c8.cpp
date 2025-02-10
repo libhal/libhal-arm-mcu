@@ -31,6 +31,7 @@
 #include <libhal-util/bit_bang_i2c.hpp>
 #include <libhal-util/serial.hpp>
 #include <libhal-util/steady_clock.hpp>
+#include <libhal/error.hpp>
 #include <nonstd/ring_span.hpp>
 
 #include <resource_list.hpp>
@@ -151,6 +152,7 @@ void initialize_platform(resource_list& p_resource)
 
   hal::print(uart1, "USB test starting in init...\n");
 
+  using namespace std::chrono_literals;
   static hal::stm32f1::usb usb(steady_clock);
   hal::print(uart1, "USB\n");
 
@@ -159,7 +161,6 @@ void initialize_platform(resource_list& p_resource)
   static auto status_ep = usb.acquire_interrupt_endpoint();
   hal::print(uart1, "ctrl\n");
 
-  using namespace std::chrono_literals;
   control_endpoint.on_request(control_endpoint_handler);
   hal::print(uart1, "on_request\n");
 
@@ -505,7 +506,14 @@ void initialize_platform(resource_list& p_resource)
       // Send a '.' every second
       if (deadline < steady_clock.uptime()) {
         using namespace std::string_view_literals;
-        serial_data_ep.second.write(hal::as_bytes("."sv));
+        try {
+          serial_data_ep.second.write(hal::as_bytes("."sv));
+        } catch (hal::timed_out const&) {
+          hal::print(
+            uart1, "\n\n\033[48;5;9mEP TIMEOUT! PORT DISCONNECTED!\033[0m\n\n");
+          port_connected = false;
+          continue;
+        }
         hal::print(uart1, ">");
         deadline = hal::future_deadline(steady_clock, 1s);
       }
@@ -536,98 +544,103 @@ void initialize_platform(resource_list& p_resource)
     std::size_t const wValue = (buffer[3] << 8) | buffer[2];
     std::size_t const wIndex = (buffer[5] << 8) | buffer[4];
     std::size_t const wLength = (buffer[7] << 8) | buffer[6];
-
-    if (bmRequestType == 0x00 && bRequest == 0x05) {
-      control_endpoint.write({});
-      control_endpoint.set_address(buffer[2]);
-      hal::print<32>(uart1, "ZLP+SET_ADDR[%d]\n", buffer[2]);
-    } else if (bmRequestType == 0x00 && bRequest == 0x09) {
-      hal::u8 const descriptor_index = buffer[2];
-      // SET_CONFIGURATION
-      configuration = descriptor_index;
-      control_endpoint.write({});
-      serial_data_ep.first.reset();
-      status_ep.first.reset();
-      hal::print<16>(uart1, "SC%" PRIu8 "\n", descriptor_index);
-    } else if (bmRequestType == 0x80) {  // Device-to-host
-      if (bRequest == 0x06) {            // GET_DESCRIPTOR
+    try {
+      if (bmRequestType == 0x00 && bRequest == 0x05) {
+        control_endpoint.write({});
+        control_endpoint.set_address(buffer[2]);
+        hal::print<32>(uart1, "ZLP+SET_ADDR[%d]\n", buffer[2]);
+      } else if (bmRequestType == 0x00 && bRequest == 0x09) {
         hal::u8 const descriptor_index = buffer[2];
-        hal::u8 const descriptor_type = buffer[3];
-        switch (descriptor_type) {
-          case 0x01: {  // Device Descriptor
-            hal::print<16>(uart1, "DD%" PRIu16 "\n", wLength);
-            control_endpoint.write(std::span(device_descriptor).first(wLength));
-            hal::print(uart1, "DD+\n");
-            break;
+        // SET_CONFIGURATION
+        configuration = descriptor_index;
+        control_endpoint.write({});
+        serial_data_ep.first.reset();
+        status_ep.first.reset();
+        hal::print<16>(uart1, "SC%" PRIu8 "\n", descriptor_index);
+      } else if (bmRequestType == 0x80) {  // Device-to-host
+        if (bRequest == 0x06) {            // GET_DESCRIPTOR
+          hal::u8 const descriptor_index = buffer[2];
+          hal::u8 const descriptor_type = buffer[3];
+          switch (descriptor_type) {
+            case 0x01: {  // Device Descriptor
+              hal::print<16>(uart1, "DD%" PRIu16 "\n", wLength);
+              control_endpoint.write(
+                std::span(device_descriptor).first(wLength));
+              hal::print(uart1, "DD+\n");
+              break;
+            }
+            case 0x02:  // Configuration Descriptor
+            {
+              hal::print<32>(uart1, "CD%" PRIu16 "\n", wLength);
+              control_endpoint.write(
+                std::span(config_descriptor).first(wLength));
+              hal::print(uart1, "CD+\n");
+              break;
+            }
+            case 0x03: {  // String Descriptor
+              hal::print<16>(
+                uart1, "S%" PRIu8 ":%" PRIu16 "\n", descriptor_index, wLength);
+              auto const str = strings.at(descriptor_index);
+              auto const first = std::min(str.size(), wLength);
+              auto const payload_span = str.first(first);
+              control_endpoint.write(payload_span);
+              hal::print(uart1, "S+\n");
+              break;
+            }
+            default:
+              hal::print(uart1, "bmRequestType?\n");
+              break;
           }
-          case 0x02:  // Configuration Descriptor
-          {
-            hal::print<32>(uart1, "CD%" PRIu16 "\n", wLength);
-            control_endpoint.write(std::span(config_descriptor).first(wLength));
-            hal::print(uart1, "CD+\n");
+        }
+      } else if (hal::bit_extract<hal::bit_mask::from(5, 6)>(bmRequestType) ==
+                 0x1) {
+        // Class-specific request
+        auto const handled = handle_cdc_setup(bmRequestType, bRequest, wValue);
+        if (handled) {
+          hal::print(uart1, "CDC-CLASS+\n");
+        } else {
+          hal::print(uart1, "CDC-CLASS!\n");
+        }
+      } else if (bmRequestType == 0x02) {
+        hal::print(uart1, "[EP");
+
+        // Standard USB request codes
+        constexpr hal::u8 get_status = 0x00;
+        constexpr hal::u8 clear_feature = 0x01;
+        constexpr hal::u8 set_feature = 0x03;
+
+        auto const ep_select = wIndex & 0xF;
+        auto const direction = hal::bit_extract<hal::bit_mask::from(7)>(wIndex);
+        hal::print<8>(uart1, "%" PRIu8, ep_select);
+        hal::print<8>(uart1, "]:[%" PRIu8 "]", direction);
+        auto& selected_ep = *map.at(ep_select).at(direction);
+
+        switch (bRequest) {
+          case get_status:
+            control_endpoint.write(
+              std::to_array<hal::byte>({ selected_ep.info().stalled, 0 }));
+            hal::print<8>(uart1, "STALLED:%d\n", selected_ep.info().stalled);
             break;
-          }
-          case 0x03: {  // String Descriptor
-            hal::print<16>(
-              uart1, "S%" PRIu8 ":%" PRIu16 "\n", descriptor_index, wLength);
-            auto const str = strings.at(descriptor_index);
-            auto const first = std::min(str.size(), wLength);
-            auto const payload_span = str.first(first);
-            control_endpoint.write(payload_span);
-            hal::print(uart1, "S+\n");
+          case clear_feature:
+            selected_ep.stall(false);
+            control_endpoint.write({});
+            hal::print(uart1, "CLEAR\n");
             break;
-          }
+          case set_feature:
+            hal::print(uart1, "SET_FEATURE\n");
+            break;
           default:
-            hal::print(uart1, "bmRequestType?\n");
+            hal::print<16>(uart1, "DEFAULT:0x%02X\n", bRequest);
             break;
         }
+        hal::print(uart1, "\n");
       }
-    } else if (hal::bit_extract<hal::bit_mask::from(5, 6)>(bmRequestType) ==
-               0x1) {
-      // Class-specific request
-      auto const handled = handle_cdc_setup(bmRequestType, bRequest, wValue);
-      if (handled) {
-        hal::print(uart1, "CDC-CLASS+\n");
-      } else {
-        hal::print(uart1, "CDC-CLASS!\n");
-      }
-    } else if (bmRequestType == 0x02) {
-      hal::print(uart1, "[EP");
 
-      // Standard USB request codes
-      constexpr hal::u8 get_status = 0x00;
-      constexpr hal::u8 clear_feature = 0x01;
-      constexpr hal::u8 set_feature = 0x03;
-
-      auto const ep_select = wIndex & 0xF;
-      auto const direction = hal::bit_extract<hal::bit_mask::from(7)>(wIndex);
-      hal::print<8>(uart1, "%" PRIu8, ep_select);
-      hal::print<8>(uart1, "]:[%" PRIu8 "]", direction);
-      auto& selected_ep = *map.at(ep_select).at(direction);
-
-      switch (bRequest) {
-        case get_status:
-          control_endpoint.write(
-            std::to_array<hal::byte>({ selected_ep.info().stalled, 0 }));
-          hal::print<8>(uart1, "STALLED:%d\n", selected_ep.info().stalled);
-          break;
-        case clear_feature:
-          selected_ep.stall(false);
-          control_endpoint.write({});
-          hal::print(uart1, "CLEAR\n");
-          break;
-        case set_feature:
-          hal::print(uart1, "SET_FEATURE\n");
-          break;
-        default:
-          hal::print<16>(uart1, "DEFAULT:0x%02X\n", bRequest);
-          break;
-      }
-      hal::print(uart1, "\n");
+      hal::print<16>(uart1, "COMMAND[%zu]: {", command_count++);
+      print_buffer();
+      hal::print(uart1, "}\n\n");
+    } catch (hal::timed_out const&) {
+      hal::print(uart1, "EP write operation timed out!\n");
     }
-
-    hal::print<16>(uart1, "COMMAND[%zu]: {", command_count++);
-    print_buffer();
-    hal::print(uart1, "}\n\n");
   }
 }

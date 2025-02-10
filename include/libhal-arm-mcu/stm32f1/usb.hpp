@@ -95,9 +95,9 @@ public:
   ~usb();
 
   control_endpoint acquire_control_endpoint();
-  std::pair<interrupt_in_endpoint, interrupt_out_endpoint>
+  std::pair<interrupt_out_endpoint, interrupt_in_endpoint>
   acquire_interrupt_endpoint();
-  std::pair<bulk_in_endpoint, bulk_out_endpoint> acquire_bulk_endpoint();
+  std::pair<bulk_out_endpoint, bulk_in_endpoint> acquire_bulk_endpoint();
 
   bool disrupted();
 

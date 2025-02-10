@@ -36,24 +36,6 @@
 #include <resource_list.hpp>
 
 using setup_command_buffer = std::array<hal::byte, 8>;
-std::array<setup_command_buffer, 8> buffer_history{};
-std::size_t history_idx = 0;
-std::size_t current_idx = 0;
-
-std::array<hal::byte, 512> serial_buffer{};
-nonstd::ring_span<hal::byte> serial_circular_buffer(serial_buffer.begin(),
-                                                    serial_buffer.end());
-
-enum class enumeration_state
-{
-  pre_address,
-  post_address,
-  sending_device_descriptor,
-  post_device_descriptor,
-  sending_configure_descriptor,
-  post_configure_descriptor,
-};
-enumeration_state state = enumeration_state::pre_address;
 
 using ctrl_request_tag =
   hal::experimental::usb_control_endpoint::on_request_tag;
@@ -62,22 +44,12 @@ using bulk_receive_tag =
 using interrupt_receive_tag =
   hal::experimental::usb_interrupt_out_endpoint::on_receive_tag;
 
-void my_control_handler(ctrl_request_tag)
-{
-  history_idx++;
-};
+bool host_command_available = false;
 
-auto get_latest_host_command() -> auto&
+void control_endpoint_handler(ctrl_request_tag)
 {
-  decltype(current_idx) setup_command_select = 0;
-  if (history_idx == 0) {
-    setup_command_select = buffer_history.size() - 1;
-  } else {
-    setup_command_select = history_idx - 1;
-  }
-
-  return buffer_history[setup_command_select % buffer_history.size()];
-};
+  host_command_available = true;
+}
 
 void initialize_platform(resource_list& p_resource)
 {
@@ -181,18 +153,18 @@ void initialize_platform(resource_list& p_resource)
 
   static hal::stm32f1::usb usb(steady_clock);
   hal::print(uart1, "USB\n");
+
   static auto control_endpoint = usb.acquire_control_endpoint();
   static auto serial_data_ep = usb.acquire_bulk_endpoint();
   static auto status_ep = usb.acquire_interrupt_endpoint();
   hal::print(uart1, "ctrl\n");
 
   using namespace std::chrono_literals;
-  control_endpoint.on_request(my_control_handler);
+  control_endpoint.on_request(control_endpoint_handler);
   hal::print(uart1, "on_request\n");
 
   control_endpoint.connect(true);
   hal::print(uart1, "connect\n");
-  control_endpoint.enable_rx();
 
   // Device Descriptor
   // Device Descriptor (18 bytes)
@@ -397,7 +369,7 @@ void initialize_platform(resource_list& p_resource)
 
   bool serial_data_available = false;
 
-  serial_data_ep.second.on_receive([&serial_data_available](bulk_receive_tag) {
+  serial_data_ep.first.on_receive([&serial_data_available](bulk_receive_tag) {
     serial_data_available = true;
   });
 
@@ -408,10 +380,10 @@ void initialize_platform(resource_list& p_resource)
       // Only 3 bytes to test only grabbing a few bytes from the endpoint and
       // still having some remaining.
       std::array<hal::u8, 3> buffer{};
-      auto data_received = serial_data_ep.second.read(buffer);
+      auto data_received = serial_data_ep.first.read(buffer);
       while (not data_received.empty()) {
         uart1.write(data_received);
-        data_received = serial_data_ep.second.read(buffer);
+        data_received = serial_data_ep.first.read(buffer);
       }
     }
   };
@@ -435,9 +407,11 @@ void initialize_platform(resource_list& p_resource)
     0x08   // Data bits: 8
   });
 
+  bool port_connected = false;
   // Example handler for CDC class-specific setup packets
-  auto handle_cdc_setup =
-    [](hal::u8 bmRequestType, hal::u8 bRequest, hal::u16 wValue) -> bool {
+  auto handle_cdc_setup = [&port_connected](hal::u8 bmRequestType,
+                                            hal::u8 bRequest,
+                                            hal::u16 wValue) -> bool {
     switch (bRequest) {
       case CDC_GET_LINE_CODING:
         if (bmRequestType == 0xA1) {  // Direction: Device to Host
@@ -449,22 +423,33 @@ void initialize_platform(resource_list& p_resource)
         break;
 
       case CDC_SET_LINE_CODING:
-        if (bmRequestType == 0x21) {  // Direction: Host to Device
-          auto buffer = control_endpoint.read();
-          while (not buffer) {
-            buffer = control_endpoint.read();
+        if (bmRequestType == 0x21) {      // Direction: Host to Device
+          control_endpoint.stall(false);  // ensure RX of endpoint is valid
+          while (true) {
+            if (not host_command_available) {  // nothing received
+              continue;
+            }
+
+            auto const host_command = control_endpoint.read();
+            if (not host_command) {
+              continue;
+            }
+
+            host_command_available = false;
+
+            hal::print(uart1, "{{ ");
+            for (auto const byte : host_command.value()) {
+              hal::print<8>(uart1, "0x%" PRIx8 ", ", byte);
+            }
+            hal::print(uart1, "}}\n");
+            std::copy_n(host_command.value().begin(),
+                        line_coding.size(),
+                        line_coding.begin());
+            control_endpoint.write({});
+            break;
           }
 
-          hal::print(uart1, "{{ ");
-          for (auto const byte : buffer.value()) {
-            hal::print<8>(uart1, "0x%" PRIx8 ", ", byte);
-          }
-          hal::print(uart1, "}}\n");
-          std::copy_n(
-            buffer.value().begin(), line_coding.size(), line_coding.begin());
-
-          control_endpoint.write({});
-
+          port_connected = true;
           hal::print(uart1, "CDC_SET_LINE_CODING+\n");
           return true;
         }
@@ -501,33 +486,44 @@ void initialize_platform(resource_list& p_resource)
 
   // Wait for the message number to increment
   auto deadline = hal::future_deadline(steady_clock, 1s);
+  auto command_count = 0;
+
+  std::array<std::array<hal::experimental::usb_endpoint*, 2>, 2> map = {
+    std::array<hal::experimental::usb_endpoint*, 2>{
+      &serial_data_ep.first,
+      &serial_data_ep.second,
+    },
+    {
+      &status_ep.first,
+      &status_ep.second,
+    }
+  };
 
   while (true) {
-    // Wait for a new setup message to come in.
-    if (current_idx == history_idx) {
-
-      if (configuration == 1 && not serial_data_ep.second.info().stalled) {
-        handle_serial();
-        // Send a '.' every second
-        if (deadline < steady_clock.uptime()) {
-          using namespace std::string_view_literals;
-          serial_data_ep.first.write(hal::as_bytes("."sv));
-          hal::print(uart1, ">");
-          deadline = hal::future_deadline(steady_clock, 1s);
-        }
+    if (configuration == 1 && port_connected) {
+      handle_serial();
+      // Send a '.' every second
+      if (deadline < steady_clock.uptime()) {
+        using namespace std::string_view_literals;
+        serial_data_ep.second.write(hal::as_bytes("."sv));
+        hal::print(uart1, ">");
+        deadline = hal::future_deadline(steady_clock, 1s);
       }
+    }
+
+    if (not host_command_available) {  // nothing received
       continue;
     }
 
-    current_idx = history_idx;
-    auto const buffer_optional = control_endpoint.read();
-
-    if (not buffer_optional) {  // nothing received
-      hal::print(uart1, "EP0 no data?!\n");
+    auto const host_command = control_endpoint.read();
+    if (not host_command) {
+      host_command_available = false;
       continue;
     }
 
-    auto const& buffer = buffer_optional.value();
+    host_command_available = false;
+
+    auto const& buffer = host_command.value();
     auto print_buffer = [&buffer]() {
       for (auto const byte : buffer) {
         hal::print<8>(uart1, "0x%" PRIx8 ", ", byte);
@@ -566,10 +562,8 @@ void initialize_platform(resource_list& p_resource)
           }
           case 0x02:  // Configuration Descriptor
           {
-            state = enumeration_state::sending_configure_descriptor;
             hal::print<32>(uart1, "CD%" PRIu16 "\n", wLength);
             control_endpoint.write(std::span(config_descriptor).first(wLength));
-            state = enumeration_state::post_configure_descriptor;
             hal::print(uart1, "CD+\n");
             break;
           }
@@ -609,69 +603,18 @@ void initialize_platform(resource_list& p_resource)
       auto const direction = hal::bit_extract<hal::bit_mask::from(7)>(wIndex);
       hal::print<8>(uart1, "%" PRIu8, ep_select);
       hal::print<8>(uart1, "]:[%" PRIu8 "]", direction);
+      auto& selected_ep = *map.at(ep_select).at(direction);
 
       switch (bRequest) {
         case get_status:
-          switch (ep_select) {
-            case 1:
-              switch (direction) {
-                case 0:  // out
-                  control_endpoint.write(std::to_array<hal::byte>(
-                    { serial_data_ep.first.info().stalled, 0 }));
-                  hal::print<8>(
-                    uart1, "STALLED:%d\n", serial_data_ep.first.info().stalled);
-                  break;
-                case 1:  // in
-                  control_endpoint.write(std::to_array<hal::byte>(
-                    { serial_data_ep.second.info().stalled, 0 }));
-                  hal::print<8>(uart1,
-                                " STALLED:%d\n",
-                                serial_data_ep.first.info().stalled);
-                  break;
-              }
-              break;
-            case 2:
-              switch (direction) {
-                case 0:  // out
-                  break;
-                case 1:  // in
-                  control_endpoint.write(std::to_array<hal::byte>(
-                    { status_ep.first.info().stalled, 0 }));
-                  hal::print<8>(
-                    uart1, "STALLED:%d\n", serial_data_ep.first.info().stalled);
-                  break;
-              }
-              break;
-          }
+          control_endpoint.write(
+            std::to_array<hal::byte>({ selected_ep.info().stalled, 0 }));
+          hal::print<8>(uart1, "STALLED:%d\n", selected_ep.info().stalled);
           break;
         case clear_feature:
-          switch (ep_select) {
-            case 1:
-              switch (direction) {
-                case 0:  // out
-                  serial_data_ep.first.reset();
-                  control_endpoint.write({});
-                  hal::print(uart1, "CLEAR\n");
-                  break;
-                case 1:  // in
-                  serial_data_ep.second.reset();
-                  control_endpoint.write({});
-                  hal::print(uart1, "CLEAR\n");
-                  break;
-              }
-              break;
-            case 2:
-              switch (direction) {
-                case 0:  // out
-                  break;
-                case 1:  // in
-                  status_ep.first.reset();
-                  control_endpoint.write({});
-                  hal::print(uart1, "CLEAR\n");
-                  break;
-              }
-              break;
-          }
+          selected_ep.stall(false);
+          control_endpoint.write({});
+          hal::print(uart1, "CLEAR\n");
           break;
         case set_feature:
           hal::print(uart1, "SET_FEATURE\n");
@@ -683,8 +626,8 @@ void initialize_platform(resource_list& p_resource)
       hal::print(uart1, "\n");
     }
 
-    hal::print<16>(uart1, "ACT[%zu]: {", history_idx);
+    hal::print<16>(uart1, "COMMAND[%zu]: {", command_count++);
     print_buffer();
-    hal::print(uart1, "}\n");
+    hal::print(uart1, "}\n\n");
   }
 }

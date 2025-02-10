@@ -569,7 +569,7 @@ std::span<u8 const> usb::read_endpoint(u8 p_endpoint,
   auto const endpoint_stat =
     static_cast<stat>(hal::bit_extract<endpoint::status_rx>(ep.EPR));
 
-  if (endpoint_stat == stat::valid) {
+  if (endpoint_stat == stat::valid || endpoint_stat == stat::stall) {
     // return zero length buffer if the endpoint status is VALID meaning the
     // endpoint is ready to receive data but hasn't received any data yet.
     return p_buffer.first<0>();
@@ -692,14 +692,14 @@ std::optional<std::array<u8, 8>> usb::control_endpoint::driver_read()
   return result;
 }
 
-std::pair<usb::interrupt_in_endpoint, usb::interrupt_out_endpoint>
+std::pair<usb::interrupt_out_endpoint, usb::interrupt_in_endpoint>
 usb::acquire_interrupt_endpoint()
 {
   auto const endpoint_assignment = m_endpoints_allocated++;
   return { { *this, endpoint_assignment }, { *this, endpoint_assignment } };
 }
 
-std::pair<usb::bulk_in_endpoint, usb::bulk_out_endpoint>
+std::pair<usb::bulk_out_endpoint, usb::bulk_in_endpoint>
 usb::acquire_bulk_endpoint()
 {
   auto const endpoint_assignment = m_endpoints_allocated++;
@@ -709,6 +709,7 @@ usb::acquire_bulk_endpoint()
 usb::control_endpoint::control_endpoint(usb& p_usb)
   : m_usb(&p_usb)
 {
+  set_rx_stat(0, stat::valid);
 }
 
 usb::control_endpoint::~control_endpoint()  // NOLINT
@@ -737,7 +738,6 @@ void usb::control_endpoint::driver_on_request(
   hal::callback<void(on_request_tag)> p_callback)
 {
   m_usb->m_out_callbacks[0] = p_callback;
-  set_rx_stat(0, stat::valid);
 }  // namespace hal::stm32f1
 
 bool usb::control_endpoint::in_setup_stage()
@@ -775,6 +775,7 @@ void usb::interrupt_in_endpoint::reset()
   auto const endpoint = m_endpoint_number;
   endpoint_descriptor_block(endpoint).setup_in_endpoint_for(endpoint);
   set_endpoint_address_and_type(endpoint, endpoint_type::interrupt);
+  set_rx_stat(0, stat::stall);
 }
 
 usb::interrupt_in_endpoint::~interrupt_in_endpoint() = default;
@@ -838,7 +839,7 @@ void usb::interrupt_out_endpoint::reset()
   auto const endpoint = m_endpoint_number;
   endpoint_descriptor_block(endpoint).setup_out_endpoint_for(endpoint);
   set_endpoint_address_and_type(endpoint, endpoint_type::interrupt);
-  set_rx_stat(m_endpoint_number, stat::valid);
+  set_rx_stat(m_endpoint_number, stat::stall);
 }
 
 usb::interrupt_out_endpoint::~interrupt_out_endpoint() = default;
@@ -856,7 +857,6 @@ void usb::interrupt_out_endpoint::driver_on_receive(
   hal::callback<void(on_receive_tag)> p_callback)
 {
   m_usb->m_out_callbacks[m_endpoint_number] = p_callback;
-  set_rx_stat(m_endpoint_number, stat::valid);
 }
 
 std::span<u8 const> usb::interrupt_out_endpoint::driver_read(
@@ -896,7 +896,6 @@ void usb::bulk_out_endpoint::driver_on_receive(
   hal::callback<void(on_receive_tag)> p_callback)
 {
   m_usb->m_out_callbacks[m_endpoint_number] = p_callback;
-  set_rx_stat(m_endpoint_number, stat::valid);
 }
 
 std::span<u8 const> usb::bulk_out_endpoint::driver_read(std::span<u8> p_buffer)

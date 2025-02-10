@@ -55,15 +55,16 @@ enum class enumeration_state
 };
 enumeration_state state = enumeration_state::pre_address;
 
-void my_control_handler(std::span<hal::byte> p_data)
+using ctrl_request_tag =
+  hal::experimental::usb_control_endpoint::on_request_tag;
+using bulk_receive_tag =
+  hal::experimental::usb_bulk_out_endpoint::on_receive_tag;
+using interrupt_receive_tag =
+  hal::experimental::usb_interrupt_out_endpoint::on_receive_tag;
+
+void my_control_handler(ctrl_request_tag)
 {
-  // Ignore zero length messages from the host.
-  if (p_data.empty()) {
-    return;
-  }
-  auto& buffer = buffer_history[history_idx++ % buffer_history.size()];
-  auto const min = std::min(buffer.size(), p_data.size());
-  std::copy_n(p_data.begin(), min, buffer.begin());
+  history_idx++;
 };
 
 auto get_latest_host_command() -> auto&
@@ -330,7 +331,7 @@ void initialize_platform(resource_list& p_resource)
     // Endpoint Descriptor (Data IN)
     0x07,  // bLength
     0x05,  // bDescriptorType (Endpoint)
-    0x81,  // bEndpointAddress (OUT + 1)
+    0x81,  // bEndpointAddress (IN + 1)
     0x02,  // bmAttributes (Bulk)
     0x40,
     0x10,  // wMaxPacketSize 16
@@ -394,21 +395,28 @@ void initialize_platform(resource_list& p_resource)
     serial_descriptor,
   };
 
-  serial_data_ep.second.on_receive([](std::span<hal::byte> p_data) {
-    for (auto const byte : p_data) {
-      serial_circular_buffer.push_back(byte);
-    }
+  bool serial_data_available = false;
+
+  serial_data_ep.second.on_receive([&serial_data_available](bulk_receive_tag) {
+    serial_data_available = true;
   });
 
-  hal::u8 configuration = 0;
-
-  auto handle_serial = []() {
-    // status_ep.first.write(serial_state_notification);
-    if (not serial_circular_buffer.empty()) {
-      auto const byte = serial_circular_buffer.pop_front();
-      uart1.write({ &byte, 1 });
+  auto handle_serial = [&serial_data_available]() {
+    if (serial_data_available) {
+      // Drain endpoint of content...
+      serial_data_available = false;
+      // Only 3 bytes to test only grabbing a few bytes from the endpoint and
+      // still having some remaining.
+      std::array<hal::u8, 3> buffer{};
+      auto data_received = serial_data_ep.second.read(buffer);
+      while (not data_received.empty()) {
+        uart1.write(data_received);
+        data_received = serial_data_ep.second.read(buffer);
+      }
     }
   };
+
+  hal::u8 configuration = 0;
 
   // CDC Class-Specific Request Codes
   constexpr hal::u8 CDC_SET_LINE_CODING = 0x20;
@@ -498,7 +506,7 @@ void initialize_platform(resource_list& p_resource)
     // Wait for a new setup message to come in.
     if (current_idx == history_idx) {
 
-      if (configuration == 1 && not serial_data_ep.second.stalled()) {
+      if (configuration == 1 && not serial_data_ep.second.info().stalled) {
         handle_serial();
         // Send a '.' every second
         if (deadline < steady_clock.uptime()) {
@@ -512,8 +520,14 @@ void initialize_platform(resource_list& p_resource)
     }
 
     current_idx = history_idx;
-    auto& buffer = get_latest_host_command();
+    auto const buffer_optional = control_endpoint.read();
 
+    if (not buffer_optional) {  // nothing received
+      hal::print(uart1, "EP0 no data?!\n");
+      continue;
+    }
+
+    auto const& buffer = buffer_optional.value();
     auto print_buffer = [&buffer]() {
       for (auto const byte : buffer) {
         hal::print<8>(uart1, "0x%" PRIx8 ", ", byte);
@@ -603,15 +617,16 @@ void initialize_platform(resource_list& p_resource)
               switch (direction) {
                 case 0:  // out
                   control_endpoint.write(std::to_array<hal::byte>(
-                    { serial_data_ep.first.stalled(), 0 }));
+                    { serial_data_ep.first.info().stalled, 0 }));
                   hal::print<8>(
-                    uart1, "STALLED:%d\n", serial_data_ep.first.stalled());
+                    uart1, "STALLED:%d\n", serial_data_ep.first.info().stalled);
                   break;
                 case 1:  // in
                   control_endpoint.write(std::to_array<hal::byte>(
-                    { serial_data_ep.second.stalled(), 0 }));
-                  hal::print<8>(
-                    uart1, " STALLED:%d\n", serial_data_ep.first.stalled());
+                    { serial_data_ep.second.info().stalled, 0 }));
+                  hal::print<8>(uart1,
+                                " STALLED:%d\n",
+                                serial_data_ep.first.info().stalled);
                   break;
               }
               break;
@@ -620,10 +635,10 @@ void initialize_platform(resource_list& p_resource)
                 case 0:  // out
                   break;
                 case 1:  // in
-                  control_endpoint.write(
-                    std::to_array<hal::byte>({ status_ep.first.stalled(), 0 }));
+                  control_endpoint.write(std::to_array<hal::byte>(
+                    { status_ep.first.info().stalled, 0 }));
                   hal::print<8>(
-                    uart1, "STALLED:%d\n", serial_data_ep.first.stalled());
+                    uart1, "STALLED:%d\n", serial_data_ep.first.info().stalled);
                   break;
               }
               break;

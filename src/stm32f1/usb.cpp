@@ -1,6 +1,7 @@
 #include <cstdint>
 
 #include <bit>
+#include <libhal/experimental/usb.hpp>
 #include <memory>
 #include <utility>
 
@@ -41,15 +42,17 @@ struct control  // NOLINT
   // PDWN: Power Down
   static constexpr auto power_down = bit_mask::from<1>();
   // LPMODE: Low-power Mode
-  static constexpr auto low_power_mode = bit_mask::from<2>();
+  [[maybe_unused]] static constexpr auto low_power_mode = bit_mask::from<2>();
   // FSUSP: Force Suspend
-  static constexpr auto force_suspend = bit_mask::from<3>();
+  [[maybe_unused]] static constexpr auto force_suspend = bit_mask::from<3>();
   // RESUME: Resume Request
-  static constexpr auto resume_request = bit_mask::from<4>();
+  [[maybe_unused]] static constexpr auto resume_request = bit_mask::from<4>();
   // ESOFM: Expected Start Of Frame Interrupt Mask
-  static constexpr auto expected_start_of_frame_interrupt = bit_mask::from<8>();
+  [[maybe_unused]] static constexpr auto expected_start_of_frame_interrupt =
+    bit_mask::from<8>();
   // SOFM: Start Of Frame Interrupt Mask
-  static constexpr auto start_of_frame_interrupt = bit_mask::from<9>();
+  [[maybe_unused]] static constexpr auto start_of_frame_interrupt =
+    bit_mask::from<9>();
   // RESETM: USB Reset Interrupt Mask
   static constexpr auto reset_interrupt = bit_mask::from<10>();
   // SUSPM: Suspend Mode Interrupt Mask
@@ -57,7 +60,7 @@ struct control  // NOLINT
   // WKUPM: Wakeup Interrupt Mask
   static constexpr auto wakeup_interrupt = bit_mask::from<12>();
   // ERRM: Error Interrupt Mask
-  static constexpr auto error_interrupt = bit_mask::from<13>();
+  [[maybe_unused]] static constexpr auto error_interrupt = bit_mask::from<13>();
   // PMAOVRM: Packet Memory Area Over / Underrun Interrupt Mask
   static constexpr auto packet_memory_interrupt = bit_mask::from<14>();
   // CTRM: Correct Transfer for Isochronous Endpoint Interrupt Mask
@@ -69,9 +72,10 @@ struct interrupt_status  // NOLINT
   static constexpr auto endpoint_id = bit_mask::from<0, 3>();
   static constexpr auto direction = bit_mask::from<4>();
   // ESOF: Expected Start Of Frame
-  static constexpr auto expected_start_of_frame = bit_mask::from<8>();
+  [[maybe_unused]] static constexpr auto expected_start_of_frame =
+    bit_mask::from<8>();
   // SOF: Start Of Frame
-  static constexpr auto start_of_frame = bit_mask::from<9>();
+  [[maybe_unused]] static constexpr auto start_of_frame = bit_mask::from<9>();
   // RESET: USB Reset Request
   static constexpr auto reset_request = bit_mask::from<10>();
   // SUSP: Suspend Mode Request
@@ -89,15 +93,17 @@ struct interrupt_status  // NOLINT
 struct frame_number  // NOLINT
 {
   // FN: Frame Number
-  static constexpr auto count = bit_mask::from<0, 10>();
+  [[maybe_unused]] static constexpr auto count = bit_mask::from<0, 10>();
   // LSOF: Lost SOF
-  static constexpr auto lost_sof = bit_mask::from<11>();
+  [[maybe_unused]] static constexpr auto lost_sof = bit_mask::from<11>();
   // LCK: Lock
-  static constexpr auto lock = bit_mask::from<12>();
+  [[maybe_unused]] static constexpr auto lock = bit_mask::from<12>();
   // RXDM: Receive Data - Line Status
-  static constexpr auto receive_data_status = bit_mask::from<13>();
+  [[maybe_unused]] static constexpr auto receive_data_status =
+    bit_mask::from<13>();
   // RXDP: Transmit Data - Line Status
-  static constexpr auto transmit_data_status = bit_mask::from<14>();
+  [[maybe_unused]] static constexpr auto transmit_data_status =
+    bit_mask::from<14>();
 };
 
 struct device_address  // NOLINT
@@ -235,7 +241,7 @@ struct buffer_descriptor_block
     rx_count = rx_endpoint_count_mask;
   }
 
-  hal::u16 bytes_received()
+  std::size_t bytes_received()
   {
     auto const bytes_received = hal::bit_extract<block_table::count>(rx_count);
     return bytes_received;
@@ -409,7 +415,8 @@ void handle_bus_reset()
   hal::bit_modify(reg().DADDR).set(device_address::enable_function);
 }
 
-void usb::interrupt_handler()
+// NOLINTNEXTLINE(bugprone-exception-escape)
+void usb::interrupt_handler() noexcept
 {
   auto& interrupt_reg = reg().ISTR;
 
@@ -428,8 +435,28 @@ void usb::interrupt_handler()
 
     } else {
       re_cc++;
-      // interrupt status clearing is handled by this function
-      read_endpoint_and_pass_to_callback(endpoint_id);
+      // Call callback using variant visitor
+      std::visit(
+        [](auto&& p_callback) {
+          using T = std::decay_t<decltype(p_callback)>;
+          if constexpr (std::is_same_v<T,
+                                       hal::callback<void(ctrl_request_tag)>>) {
+            p_callback(ctrl_request_tag{});
+          } else if constexpr (std::is_same_v<
+                                 T,
+                                 hal::callback<void(bulk_receive_tag)>>) {
+            p_callback(bulk_receive_tag{});
+          } else if constexpr (std::is_same_v<
+                                 T,
+                                 hal::callback<void(interrupt_receive_tag)>>) {
+            p_callback(interrupt_receive_tag{});
+          } else {
+            static_assert(hal::error::invalid_option<T>,
+                          "USB RX Out callback vistor is non-exhaustive!");
+          }
+        },
+        m_out_callbacks[endpoint_id]);
+
       clear_correct_transfer_for<endpoint::correct_transfer_rx>(endpoint_id);
     }
   }
@@ -534,25 +561,45 @@ usb::usb(hal::steady_clock& p_clock, hal::time_duration p_power_on_time)
   handle_bus_reset();
 }
 
-void usb::read_endpoint_and_pass_to_callback(u8 p_endpoint)
+std::span<u8 const> usb::read_endpoint(u8 p_endpoint,
+                                       std::span<u8> p_buffer,
+                                       u16& p_bytes_read)
 {
-  auto& descriptor = endpoint_descriptor_block(p_endpoint);
-  auto const rx_span = descriptor.rx_span();
-  std::array<hal::byte, 64> buffer{};
-  auto rx_iter = rx_span.begin();
+  auto const& ep = usb_reg->EP.at(p_endpoint);
+  auto const endpoint_stat =
+    static_cast<stat>(hal::bit_extract<endpoint::status_rx>(ep.EPR));
 
-  for (size_t i = 0; i < rx_span.size(); i++) {
-    auto const idx = i * 2;
-    auto const value = *(rx_iter++);
-    buffer[idx] = value & 0xFF;
-    buffer[idx + 1] = (value >> 8) & 0xFF;
+  if (endpoint_stat == stat::valid) {
+    // return zero length buffer if the endpoint status is VALID meaning the
+    // endpoint is ready to receive data but hasn't received any data yet.
+    return p_buffer.first<0>();
   }
 
-  auto bytes_span = std::span(buffer).first(descriptor.bytes_received());
-  m_out_callbacks[p_endpoint](bytes_span);
-  if (p_endpoint != 0) {
+  auto& descriptor = endpoint_descriptor_block(p_endpoint);
+  auto const bytes_remaining = descriptor.bytes_received() - p_bytes_read;
+
+  auto const bytes_to_copy = std::min(bytes_remaining, p_buffer.size());
+  // Offset the rx span by the number of bytes read divided by 2U (word size)
+  auto const rx_span = descriptor.rx_span();
+
+  for (size_t idx = 0; idx < bytes_to_copy; idx++) {
+    auto const offset_index = p_bytes_read + idx;
+    // Grab next word, divided by 2 to get the u16 word
+    auto const value = rx_span[offset_index / 2U];
+    // Determine the shift based on if the index is odd or not
+    auto const shift = (offset_index & 1U) ? 8U : 0U;
+    auto const byte = (value >> shift) & 0xFF;
+    p_buffer[idx] = byte;
+  }
+
+  p_bytes_read += bytes_to_copy;
+
+  if (p_bytes_read == descriptor.bytes_received()) {
+    p_bytes_read = 0;
     set_rx_stat(p_endpoint, stat::valid);
   }
+
+  return std::span(p_buffer).first(bytes_to_copy);
 }
 
 void usb::wait_for_endpoint_transfer_completion(u8 p_endpoint)
@@ -626,17 +673,23 @@ usb::~usb()
   cortex_m::disable_interrupt(irq::usb_hp_can1_tx);
 }
 
-void usb::set_out_callback(hal::callback<void(std::span<hal::byte>)> p_callback,
-                           u8 p_endpoint)
-{
-  if (p_endpoint < m_out_callbacks.size()) {
-    m_out_callbacks[p_endpoint] = p_callback;
-  }
-}
-
 usb::control_endpoint usb::acquire_control_endpoint()
 {
   return { *this };
+}
+
+std::optional<std::array<u8, 8>> usb::control_endpoint::driver_read()
+{
+  std::array<u8, 8> result{};
+  u16 bytes_read = 0;
+  auto const data_read = m_usb->read_endpoint(0, result, bytes_read);
+
+  if (data_read.empty()) {
+    set_rx_stat(0, stat::valid);
+    return std::nullopt;
+  }
+
+  return result;
 }
 
 std::pair<usb::interrupt_in_endpoint, usb::interrupt_out_endpoint>
@@ -681,11 +734,11 @@ void usb::control_endpoint::driver_write(std::span<hal::byte const> p_data)
 }
 
 void usb::control_endpoint::driver_on_request(
-  hal::callback<void(std::span<hal::byte>)> p_callback)
+  hal::callback<void(on_request_tag)> p_callback)
 {
-  m_usb->set_out_callback(p_callback, 0);
+  m_usb->m_out_callbacks[0] = p_callback;
   set_rx_stat(0, stat::valid);
-}
+}  // namespace hal::stm32f1
 
 bool usb::control_endpoint::in_setup_stage()
 {
@@ -695,6 +748,17 @@ bool usb::control_endpoint::in_setup_stage()
 void usb::control_endpoint::enable_rx()
 {
   set_rx_stat(0, stat::valid);
+}
+
+void usb::control_endpoint::driver_stall(bool p_should_stall)
+{
+  if (p_should_stall) {
+    set_rx_stat(0, stat::stall);
+    set_tx_stat(0, stat::stall);
+  } else {
+    set_rx_stat(0, stat::valid);
+    set_tx_stat(0, stat::nak);
+  }
 }
 
 // usb::interrupt_in_endpoint implementation
@@ -714,6 +778,15 @@ void usb::interrupt_in_endpoint::reset()
 }
 
 usb::interrupt_in_endpoint::~interrupt_in_endpoint() = default;
+
+void usb::interrupt_in_endpoint::driver_stall(bool p_should_stall)
+{
+  if (p_should_stall) {
+    set_tx_stat(m_endpoint_number, stat::stall);
+  } else {
+    set_tx_stat(m_endpoint_number, stat::nak);
+  }
+}
 
 void usb::interrupt_in_endpoint::driver_write(std::span<hal::byte const> p_data)
 {
@@ -736,6 +809,15 @@ void usb::bulk_in_endpoint::reset()
 }
 
 usb::bulk_in_endpoint::~bulk_in_endpoint() = default;
+
+void usb::bulk_in_endpoint::driver_stall(bool p_should_stall)
+{
+  if (p_should_stall) {
+    set_tx_stat(m_endpoint_number, stat::stall);
+  } else {
+    set_tx_stat(m_endpoint_number, stat::nak);
+  }
+}
 
 void usb::bulk_in_endpoint::driver_write(std::span<hal::byte const> p_data)
 {
@@ -761,11 +843,26 @@ void usb::interrupt_out_endpoint::reset()
 
 usb::interrupt_out_endpoint::~interrupt_out_endpoint() = default;
 
-void usb::interrupt_out_endpoint::driver_on_receive(
-  hal::callback<void(std::span<hal::byte>)> p_callback)
+void usb::interrupt_out_endpoint::driver_stall(bool p_should_stall)
 {
-  m_usb->set_out_callback(p_callback, m_endpoint_number);
+  if (p_should_stall) {
+    set_rx_stat(m_endpoint_number, stat::stall);
+  } else {
+    set_rx_stat(m_endpoint_number, stat::nak);
+  }
+}
+
+void usb::interrupt_out_endpoint::driver_on_receive(
+  hal::callback<void(on_receive_tag)> p_callback)
+{
+  m_usb->m_out_callbacks[m_endpoint_number] = p_callback;
   set_rx_stat(m_endpoint_number, stat::valid);
+}
+
+std::span<u8 const> usb::interrupt_out_endpoint::driver_read(
+  std::span<u8> p_buffer)
+{
+  return m_usb->read_endpoint(m_endpoint_number, p_buffer, m_bytes_read);
 }
 
 // usb::bulk_out_endpoint implementation
@@ -786,53 +883,89 @@ void usb::bulk_out_endpoint::reset()
 
 usb::bulk_out_endpoint::~bulk_out_endpoint() = default;
 
-void usb::bulk_out_endpoint::driver_on_receive(
-  hal::callback<void(std::span<hal::byte>)> p_callback)
+void usb::bulk_out_endpoint::driver_stall(bool p_should_stall)
 {
-  m_usb->set_out_callback(p_callback, m_endpoint_number);
+  if (p_should_stall) {
+    set_rx_stat(m_endpoint_number, stat::stall);
+  } else {
+    set_rx_stat(m_endpoint_number, stat::nak);
+  }
+}
+
+void usb::bulk_out_endpoint::driver_on_receive(
+  hal::callback<void(on_receive_tag)> p_callback)
+{
+  m_usb->m_out_callbacks[m_endpoint_number] = p_callback;
   set_rx_stat(m_endpoint_number, stat::valid);
 }
 
-hal::experimental::endpoint_info usb::control_endpoint::driver_info()
+std::span<u8 const> usb::bulk_out_endpoint::driver_read(std::span<u8> p_buffer)
 {
-  return { .size = fixed_endpoint_size, .number = 0 };
-}
-hal::experimental::endpoint_info usb::bulk_out_endpoint::driver_info()
-{
-  return { .size = fixed_endpoint_size, .number = m_endpoint_number };
-}
-hal::experimental::endpoint_info usb::bulk_in_endpoint::driver_info()
-{
-  return { .size = fixed_endpoint_size, .number = m_endpoint_number };
-}
-hal::experimental::endpoint_info usb::interrupt_out_endpoint::driver_info()
-{
-  return { .size = fixed_endpoint_size, .number = m_endpoint_number };
-}
-hal::experimental::endpoint_info usb::interrupt_in_endpoint::driver_info()
-{
-  return { .size = fixed_endpoint_size, .number = m_endpoint_number };
+  return m_usb->read_endpoint(m_endpoint_number, p_buffer, m_bytes_read);
 }
 
-bool usb::bulk_out_endpoint::stalled()
+hal::experimental::usb_endpoint_info usb::control_endpoint::driver_info() const
+{
+  return { .size = fixed_endpoint_size, .number = 0, .stalled = false };
+}
+
+hal::experimental::usb_endpoint_info usb::bulk_out_endpoint::driver_info() const
+{
+  return {
+    .size = fixed_endpoint_size,
+    .number = m_endpoint_number,
+    .stalled = stalled(),
+  };
+}
+
+hal::experimental::usb_endpoint_info usb::bulk_in_endpoint::driver_info() const
+{
+  return {
+    .size = fixed_endpoint_size,
+    .number = m_endpoint_number,
+    .stalled = stalled(),
+  };
+}
+
+hal::experimental::usb_endpoint_info usb::interrupt_out_endpoint::driver_info()
+  const
+{
+  return {
+    .size = fixed_endpoint_size,
+    .number = m_endpoint_number,
+    .stalled = stalled(),
+  };
+}
+
+hal::experimental::usb_endpoint_info usb::interrupt_in_endpoint::driver_info()
+  const
+{
+  return {
+    .size = fixed_endpoint_size,
+    .number = m_endpoint_number,
+    .stalled = stalled(),
+  };
+}
+
+bool usb::bulk_out_endpoint::stalled() const
 {
   return hal::bit_extract<endpoint::status_rx>(
            usb_reg->EP[m_endpoint_number].EPR) <= 0b01;
 }
 
-bool usb::interrupt_out_endpoint::stalled()
+bool usb::interrupt_out_endpoint::stalled() const
 {
   return hal::bit_extract<endpoint::status_rx>(
            usb_reg->EP[m_endpoint_number].EPR) <= 0b01;
 }
 
-bool usb::bulk_in_endpoint::stalled()
+bool usb::bulk_in_endpoint::stalled() const
 {
   return hal::bit_extract<endpoint::status_tx>(
            usb_reg->EP[m_endpoint_number].EPR) <= 0b01;
 }
 
-bool usb::interrupt_in_endpoint::stalled()
+bool usb::interrupt_in_endpoint::stalled() const
 {
   return hal::bit_extract<endpoint::status_tx>(
            usb_reg->EP[m_endpoint_number].EPR) <= 0b01;

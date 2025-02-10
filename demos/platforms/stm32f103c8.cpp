@@ -450,21 +450,21 @@ void initialize_platform(resource_list& p_resource)
 
       case CDC_SET_LINE_CODING:
         if (bmRequestType == 0x21) {  // Direction: Host to Device
-          control_endpoint.enable_rx();
-          while (current_idx == history_idx) {
-            continue;
+          auto buffer = control_endpoint.read();
+          while (not buffer) {
+            buffer = control_endpoint.read();
           }
-          current_idx = history_idx;
-          auto& buffer = get_latest_host_command();
+
           hal::print(uart1, "{{ ");
-          for (auto const byte : buffer) {
+          for (auto const byte : buffer.value()) {
             hal::print<8>(uart1, "0x%" PRIx8 ", ", byte);
           }
           hal::print(uart1, "}}\n");
-          std::copy_n(buffer.begin(),
-                      std::min(buffer.size(), line_coding.size()),
-                      line_coding.begin());
+          std::copy_n(
+            buffer.value().begin(), line_coding.size(), line_coding.begin());
+
           control_endpoint.write({});
+
           hal::print(uart1, "CDC_SET_LINE_CODING+\n");
           return true;
         }

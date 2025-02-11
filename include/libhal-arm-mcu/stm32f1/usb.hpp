@@ -80,6 +80,7 @@ inline auto* usb_reg = reinterpret_cast<usb_reg_t*>(0x4000'5C00);
 class usb
 {
 public:
+  class manager;
   class control_endpoint;
   class interrupt_in_endpoint;
   class bulk_in_endpoint;
@@ -94,6 +95,7 @@ public:
   usb operator=(usb&&) = delete;
   ~usb();
 
+  manager acquire_manager();
   control_endpoint acquire_control_endpoint();
   std::pair<interrupt_out_endpoint, interrupt_in_endpoint>
   acquire_interrupt_endpoint();
@@ -109,23 +111,22 @@ private:
   friend class bulk_out_endpoint;
 
   void interrupt_handler() noexcept;
-  void write_to_endpoint(std::uint8_t p_endpoint,
-                         std::span<hal::byte const> p_data);
-  void write_to_control_endpoint(std::span<hal::byte const> p_data);
+  void write_to_endpoint(
+    std::uint8_t p_endpoint,
+    std::span<hal::byte const> p_data,
+    experimental::usb_zlp p_zlp = experimental::usb_zlp::automatic);
   std::span<u8 const> read_endpoint(u8 p_endpoint,
                                     std::span<u8> p_buffer,
                                     u16& p_bytes_read);
   void wait_for_endpoint_transfer_completion(std::uint8_t p_endpoint);
 
-  using ctrl_request_tag =
-    hal::experimental::usb_control_endpoint::on_request_tag;
-  using bulk_receive_tag =
-    hal::experimental::usb_bulk_out_endpoint::on_receive_tag;
+  using ctrl_receive_tag = experimental::usb_control_endpoint::on_receive_tag;
+  using bulk_receive_tag = experimental::usb_bulk_out_endpoint::on_receive_tag;
   using interrupt_receive_tag =
-    hal::experimental::usb_interrupt_out_endpoint::on_receive_tag;
+    experimental::usb_interrupt_out_endpoint::on_receive_tag;
 
   using callback_variant_t =
-    std::variant<hal::callback<void(ctrl_request_tag)>,
+    std::variant<hal::callback<void(ctrl_receive_tag)>,
                  hal::callback<void(bulk_receive_tag)>,
                  hal::callback<void(interrupt_receive_tag)>>;
   std::array<callback_variant_t, usb_endpoint_count> m_out_callbacks;
@@ -134,6 +135,16 @@ private:
   std::uint16_t m_available_endpoint_memory;
   // Starts at 1 because endpoint 0 is always occupied by the control endpoint
   std::uint8_t m_endpoints_allocated = 1;
+};
+
+class usb::manager : public experimental::usb_manager
+{
+public:
+  ~manager() override = default;
+
+private:
+  void driver_connect(bool p_should_connect) override;
+  void driver_set_address(std::uint8_t p_address) override;
 };
 
 /**
@@ -151,17 +162,10 @@ private:
  * - Sending and receiving control data
  *
  */
-class usb::control_endpoint : public hal::experimental::usb_control_endpoint
+class usb::control_endpoint : public experimental::usb_control_endpoint
 {
 public:
   ~control_endpoint();
-  control_endpoint(control_endpoint&) = delete;
-  control_endpoint operator=(control_endpoint&) = delete;
-  control_endpoint(control_endpoint&&) = delete;
-  control_endpoint operator=(control_endpoint&&) = delete;
-
-  bool in_setup_stage();
-  void enable_rx();
 
 private:
   friend class usb;
@@ -170,14 +174,13 @@ private:
 
   bool stalled() const;
 
-  void driver_connect(bool p_should_connect) override;
-  void driver_set_address(std::uint8_t p_address) override;
-  void driver_write(std::span<hal::byte const> p_data) override;
-  void driver_on_request(
-    hal::callback<void(on_request_tag)> p_callback) override;
-  hal::experimental::usb_endpoint_info driver_info() const override;
+  void driver_write(std::span<hal::byte const> p_data,
+                    experimental::usb_zlp p_zlp) override;
+  void driver_on_receive(
+    hal::callback<void(on_receive_tag)> p_callback) override;
+  experimental::usb_endpoint_info driver_info() const override;
   void driver_stall(bool p_should_stall) override;
-  std::optional<std::array<u8, 8>> driver_read() override;
+  std::span<u8 const> driver_read(std::span<u8> p_buffer) override;
 
   usb* m_usb;
   u16 m_bytes_read = 0;
@@ -196,7 +199,7 @@ private:
  * - Ideal for devices like keyboards, mice, or game controllers
  */
 class usb::interrupt_in_endpoint
-  : public hal::experimental::usb_interrupt_in_endpoint
+  : public experimental::usb_interrupt_in_endpoint
 {
 public:
   ~interrupt_in_endpoint();
@@ -206,8 +209,9 @@ private:
   bool stalled() const;
   friend class usb;
   interrupt_in_endpoint(usb& p_usb, u8 p_endpoint_number);
-  void driver_write(std::span<hal::byte const> p_data) override;
-  hal::experimental::usb_endpoint_info driver_info() const override;
+  void driver_write(std::span<hal::byte const> p_data,
+                    experimental::usb_zlp p_zlp) override;
+  experimental::usb_endpoint_info driver_info() const override;
   void driver_stall(bool p_should_stall) override;
 
   usb* m_usb;
@@ -227,7 +231,7 @@ private:
  * - Sending data when timing is not critical
  * - Ideal for devices like printers, scanners, or external storage
  */
-class usb::bulk_in_endpoint : public hal::experimental::usb_bulk_in_endpoint
+class usb::bulk_in_endpoint : public experimental::usb_bulk_in_endpoint
 {
 public:
   ~bulk_in_endpoint() override;
@@ -239,8 +243,9 @@ private:
 
   bulk_in_endpoint(usb& p_usb, u8 p_endpoint_number);
 
-  void driver_write(std::span<hal::byte const> p_data) override;
-  hal::experimental::usb_endpoint_info driver_info() const override;
+  void driver_write(std::span<hal::byte const> p_data,
+                    experimental::usb_zlp p_zlp) override;
+  experimental::usb_endpoint_info driver_info() const override;
   void driver_stall(bool p_should_stall) override;
 
   usb* m_usb;
@@ -260,7 +265,7 @@ private:
  * - Ideal for devices that need quick responses to host commands
  */
 class usb::interrupt_out_endpoint
-  : public hal::experimental::usb_interrupt_out_endpoint
+  : public experimental::usb_interrupt_out_endpoint
 {
 public:
   ~interrupt_out_endpoint();
@@ -274,7 +279,7 @@ private:
 
   void driver_on_receive(
     hal::callback<void(on_receive_tag)> p_callback) override;
-  hal::experimental::usb_endpoint_info driver_info() const override;
+  experimental::usb_endpoint_info driver_info() const override;
   void driver_stall(bool p_should_stall) override;
   virtual std::span<u8 const> driver_read(std::span<u8> p_buffer) override;
 
@@ -295,7 +300,7 @@ private:
  * - Handling data when timing is not critical
  * - Ideal for devices like printers, scanners, or external storage
  */
-class usb::bulk_out_endpoint : public hal::experimental::usb_bulk_out_endpoint
+class usb::bulk_out_endpoint : public experimental::usb_bulk_out_endpoint
 {
 public:
   ~bulk_out_endpoint();
@@ -309,7 +314,7 @@ private:
 
   void driver_on_receive(
     hal::callback<void(on_receive_tag)> p_callback) override;
-  hal::experimental::usb_endpoint_info driver_info() const override;
+  experimental::usb_endpoint_info driver_info() const override;
   void driver_stall(bool p_should_stall) override;
   virtual std::span<u8 const> driver_read(std::span<u8> p_buffer) override;
 

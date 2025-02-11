@@ -32,14 +32,17 @@
 #include <libhal-util/serial.hpp>
 #include <libhal-util/steady_clock.hpp>
 #include <libhal/error.hpp>
+#include <libhal/experimental/usb.hpp>
 #include <nonstd/ring_span.hpp>
 
 #include <resource_list.hpp>
+#include <stdexcept>
+#include <string_view>
 
 using setup_command_buffer = std::array<hal::byte, 8>;
 
-using ctrl_request_tag =
-  hal::experimental::usb_control_endpoint::on_request_tag;
+using ctrl_receive_tag =
+  hal::experimental::usb_control_endpoint::on_receive_tag;
 using bulk_receive_tag =
   hal::experimental::usb_bulk_out_endpoint::on_receive_tag;
 using interrupt_receive_tag =
@@ -47,9 +50,104 @@ using interrupt_receive_tag =
 
 bool host_command_available = false;
 
-void control_endpoint_handler(ctrl_request_tag)
+using namespace std::string_view_literals;
+int volatile val = 0;
+
+void control_endpoint_handler(ctrl_receive_tag)
 {
   host_command_available = true;
+}
+
+class packing_control_endpoint : public hal::experimental::usb_control_endpoint
+{
+public:
+  packing_control_endpoint(hal::experimental::usb_control_endpoint& p_control)
+    : m_control(&p_control)
+  {
+  }
+
+  void flush()
+  {
+    if (m_length != 0) {
+      m_control->write(std::span(m_pack_buffer).first(m_length),
+                       hal::experimental::usb_zlp::automatic);
+      m_length = 0;
+    }
+  }
+
+public:
+  void driver_write(std::span<hal::byte const> p_data,
+                    hal::experimental::usb_zlp) override
+  {
+    for (auto const byte : p_data) {
+      m_pack_buffer[m_length++] = byte;
+      if (m_length >= m_pack_buffer.size()) {
+        m_control->write(m_pack_buffer, hal::experimental::usb_zlp::off);
+        m_length = 0;
+      }
+    }
+  }
+
+  void driver_on_receive(
+    hal::callback<void(on_receive_tag)> p_callback) override
+  {
+    return m_control->on_receive(p_callback);
+  }
+
+  hal::experimental::usb_endpoint_info driver_info() const override
+  {
+    return m_control->info();
+  }
+
+  void driver_stall(bool p_should_stall) override
+  {
+    return m_control->stall(p_should_stall);
+  }
+
+  std::span<hal::u8 const> driver_read(std::span<hal::u8> p_buffer) override
+  {
+    return m_control->read(p_buffer);
+  }
+
+private:
+  hal::experimental::usb_control_endpoint* m_control;
+  std::array<hal::u8, 16> m_pack_buffer{};
+  hal::u8 m_length = 0;
+};
+
+void write_string_descriptor(packing_control_endpoint p_control_endpoint,
+                             hal::u8 p_descriptor_index,
+                             std::size_t p_length,
+                             std::span<std::u16string_view> p_strings)
+{
+  // Our span of strings is zero indexed and p_descriptor_index is 1 indexed
+  // with respect to the p_string.
+  p_descriptor_index -= 1;
+
+  packing_control_endpoint pack_ctrl(p_control_endpoint);
+
+  if (p_descriptor_index >= p_strings.size()) {
+    throw std::out_of_range("OOR");
+  }
+
+  auto const str = p_strings[p_descriptor_index];
+  auto const str_span = hal::as_bytes(str);
+
+  std::array<hal::u8, 2> const header = {
+    static_cast<hal::u8>(str_span.size() + 2),
+    0x03,
+  };
+
+  auto const header_write_length = std::min(header.size(), p_length);
+
+  pack_ctrl.write(std::span(header).first(header_write_length));
+  p_length -= header_write_length;  // deduce the amount written
+
+  // NOTE: if p_length is 0 then nothing is written and the flush follows up
+  auto const min_str_write = std::min(str_span.size(), p_length);
+  auto const span_payload = str_span.first(min_str_write);
+  pack_ctrl.write(span_payload.first(min_str_write));
+  pack_ctrl.flush();
 }
 
 void initialize_platform(resource_list& p_resource)
@@ -153,28 +251,29 @@ void initialize_platform(resource_list& p_resource)
   hal::print(uart1, "USB test starting in init...\n");
 
   using namespace std::chrono_literals;
-  static hal::stm32f1::usb usb(steady_clock);
+  static hal::stm32f1::usb usb(steady_clock, 100ms);
   hal::print(uart1, "USB\n");
 
+  static auto usb_manager = usb.acquire_manager();
   static auto control_endpoint = usb.acquire_control_endpoint();
   static auto serial_data_ep = usb.acquire_bulk_endpoint();
   static auto status_ep = usb.acquire_interrupt_endpoint();
   hal::print(uart1, "ctrl\n");
 
-  control_endpoint.on_request(control_endpoint_handler);
-  hal::print(uart1, "on_request\n");
+  control_endpoint.on_receive(control_endpoint_handler);
+  hal::print(uart1, "ctrl -> on_receive\n");
 
-  control_endpoint.connect(true);
+  usb_manager.connect(true);
   hal::print(uart1, "connect\n");
 
-  // Device Descriptor
+#if 0
   // Device Descriptor (18 bytes)
   uint8_t const device_descriptor[] = {
     0x12,        // bLength (18 bytes)
     0x01,        // bDescriptorType (Device)
     0x00, 0x02,  // bcdUSB (2.0)
-    0x00,        // bDeviceClass (0 = defer to interface)
-    0x00,        // bDeviceSubClass
+    0x02,        // bDeviceClass (0 = defer to interface)
+    0x02,        // bDeviceSubClass
     0x00,        // bDeviceProtocol
     16,          // bMaxPacketSize0 (16 bytes)
     0xEF, 0xBE,  // idVendor (0xBEEF)
@@ -185,8 +284,6 @@ void initialize_platform(resource_list& p_resource)
     0x03,        // iSerialNumber (String #3)
     0x01         // bNumConfigurations
   };
-
-#if 0
   // Configuration Descriptor (9+9 = 18 bytes total)
   uint8_t const config_descriptor[] = {
     // Configuration Descriptor
@@ -212,6 +309,25 @@ void initialize_platform(resource_list& p_resource)
     0x00   // iInterface (No string)
   };
 #else  // CDC ACM Serial
+
+  // Device Descriptor (18 bytes)
+  uint8_t const device_descriptor[] = {
+    0x12,        // bLength (18 bytes)
+    0x01,        // bDescriptorType (Device)
+    0x00, 0x02,  // bcdUSB (2.0)
+    0x02,        // bDeviceClass (0x02 CDC)
+    0x02,        // bDeviceSubClass (0x02 ACM)
+    0x00,        // bDeviceProtocol
+    16,          // bMaxPacketSize0 (16 bytes)
+    0xEF, 0xBE,  // idVendor (0xBEEF)
+    0xAD, 0xDE,  // idProduct (0xDEAD)
+    0x00, 0x01,  // bcdDevice (1.0)
+    0x01,        // iManufacturer (String #1)
+    0x02,        // iProduct (String #2)
+    0x03,        // iSerialNumber (String #3)
+    0x01         // bNumConfigurations
+  };
+
   hal::u8 config_descriptor[] = {
     // Configuration Descriptor
     0x09,  // bLength
@@ -331,14 +447,13 @@ void initialize_platform(resource_list& p_resource)
                  ">>>> serial_data_ep.second.info().size = %d\n",
                  serial_data_ep.second.info().size);
 
-  // String Descriptor 0 (Language ID)
+#if 0
   uint8_t const lang_descriptor[] = {
     0x04,  // bLength
     0x03,  // bDescriptorType (String)
     0x09,
     0x04  // wLANGID[0] (0x0409: English-US)
   };
-
   // String Descriptor 1 (Manufacturer)
   uint8_t const manufacturer_descriptor[] = {
     22,    // bLength
@@ -367,6 +482,32 @@ void initialize_platform(resource_list& p_resource)
   // I love that you can just do that
   static_assert(sizeof(serial_descriptor) == serial_descriptor[0]);
 
+  std::array<std::span<uint8_t const>, 4> strings = {
+    lang_descriptor,
+    manufacturer_descriptor,
+    product_descriptor,
+    serial_descriptor,
+  };
+#else
+  // String Descriptor 0 (Language ID)
+  std::array<hal::u8, 4> const lang_descriptor{
+    0x04,  // bLength
+    0x03,  // bDescriptorType (String)
+    0x09,  // wLANGID[0] (0x0409: English-US)
+    0x04,  // wLANGID[0] (0x0409: English-US)
+  };
+
+  [[maybe_unused]] constexpr auto manufacturer_str = u"libhal inc"sv;
+  [[maybe_unused]] constexpr auto product_name_str = u"libhal USB device"sv;
+  [[maybe_unused]] constexpr auto serial_str = u"ab01"sv;
+  [[maybe_unused]] constexpr auto p_size = sizeof(u"libhal USB device");
+  std::array<std::u16string_view, 3> strings = {
+    manufacturer_str,
+    product_name_str,
+    serial_str,
+  };
+#endif
+
   // Example notification with DSR and DCD set
   [[maybe_unused]] static uint8_t constexpr serial_state_notification[] = {
     0xA1,        // bmRequestType (Device to Host | Class | Interface)
@@ -375,13 +516,6 @@ void initialize_platform(resource_list& p_resource)
     0x00, 0x00,  // wIndex (Interface number)
     0x02, 0x00,  // wLength (2 bytes of data)
     0x03, 0x00   // serialState (DCD | DSR = 0x03)
-  };
-
-  std::array<std::span<uint8_t const>, 4> strings = {
-    lang_descriptor,
-    manufacturer_descriptor,
-    product_descriptor,
-    serial_descriptor,
   };
 
   bool serial_data_available = false;
@@ -447,21 +581,21 @@ void initialize_platform(resource_list& p_resource)
               continue;
             }
 
-            auto const host_command = control_endpoint.read();
-            if (not host_command) {
+            std::array<hal::u8, 8> rx_buffer;
+            auto const host_command = control_endpoint.read(rx_buffer);
+            if (host_command.empty()) {
               continue;
             }
 
             host_command_available = false;
 
             hal::print(uart1, "{{ ");
-            for (auto const byte : host_command.value()) {
+            for (auto const byte : host_command) {
               hal::print<8>(uart1, "0x%" PRIx8 ", ", byte);
             }
             hal::print(uart1, "}}\n");
-            std::copy_n(host_command.value().begin(),
-                        line_coding.size(),
-                        line_coding.begin());
+            std::copy_n(
+              host_command.begin(), line_coding.size(), line_coding.begin());
             control_endpoint.write({});
             break;
           }
@@ -539,15 +673,14 @@ void initialize_platform(resource_list& p_resource)
       continue;
     }
 
-    auto const host_command = control_endpoint.read();
-    if (not host_command) {
+    std::array<hal::u8, 8> rx_buffer;
+    auto const buffer = control_endpoint.read(rx_buffer);
+    if (buffer.empty()) {
       host_command_available = false;
       continue;
     }
 
     host_command_available = false;
-
-    auto const& buffer = host_command.value();
     auto print_buffer = [&buffer]() {
       for (auto const byte : buffer) {
         hal::print<8>(uart1, "0x%" PRIx8 ", ", byte);
@@ -563,7 +696,7 @@ void initialize_platform(resource_list& p_resource)
     try {
       if (bmRequestType == 0x00 && bRequest == 0x05) {
         control_endpoint.write({});
-        control_endpoint.set_address(buffer[2]);
+        usb_manager.set_address(buffer[2]);
         hal::print<32>(uart1, "ZLP+SET_ADDR[%d]\n", buffer[2]);
       } else if (bmRequestType == 0x00 && bRequest == 0x09) {
         hal::u8 const descriptor_index = buffer[2];
@@ -596,10 +729,16 @@ void initialize_platform(resource_list& p_resource)
             case 0x03: {  // String Descriptor
               hal::print<16>(
                 uart1, "S%" PRIu8 ":%" PRIu16 "\n", descriptor_index, wLength);
-              auto const str = strings.at(descriptor_index);
-              auto const first = std::min(str.size(), wLength);
-              auto const payload_span = str.first(first);
-              control_endpoint.write(payload_span);
+              if (descriptor_index == 0) {
+                auto const first =
+                  std::min(lang_descriptor.size(), size_t{ wLength });
+                auto const payload_span =
+                  std::span(lang_descriptor).first(first);
+                control_endpoint.write(payload_span);
+              } else {
+                write_string_descriptor(
+                  control_endpoint, descriptor_index, wLength, strings);
+              }
               hal::print(uart1, "S+\n");
               break;
             }

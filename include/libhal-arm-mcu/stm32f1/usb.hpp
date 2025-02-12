@@ -111,14 +111,16 @@ private:
   friend class bulk_out_endpoint;
 
   void interrupt_handler() noexcept;
-  void write_to_endpoint(
-    std::uint8_t p_endpoint,
-    std::span<hal::byte const> p_data,
-    experimental::usb_zlp p_zlp = experimental::usb_zlp::automatic);
+  void flush_endpoint(u8 p_endpoint);
+  void fill_endpoint(hal::u8 p_endpoint,
+                     std::span<hal::byte const> p_data,
+                     hal::u16 p_max_length);
+  void write_to_endpoint(hal::u8 p_endpoint,
+                         std::span<std::span<hal::byte const>> p_data);
   std::span<u8 const> read_endpoint(u8 p_endpoint,
                                     std::span<u8> p_buffer,
                                     u16& p_bytes_read);
-  void wait_for_endpoint_transfer_completion(std::uint8_t p_endpoint);
+  void wait_for_endpoint_transfer_completion(hal::u8 p_endpoint);
 
   using ctrl_receive_tag = experimental::usb_control_endpoint::on_receive_tag;
   using bulk_receive_tag = experimental::usb_bulk_out_endpoint::on_receive_tag;
@@ -134,7 +136,7 @@ private:
   hal::time_duration m_write_timeout;
   std::uint16_t m_available_endpoint_memory;
   // Starts at 1 because endpoint 0 is always occupied by the control endpoint
-  std::uint8_t m_endpoints_allocated = 1;
+  hal::u8 m_endpoints_allocated = 1;
 };
 
 class usb::manager : public experimental::usb_manager
@@ -144,7 +146,7 @@ public:
 
 private:
   void driver_connect(bool p_should_connect) override;
-  void driver_set_address(std::uint8_t p_address) override;
+  void driver_set_address(hal::u8 p_address) override;
 };
 
 /**
@@ -174,8 +176,8 @@ private:
 
   bool stalled() const;
 
-  void driver_write(std::span<hal::byte const> p_data,
-                    experimental::usb_zlp p_zlp) override;
+  void driver_write(std::span<std::span<hal::byte const>> p_data) override;
+  void driver_flush() override;
   void driver_on_receive(
     hal::callback<void(on_receive_tag)> p_callback) override;
   experimental::usb_endpoint_info driver_info() const override;
@@ -209,8 +211,8 @@ private:
   bool stalled() const;
   friend class usb;
   interrupt_in_endpoint(usb& p_usb, u8 p_endpoint_number);
-  void driver_write(std::span<hal::byte const> p_data,
-                    experimental::usb_zlp p_zlp) override;
+  void driver_write(std::span<std::span<hal::byte const>> p_data) override;
+  void driver_flush() override;
   experimental::usb_endpoint_info driver_info() const override;
   void driver_stall(bool p_should_stall) override;
 
@@ -243,8 +245,8 @@ private:
 
   bulk_in_endpoint(usb& p_usb, u8 p_endpoint_number);
 
-  void driver_write(std::span<hal::byte const> p_data,
-                    experimental::usb_zlp p_zlp) override;
+  void driver_write(std::span<std::span<hal::byte const>> p_data) override;
+  void driver_flush() override;
   experimental::usb_endpoint_info driver_info() const override;
   void driver_stall(bool p_should_stall) override;
 

@@ -223,7 +223,7 @@ struct buffer_descriptor_block
   void setup_ctrl_descriptor()
   {
     tx_address = tx_endpoint_memory_address(0);
-    tx_count = endpoint_memory_size;
+    tx_count = 0;
 
     rx_address = rx_endpoint_memory_address(0);
     rx_count = rx_endpoint_count_mask;
@@ -232,7 +232,7 @@ struct buffer_descriptor_block
   void setup_in_endpoint_for(u8 p_endpoint)
   {
     tx_address = tx_endpoint_memory_address(p_endpoint);
-    tx_count = endpoint_memory_size;
+    tx_count = 0;
   }
 
   void setup_out_endpoint_for(u8 p_endpoint)
@@ -612,29 +612,40 @@ void usb::wait_for_endpoint_transfer_completion(u8 p_endpoint)
   }
 }
 
-void usb::write_to_endpoint(u8 p_endpoint,
-                            std::span<hal::byte const> p_data,
-                            experimental::usb_zlp p_zlp)
+void usb::fill_endpoint(hal::u8 p_endpoint,
+                        std::span<hal::byte const> p_data,
+                        hal::u16 p_max_length)
 {
   auto& descriptor = endpoint_descriptor_block(p_endpoint);
+  auto const tx_span = descriptor.tx_span();
+  while (not p_data.empty()) {
+    while (descriptor.tx_count < p_max_length) {
+      if (p_data.empty()) {
+        return;
+      }
+      if (descriptor.tx_count & 0b1) {
+        hal::bit_modify(tx_span[descriptor.tx_count / 2U])
+          .insert<hal::byte_m<1>>(p_data[0]);
+      } else {
+        hal::bit_modify(tx_span[descriptor.tx_count / 2U])
+          .insert<hal::byte_m<0>>(p_data[0]);
+      }
+      p_data = p_data.subspan(1);
+      descriptor.tx_count++;
+    }
 
-  if (p_data.empty()) {
-    // send zero length message
-    descriptor.set_count_tx(0);
     set_tx_stat(p_endpoint, stat::valid);
     wait_for_endpoint_transfer_completion(p_endpoint);
-    return;
+    descriptor.tx_count = 0;
   }
 
-  constexpr std::size_t mtu = fixed_endpoint_size;
-  auto tx_span = descriptor.tx_span();
-  auto const is_aligned = p_data.size() % fixed_endpoint_size == 0;
-
+#if 0
+  // FIX THIS needs to fill buffer not what it is doing now.
   while (not p_data.empty()) {
     auto tx_iter = tx_span.begin();
-    auto const min = std::min(p_data.size(), mtu);
+    auto const min = std::min(p_data.size(), static_cast<size_t>(p_max_length));
 
-    descriptor.set_count_tx(min);
+    descriptor.tx_count++;
 
     auto const even_min = min & ~1;
     for (std::size_t i = 0; i < even_min; i += 2) {
@@ -649,15 +660,26 @@ void usb::write_to_endpoint(u8 p_endpoint,
     set_tx_stat(p_endpoint, stat::valid);
     wait_for_endpoint_transfer_completion(p_endpoint);
 
-    p_data = p_data.subspan(min);
+    data = data.subspan(min);
   }
+#endif
+}
 
-  if (is_aligned && p_zlp == experimental::usb_zlp::automatic) {
-    // send zero length message
-    descriptor.set_count_tx(0);
-    set_tx_stat(p_endpoint, stat::valid);
-    wait_for_endpoint_transfer_completion(p_endpoint);
+void usb::write_to_endpoint(u8 p_endpoint,
+                            std::span<std::span<hal::byte const>> p_data)
+{
+  // We use a copy and not the reference to not modify the span.
+  for (auto const data : p_data) {
+    fill_endpoint(p_endpoint, data, fixed_endpoint_size);
   }
+}
+
+void usb::flush_endpoint(u8 p_endpoint)
+{
+  // send whatever is in the USB buffer
+  set_tx_stat(p_endpoint, stat::valid);
+  wait_for_endpoint_transfer_completion(p_endpoint);
+  endpoint_descriptor_block(p_endpoint).tx_count = 0;
 }
 
 usb::~usb()
@@ -706,6 +728,7 @@ usb::control_endpoint::control_endpoint(usb& p_usb)
   : m_usb(&p_usb)
 {
   set_rx_stat(0, stat::valid);
+  endpoint_descriptor_block(0).tx_count = 0;
 }
 
 usb::control_endpoint::~control_endpoint() = default;
@@ -723,19 +746,15 @@ void usb::manager::driver_set_address(u8 p_address)
     .insert<device_address::address>(p_address);
 }
 
-void usb::control_endpoint::driver_write(std::span<hal::byte const> p_data,
-                                         experimental::usb_zlp p_zlp)
+void usb::control_endpoint::driver_write(
+  std::span<std::span<hal::byte const>> p_data)
 {
-
   constexpr auto ctrl_endpoint = 0;
 
   set_rx_stat(ctrl_endpoint, stat::stall);
   set_tx_stat(ctrl_endpoint, stat::nak);
 
-  m_usb->write_to_endpoint(ctrl_endpoint, p_data, p_zlp);
-
-  set_tx_stat(ctrl_endpoint, stat::stall);
-  set_rx_stat(ctrl_endpoint, stat::valid);
+  m_usb->write_to_endpoint(ctrl_endpoint, p_data);
 }
 
 void usb::control_endpoint::driver_on_receive(
@@ -783,10 +802,10 @@ void usb::interrupt_in_endpoint::driver_stall(bool p_should_stall)
   }
 }
 
-void usb::interrupt_in_endpoint::driver_write(std::span<hal::byte const> p_data,
-                                              experimental::usb_zlp p_zlp)
+void usb::interrupt_in_endpoint::driver_write(
+  std::span<std::span<hal::byte const>> p_data)
 {
-  m_usb->write_to_endpoint(m_endpoint_number, p_data, p_zlp);
+  m_usb->write_to_endpoint(m_endpoint_number, p_data);
 }
 
 // usb::bulk_in_endpoint implementation
@@ -815,10 +834,10 @@ void usb::bulk_in_endpoint::driver_stall(bool p_should_stall)
   }
 }
 
-void usb::bulk_in_endpoint::driver_write(std::span<hal::byte const> p_data,
-                                         experimental::usb_zlp p_zlp)
+void usb::bulk_in_endpoint::driver_write(
+  std::span<std::span<hal::byte const>> p_data)
 {
-  m_usb->write_to_endpoint(m_endpoint_number, p_data, p_zlp);
+  m_usb->write_to_endpoint(m_endpoint_number, p_data);
 }
 
 // usb::interrupt_out_endpoint implementation
@@ -964,5 +983,22 @@ bool usb::interrupt_in_endpoint::stalled() const
 {
   return hal::bit_extract<endpoint::status_tx>(
            usb_reg->EP[m_endpoint_number].EPR) <= 0b01;
+}
+
+void usb::control_endpoint::driver_flush()
+{
+  m_usb->flush_endpoint(0);
+  set_tx_stat(0, stat::stall);
+  set_rx_stat(0, stat::valid);
+}
+
+void usb::bulk_in_endpoint::driver_flush()
+{
+  m_usb->flush_endpoint(m_endpoint_number);
+}
+
+void usb::interrupt_in_endpoint::driver_flush()
+{
+  m_usb->flush_endpoint(m_endpoint_number);
 }
 }  // namespace hal::stm32f1

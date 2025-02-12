@@ -38,100 +38,51 @@
 #include <resource_list.hpp>
 #include <stdexcept>
 #include <string_view>
-
-using setup_command_buffer = std::array<hal::byte, 8>;
+#include <type_traits>
 
 using ctrl_receive_tag =
   hal::experimental::usb_control_endpoint::on_receive_tag;
 using bulk_receive_tag =
   hal::experimental::usb_bulk_out_endpoint::on_receive_tag;
-using interrupt_receive_tag =
-  hal::experimental::usb_interrupt_out_endpoint::on_receive_tag;
 
 bool host_command_available = false;
-
-using namespace std::string_view_literals;
-int volatile val = 0;
 
 void control_endpoint_handler(ctrl_receive_tag)
 {
   host_command_available = true;
 }
 
-class packing_control_endpoint : public hal::experimental::usb_control_endpoint
+namespace hal {
+void write_and_flush(hal::experimental::in_endpoint_type auto& p_endpoint,
+                     std::span<std::span<byte const>> p_data)
 {
-public:
-  packing_control_endpoint(hal::experimental::usb_control_endpoint& p_control)
-    : m_control(&p_control)
-  {
-  }
+  p_endpoint.write(p_data);
+  p_endpoint.flush();
+}
 
-  void flush()
-  {
-    if (m_length != 0) {
-      m_control->write(std::span(m_pack_buffer).first(m_length),
-                       hal::experimental::usb_zlp::automatic);
-      m_length = 0;
-    }
-  }
+void write_and_flush(hal::experimental::in_endpoint_type auto& p_endpoint,
+                     std::span<byte const> p_data)
+{
+  p_endpoint.write(p_data);
+  p_endpoint.flush();
+}
+}  // namespace hal
 
-public:
-  void driver_write(std::span<hal::byte const> p_data,
-                    hal::experimental::usb_zlp) override
-  {
-    for (auto const byte : p_data) {
-      m_pack_buffer[m_length++] = byte;
-      if (m_length >= m_pack_buffer.size()) {
-        m_control->write(m_pack_buffer, hal::experimental::usb_zlp::off);
-        m_length = 0;
-      }
-    }
-  }
-
-  void driver_on_receive(
-    hal::callback<void(on_receive_tag)> p_callback) override
-  {
-    return m_control->on_receive(p_callback);
-  }
-
-  hal::experimental::usb_endpoint_info driver_info() const override
-  {
-    return m_control->info();
-  }
-
-  void driver_stall(bool p_should_stall) override
-  {
-    return m_control->stall(p_should_stall);
-  }
-
-  std::span<hal::u8 const> driver_read(std::span<hal::u8> p_buffer) override
-  {
-    return m_control->read(p_buffer);
-  }
-
-private:
-  hal::experimental::usb_control_endpoint* m_control;
-  std::array<hal::u8, 16> m_pack_buffer{};
-  hal::u8 m_length = 0;
-};
-
-void write_string_descriptor(packing_control_endpoint p_control_endpoint,
-                             hal::u8 p_descriptor_index,
-                             std::size_t p_length,
-                             std::span<std::u16string_view> p_strings)
+void write_string_descriptor(
+  hal::experimental::usb_control_endpoint& p_control_endpoint,
+  hal::u8 p_descriptor_index,
+  std::size_t p_length,
+  std::span<std::u16string_view> p_strings)
 {
   // Our span of strings is zero indexed and p_descriptor_index is 1 indexed
   // with respect to the p_string.
   p_descriptor_index -= 1;
-
-  packing_control_endpoint pack_ctrl(p_control_endpoint);
-
   if (p_descriptor_index >= p_strings.size()) {
     throw std::out_of_range("OOR");
   }
 
   auto const str = p_strings[p_descriptor_index];
-  auto const str_span = hal::as_bytes(str);
+  auto str_span = hal::as_bytes(str);
 
   std::array<hal::u8, 2> const header = {
     static_cast<hal::u8>(str_span.size() + 2),
@@ -140,14 +91,16 @@ void write_string_descriptor(packing_control_endpoint p_control_endpoint,
 
   auto const header_write_length = std::min(header.size(), p_length);
 
-  pack_ctrl.write(std::span(header).first(header_write_length));
+  p_control_endpoint.write(std::span(header).first(header_write_length));
   p_length -= header_write_length;  // deduce the amount written
 
-  // NOTE: if p_length is 0 then nothing is written and the flush follows up
-  auto const min_str_write = std::min(str_span.size(), p_length);
-  auto const span_payload = str_span.first(min_str_write);
-  pack_ctrl.write(span_payload.first(min_str_write));
-  pack_ctrl.flush();
+  auto const string_write_length = std::min(str_span.size(), p_length);
+  if (string_write_length > 0) {
+    str_span = str_span.first(string_write_length);
+    p_control_endpoint.write(str_span);
+  }
+
+  p_control_endpoint.flush();
 }
 
 void initialize_platform(resource_list& p_resource)
@@ -266,50 +219,6 @@ void initialize_platform(resource_list& p_resource)
   usb_manager.connect(true);
   hal::print(uart1, "connect\n");
 
-#if 0
-  // Device Descriptor (18 bytes)
-  uint8_t const device_descriptor[] = {
-    0x12,        // bLength (18 bytes)
-    0x01,        // bDescriptorType (Device)
-    0x00, 0x02,  // bcdUSB (2.0)
-    0x02,        // bDeviceClass (0 = defer to interface)
-    0x02,        // bDeviceSubClass
-    0x00,        // bDeviceProtocol
-    16,          // bMaxPacketSize0 (16 bytes)
-    0xEF, 0xBE,  // idVendor (0xBEEF)
-    0xAD, 0xDE,  // idProduct (0xDEAD)
-    0x00, 0x01,  // bcdDevice (1.0)
-    0x01,        // iManufacturer (String #1)
-    0x02,        // iProduct (String #2)
-    0x03,        // iSerialNumber (String #3)
-    0x01         // bNumConfigurations
-  };
-  // Configuration Descriptor (9+9 = 18 bytes total)
-  uint8_t const config_descriptor[] = {
-    // Configuration Descriptor
-    0x09,  // bLength
-    0x02,  // bDescriptorType (Configuration)
-    18,
-    0x00,  // wTotalLength (18 bytes)
-    0x01,  // bNumInterfaces
-    0x01,  // bConfigurationValue
-    0x00,  // iConfiguration (No string)
-    0x80,  // bmAttributes (Bus powered)
-    0x32,  // bMaxPower (100mA)
-
-    // Interface Descriptor
-    0x09,  // bLength
-    0x04,  // bDescriptorType (Interface)
-    0x00,  // bInterfaceNumber
-    0x00,  // bAlternateSetting
-    0x00,  // bNumEndpoints
-    0x00,  // bInterfaceClass
-    0x00,  // bInterfaceSubClass
-    0x00,  // bInterfaceProtocol
-    0x00   // iInterface (No string)
-  };
-#else  // CDC ACM Serial
-
   // Device Descriptor (18 bytes)
   uint8_t const device_descriptor[] = {
     0x12,        // bLength (18 bytes)
@@ -426,7 +335,6 @@ void initialize_platform(resource_list& p_resource)
     0x00,  // wMaxPacketSize 16
     0x00   // bInterval (Ignored for Bulk)
   };
-#endif
 
   hal::print<64>(uart1,
                  ">>>> status_ep.second.info().number = 0x%02X\n",
@@ -447,48 +355,6 @@ void initialize_platform(resource_list& p_resource)
                  ">>>> serial_data_ep.second.info().size = %d\n",
                  serial_data_ep.second.info().size);
 
-#if 0
-  uint8_t const lang_descriptor[] = {
-    0x04,  // bLength
-    0x03,  // bDescriptorType (String)
-    0x09,
-    0x04  // wLANGID[0] (0x0409: English-US)
-  };
-  // String Descriptor 1 (Manufacturer)
-  uint8_t const manufacturer_descriptor[] = {
-    22,    // bLength
-    0x03,  // bDescriptorType (String)
-    'l',  0, 'i', 0, 'b', 0, 'h', 0, 'a', 0,
-    'l',  0, ' ', 0, 'i', 0, 'n', 0, 'c', 0,
-  };
-
-  // String Descriptor 2 (Product)
-  uint8_t const product_descriptor[] = {
-    36,          // bLength: 34 bytes (2 + (16 chars * 2))
-    0x03,        // bDescriptorType: String descriptor
-    'l',  0x00,  // Unicode string: "libhal USB device"
-    'i',  0x00, 'b',  0x00, 'h',  0x00, 'a',  0x00, 'l',  0x00, ' ',
-    0x00, 'U',  0x00, 'S',  0x00, 'B',  0x00, ' ',  0x00, 'd',  0x00,
-    'e',  0x00, 'v',  0x00, 'i',  0x00, 'c',  0x00, 'e',  0x00,
-  };
-
-  // String Descriptor 3 (Serial Number)
-  constexpr uint8_t serial_descriptor[] = {
-    14,    // bLength
-    0x03,  // bDescriptorType (String)
-    '0',  0, '0', 0, '0', 0, '0', 0, '1', 0, '.', 0,
-  };
-
-  // I love that you can just do that
-  static_assert(sizeof(serial_descriptor) == serial_descriptor[0]);
-
-  std::array<std::span<uint8_t const>, 4> strings = {
-    lang_descriptor,
-    manufacturer_descriptor,
-    product_descriptor,
-    serial_descriptor,
-  };
-#else
   // String Descriptor 0 (Language ID)
   std::array<hal::u8, 4> const lang_descriptor{
     0x04,  // bLength
@@ -497,16 +363,16 @@ void initialize_platform(resource_list& p_resource)
     0x04,  // wLANGID[0] (0x0409: English-US)
   };
 
-  [[maybe_unused]] constexpr auto manufacturer_str = u"libhal inc"sv;
-  [[maybe_unused]] constexpr auto product_name_str = u"libhal USB device"sv;
-  [[maybe_unused]] constexpr auto serial_str = u"ab01"sv;
-  [[maybe_unused]] constexpr auto p_size = sizeof(u"libhal USB device");
+  using namespace std::string_view_literals;
+
+  constexpr auto manufacturer_str = u"libhal inc"sv;
+  constexpr auto product_name_str = u"libhal USB device"sv;
+  constexpr auto serial_str = u"ab01"sv;
   std::array<std::u16string_view, 3> strings = {
     manufacturer_str,
     product_name_str,
     serial_str,
   };
-#endif
 
   // Example notification with DSR and DCD set
   [[maybe_unused]] static uint8_t constexpr serial_state_notification[] = {
@@ -523,23 +389,6 @@ void initialize_platform(resource_list& p_resource)
   serial_data_ep.first.on_receive([&serial_data_available](bulk_receive_tag) {
     serial_data_available = true;
   });
-
-  auto handle_serial = [&serial_data_available]() {
-    if (serial_data_available) {
-      // Drain endpoint of content...
-      serial_data_available = false;
-      // Only 3 bytes to test only grabbing a few bytes from the endpoint and
-      // still having some remaining.
-      std::array<hal::u8, 3> buffer{};
-      auto data_received = serial_data_ep.first.read(buffer);
-      while (not data_received.empty()) {
-        uart1.write(data_received);
-        data_received = serial_data_ep.first.read(buffer);
-      }
-    }
-  };
-
-  hal::u8 configuration = 0;
 
   // CDC Class-Specific Request Codes
   constexpr hal::u8 CDC_SET_LINE_CODING = 0x20;
@@ -558,7 +407,43 @@ void initialize_platform(resource_list& p_resource)
     0x08   // Data bits: 8
   });
 
+  // Wait for the message number to increment
+  auto deadline = hal::future_deadline(steady_clock, 1s);
   bool port_connected = false;
+
+  auto handle_serial =
+    [&serial_data_available, &port_connected, deadline]() mutable {
+      if (serial_data_available) {
+        // Drain endpoint of content...
+        serial_data_available = false;
+        // NOTE: Pulling out only 3 bytes isn't for memory reduction but to see
+        // how well the read() API pulls data out from the endpoint memory. This
+        // was used to find bugs with odd numbered buffer sizes.
+        std::array<hal::u8, 3> buffer{};
+        auto data_received = serial_data_ep.first.read(buffer);
+        while (not data_received.empty()) {
+          uart1.write(data_received);
+          data_received = serial_data_ep.first.read(buffer);
+        }
+      }
+      // Send a '.' every second
+      if (deadline < steady_clock.uptime()) {
+        using namespace std::string_view_literals;
+        try {
+          hal::write_and_flush(serial_data_ep.second, hal::as_bytes("."sv));
+          hal::print(uart1, ">");
+          deadline = hal::future_deadline(steady_clock, 1s);
+        } catch (hal::timed_out const&) {
+          hal::print(
+            uart1, "\n\n\033[48;5;9mEP TIMEOUT! PORT DISCONNECTED!\033[0m\n\n");
+          port_connected = false;
+          return;
+        }
+      }
+    };
+
+  hal::u8 configuration = 0;
+
   // Example handler for CDC class-specific setup packets
   auto handle_cdc_setup = [&port_connected](hal::u8 bmRequestType,
                                             hal::u8 bRequest,
@@ -567,7 +452,7 @@ void initialize_platform(resource_list& p_resource)
       case CDC_GET_LINE_CODING:
         if (bmRequestType == 0xA1) {  // Direction: Device to Host
           // Send current line coding
-          control_endpoint.write(line_coding);
+          hal::write_and_flush(control_endpoint, line_coding);
           hal::print(uart1, "CDC_GET_LINE_CODING\n");
           return true;
         }
@@ -596,10 +481,11 @@ void initialize_platform(resource_list& p_resource)
             hal::print(uart1, "}}\n");
             std::copy_n(
               host_command.begin(), line_coding.size(), line_coding.begin());
-            control_endpoint.write({});
+            control_endpoint.flush();
             break;
           }
-
+          // NOTE: there is no proper location to decide when a port is
+          // connected.
           port_connected = true;
           hal::print(uart1, "CDC_SET_LINE_CODING+\n");
           return true;
@@ -615,7 +501,7 @@ void initialize_platform(resource_list& p_resource)
           bool const rts = wValue & 0x02;
           // Handle control line state change
           // Most basic implementation just returns success
-          control_endpoint.write({});
+          control_endpoint.flush();
           hal::print<32>(uart1, "DTR = %d, RTS = %d\n", dtr, rts);
           return true;
         }
@@ -625,7 +511,7 @@ void initialize_platform(resource_list& p_resource)
         if (bmRequestType == 0x21) {  // Direction: Host to Device
           // wValue contains break duration in milliseconds
           // Most basic implementation just returns success
-          control_endpoint.write({});
+          control_endpoint.flush();
           hal::print(uart1, "SEND_BREAK\n");
           return true;
         }
@@ -635,8 +521,6 @@ void initialize_platform(resource_list& p_resource)
     return false;  // Command not handled
   };
 
-  // Wait for the message number to increment
-  auto deadline = hal::future_deadline(steady_clock, 1s);
   auto command_count = 0;
 
   std::array<std::array<hal::experimental::usb_endpoint*, 2>, 2> map = {
@@ -653,27 +537,13 @@ void initialize_platform(resource_list& p_resource)
   while (true) {
     if (configuration == 1 && port_connected) {
       handle_serial();
-      // Send a '.' every second
-      if (deadline < steady_clock.uptime()) {
-        using namespace std::string_view_literals;
-        try {
-          serial_data_ep.second.write(hal::as_bytes("."sv));
-        } catch (hal::timed_out const&) {
-          hal::print(
-            uart1, "\n\n\033[48;5;9mEP TIMEOUT! PORT DISCONNECTED!\033[0m\n\n");
-          port_connected = false;
-          continue;
-        }
-        hal::print(uart1, ">");
-        deadline = hal::future_deadline(steady_clock, 1s);
-      }
     }
 
-    if (not host_command_available) {  // nothing received
+    if (not host_command_available) {
       continue;
     }
 
-    std::array<hal::u8, 8> rx_buffer;
+    std::array<hal::u8, 8> rx_buffer{};
     auto const buffer = control_endpoint.read(rx_buffer);
     if (buffer.empty()) {
       host_command_available = false;
@@ -695,14 +565,14 @@ void initialize_platform(resource_list& p_resource)
     std::size_t const wLength = (buffer[7] << 8) | buffer[6];
     try {
       if (bmRequestType == 0x00 && bRequest == 0x05) {
-        control_endpoint.write({});
+        control_endpoint.flush();
         usb_manager.set_address(buffer[2]);
         hal::print<32>(uart1, "ZLP+SET_ADDR[%d]\n", buffer[2]);
       } else if (bmRequestType == 0x00 && bRequest == 0x09) {
         hal::u8 const descriptor_index = buffer[2];
         // SET_CONFIGURATION
         configuration = descriptor_index;
-        control_endpoint.write({});
+        control_endpoint.flush();
         serial_data_ep.first.reset();
         status_ep.first.reset();
         hal::print<16>(uart1, "SC%" PRIu8 "\n", descriptor_index);
@@ -713,16 +583,16 @@ void initialize_platform(resource_list& p_resource)
           switch (descriptor_type) {
             case 0x01: {  // Device Descriptor
               hal::print<16>(uart1, "DD%" PRIu16 "\n", wLength);
-              control_endpoint.write(
-                std::span(device_descriptor).first(wLength));
+              hal::write_and_flush(control_endpoint,
+                                   std::span(device_descriptor).first(wLength));
               hal::print(uart1, "DD+\n");
               break;
             }
             case 0x02:  // Configuration Descriptor
             {
               hal::print<32>(uart1, "CD%" PRIu16 "\n", wLength);
-              control_endpoint.write(
-                std::span(config_descriptor).first(wLength));
+              hal::write_and_flush(control_endpoint,
+                                   std::span(config_descriptor).first(wLength));
               hal::print(uart1, "CD+\n");
               break;
             }
@@ -734,7 +604,7 @@ void initialize_platform(resource_list& p_resource)
                   std::min(lang_descriptor.size(), size_t{ wLength });
                 auto const payload_span =
                   std::span(lang_descriptor).first(first);
-                control_endpoint.write(payload_span);
+                hal::write_and_flush(control_endpoint, payload_span);
               } else {
                 write_string_descriptor(
                   control_endpoint, descriptor_index, wLength, strings);
@@ -766,19 +636,20 @@ void initialize_platform(resource_list& p_resource)
 
         auto const ep_select = wIndex & 0xF;
         auto const direction = hal::bit_extract<hal::bit_mask::from(7)>(wIndex);
-        hal::print<8>(uart1, "%" PRIu8, ep_select);
-        hal::print<8>(uart1, "]:[%" PRIu8 "]", direction);
+        hal::print<8>(uart1, "%" PRIu8 "]", wIndex);
         auto& selected_ep = *map.at(ep_select).at(direction);
 
         switch (bRequest) {
           case get_status:
-            control_endpoint.write(
+            hal::write_and_flush(
+              control_endpoint,
               std::to_array<hal::byte>({ selected_ep.info().stalled, 0 }));
-            hal::print<8>(uart1, "STALLED:%d\n", selected_ep.info().stalled);
+            hal::print<16>(
+              uart1, "STALLED: 0x%02" PRIx8 "\n", selected_ep.info().stalled);
             break;
           case clear_feature:
             selected_ep.stall(false);
-            control_endpoint.write({});
+            control_endpoint.flush();
             hal::print(uart1, "CLEAR\n");
             break;
           case set_feature:

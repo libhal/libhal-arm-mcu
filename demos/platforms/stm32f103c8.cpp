@@ -40,6 +40,7 @@ void initialize_platform(resource_list& p_resources)
 
   // Set the MCU to the maximum clock speed
   hal::stm32f1::maximum_speed_using_internal_oscillator();
+  hal::stm32f1::release_jtag_pins();
 
   auto cpu_frequency = hal::stm32f1::frequency(hal::stm32f1::peripheral::cpu);
   static hal::cortex_m::dwt_counter steady_clock(cpu_frequency);
@@ -55,22 +56,14 @@ void initialize_platform(resource_list& p_resources)
   static hal::stm32f1::input_pin input_pin('B', 4);
   p_resources.input_pin = &input_pin;
 
-  static hal::stm32f1::output_pin sda_output_pin('A', 0);
-  static hal::stm32f1::output_pin scl_output_pin('A', 15);
-
-  sda_output_pin.configure({
-    .resistor = hal::pin_resistor::pull_up,
-    .open_drain = true,
-  });
-  scl_output_pin.configure({
-    .resistor = hal::pin_resistor::pull_up,
-    .open_drain = true,
-  });
-  static hal::bit_bang_i2c::pins bit_bang_pins{
-    .sda = &sda_output_pin,
-    .scl = &scl_output_pin,
-  };
-  static hal::bit_bang_i2c bit_bang_i2c(bit_bang_pins, steady_clock);
+  static hal::stm32f1::output_pin sda_output_pin('B', 7);
+  static hal::stm32f1::output_pin scl_output_pin('B', 6);
+  static hal::bit_bang_i2c bit_bang_i2c(
+    hal::bit_bang_i2c::pins{
+      .sda = &sda_output_pin,
+      .scl = &scl_output_pin,
+    },
+    steady_clock);
   p_resources.i2c = &bit_bang_i2c;
 
   static hal::stm32f1::output_pin spi_chip_select('A', 4);

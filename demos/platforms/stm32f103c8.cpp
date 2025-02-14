@@ -14,6 +14,7 @@
 
 #include <libhal-arm-mcu/dwt_counter.hpp>
 #include <libhal-arm-mcu/startup.hpp>
+#include <libhal-arm-mcu/stm32f1/adc.hpp>
 #include <libhal-arm-mcu/stm32f1/can.hpp>
 #include <libhal-arm-mcu/stm32f1/clock.hpp>
 #include <libhal-arm-mcu/stm32f1/constants.hpp>
@@ -22,6 +23,7 @@
 #include <libhal-arm-mcu/stm32f1/spi.hpp>
 #include <libhal-arm-mcu/stm32f1/uart.hpp>
 #include <libhal-arm-mcu/system_control.hpp>
+#include <libhal-util/atomic_spin_lock.hpp>
 #include <libhal-util/bit_bang_i2c.hpp>
 #include <libhal-util/bit_bang_spi.hpp>
 #include <libhal-util/inert_drivers/inert_adc.hpp>
@@ -55,6 +57,13 @@ void initialize_platform(resource_list& p_resources)
   // pin G0 on the STM micromod is port B, pin 4
   static hal::stm32f1::input_pin input_pin('B', 4);
   p_resources.input_pin = &input_pin;
+
+  static hal::atomic_spin_lock adc_lock;
+  static hal::stm32f1::adc_peripheral_manager adc(
+    hal::stm32f1::adc_peripheral_manager::adc_selection::adc1, adc_lock);
+  static auto pb0 =
+    adc.acquire_channel(hal::stm32f1::adc_peripheral_manager::pins::pb0);
+  p_resources.adc = &pb0;
 
   static hal::stm32f1::output_pin sda_output_pin('B', 7);
   static hal::stm32f1::output_pin scl_output_pin('B', 6);

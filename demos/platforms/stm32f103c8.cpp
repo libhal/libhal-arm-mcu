@@ -58,8 +58,10 @@ void initialize_platform(resource_list& p_resources)
   p_resources.input_pin = &input_pin;
 
   static hal::atomic_spin_lock my_lock;
-  static hal::stm32f1::adc_peripheral_manager adc(hal::stm32f1::adc_peripheral_manager::adc_selection::adc1, my_lock);
-  static auto pb0 = adc.acquire_channel(hal::stm32f1::adc_peripheral_manager::pins::pb0);
+  static hal::stm32f1::adc_peripheral_manager adc(
+    hal::stm32f1::adc_peripheral_manager::adc_selection::adc1, my_lock);
+  static auto pb0 =
+    adc.acquire_channel(hal::stm32f1::adc_peripheral_manager::pins::pb0);
   p_resources.adc = &pb0;
 
   static hal::stm32f1::output_pin sda_output_pin('A', 0);

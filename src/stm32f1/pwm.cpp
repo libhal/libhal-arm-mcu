@@ -2,8 +2,8 @@
 
 #include <libhal-arm-mcu/stm32f1/clock.hpp>
 #include <libhal-arm-mcu/stm32f1/constants.hpp>
-#include <libhal-arm-mcu/stm32f1/general_purpose_timer.hpp>
 #include <libhal-arm-mcu/stm32f1/pin.hpp>
+#include <libhal-arm-mcu/stm32f1/timer.hpp>
 #include <libhal-util/bit.hpp>
 #include <libhal/error.hpp>
 
@@ -11,6 +11,8 @@
 #include "power.hpp"
 
 namespace hal::stm32f1 {
+hal::u16 pwm::availability;
+
 struct pwm_reg_t
 {
   /// Offset: 0x00 Control Register (R/W)
@@ -84,28 +86,19 @@ namespace {
       hal::safe_throw(hal::operation_not_supported(nullptr));
   }
 }
-[[nodiscard]] peripheral get_peripheral_id(
-  general_purpose_timer::pwm::pwm_pins p_pin) noexcept
+[[nodiscard]] peripheral get_peripheral_id(pwm::pins p_pin) noexcept
 {
-  if (p_pin == general_purpose_timer::pwm::pwm_pins::pa8 ||
-      p_pin == general_purpose_timer::pwm::pwm_pins::pa9 ||
-      p_pin == general_purpose_timer::pwm::pwm_pins::pa10 ||
-      p_pin == general_purpose_timer::pwm::pwm_pins::pa11) {
+  if (p_pin == pwm::pins::pa8 || p_pin == pwm::pins::pa9 ||
+      p_pin == pwm::pins::pa10 || p_pin == pwm::pins::pa11) {
     return peripheral::timer1;
-  } else if (p_pin == general_purpose_timer::pwm::pwm_pins::pa0 ||
-             p_pin == general_purpose_timer::pwm::pwm_pins::pa1 ||
-             p_pin == general_purpose_timer::pwm::pwm_pins::pa2 ||
-             p_pin == general_purpose_timer::pwm::pwm_pins::pa3) {
+  } else if (p_pin == pwm::pins::pa0 || p_pin == pwm::pins::pa1 ||
+             p_pin == pwm::pins::pa2 || p_pin == pwm::pins::pa3) {
     return peripheral::timer2;
-  } else if (p_pin == general_purpose_timer::pwm::pwm_pins::pa6 ||
-             p_pin == general_purpose_timer::pwm::pwm_pins::pa7 ||
-             p_pin == general_purpose_timer::pwm::pwm_pins::pb0 ||
-             p_pin == general_purpose_timer::pwm::pwm_pins::pb1) {
+  } else if (p_pin == pwm::pins::pa6 || p_pin == pwm::pins::pa7 ||
+             p_pin == pwm::pins::pb0 || p_pin == pwm::pins::pb1) {
     return peripheral::timer3;
-  } else if (p_pin == general_purpose_timer::pwm::pwm_pins::pb6 ||
-             p_pin == general_purpose_timer::pwm::pwm_pins::pb7 ||
-             p_pin == general_purpose_timer::pwm::pwm_pins::pb8 ||
-             p_pin == general_purpose_timer::pwm::pwm_pins::pb9) {
+  } else if (p_pin == pwm::pins::pb6 || p_pin == pwm::pins::pb7 ||
+             p_pin == pwm::pins::pb8 || p_pin == pwm::pins::pb9) {
     return peripheral::timer4;
   }
   return peripheral::timer8;  // this is a placeholder, to prevent the
@@ -115,7 +108,7 @@ namespace {
                               // throw an exception
 }
 
-[[nodiscard]] float get_duty_cycle(general_purpose_timer::pwm::pwm_pins p_pin,
+[[nodiscard]] float get_duty_cycle(pwm::pins p_pin,
                                    uint32_t volatile* compare_register)
 {
   // ccr / arr
@@ -139,18 +132,21 @@ void setup_channel(pwm_reg_t* p_reg, uint8_t p_channel, peripheral p_timer)
 
   auto cc_enable = bit_mask::from(start_pos);
   auto cc_polarity = bit_mask::from(start_pos + 1);
-  if (p_timer != peripheral::timer1) {
-    bit_modify(p_reg->cc_enable_register).set(cc_enable);
-    bit_modify(p_reg->cc_enable_register).clear(cc_polarity);
-  } else {
-    bit_modify(p_reg->cc_enable_register)
-      .clear(cc_enable);  // if it is timer1, then we need to clear this bit.
-    bit_modify(p_reg->cc_enable_register).set(cc_polarity);
+  static constexpr auto main_output_enable = bit_mask::from<15>();
+  static constexpr auto ossr = bit_mask::from<11>();
+
+  bit_modify(p_reg->cc_enable_register).set(cc_enable);
+  bit_modify(p_reg->cc_enable_register).clear(cc_polarity);
+
+  if (p_timer == peripheral::timer1) {
+    bit_modify(p_reg->break_and_deadtime_register)
+      .clear(ossr)
+      .set(main_output_enable);  // complementary channel stuff
   }
 
   return;
 }
-void setup(general_purpose_timer::pwm::pwm_pins p_pin)
+void setup(pwm::pins p_pin)
 {
 
   static constexpr auto clock_division = bit_mask::from<8, 9>();
@@ -178,10 +174,8 @@ void setup(general_purpose_timer::pwm::pwm_pins p_pin)
     .insert<edge_aligned_mode>(0b00U)
     .clear(direction);
 
-  if (p_pin == general_purpose_timer::pwm::pwm_pins::pa8 ||
-      p_pin == general_purpose_timer::pwm::pwm_pins::pa0 ||
-      p_pin == general_purpose_timer::pwm::pwm_pins::pa6 ||
-      p_pin == general_purpose_timer::pwm::pwm_pins::pb6) {  // channel 1 for
+  if (p_pin == pwm::pins::pa8 || p_pin == pwm::pins::pa0 ||
+      p_pin == pwm::pins::pa6 || p_pin == pwm::pins::pb6) {  // channel 1 for
                                                              // timer1,2,3,4
     // Preload enable must be done for corresponding OCxPE
     bit_modify(reg->capture_compare_mode_register)
@@ -190,30 +184,24 @@ void setup(general_purpose_timer::pwm::pwm_pins p_pin)
       .set(odd_channel_preload_enable);
 
     setup_channel(reg, 1, peripheral_id);
-  } else if (p_pin == general_purpose_timer::pwm::pwm_pins::pa9 ||
-             p_pin == general_purpose_timer::pwm::pwm_pins::pa1 ||
-             p_pin == general_purpose_timer::pwm::pwm_pins::pa7 ||
-             p_pin == general_purpose_timer::pwm::pwm_pins::pb7) {  // channel 2
+  } else if (p_pin == pwm::pins::pa9 || p_pin == pwm::pins::pa1 ||
+             p_pin == pwm::pins::pa7 || p_pin == pwm::pins::pb7) {  // channel 2
     bit_modify(reg->capture_compare_mode_register)
       .insert<output_compare_even>(pwm_mode_1)
       .insert<channel_output_select_even>(set_output)
       .set(even_channel_preload_enable);
     setup_channel(reg, 2, peripheral_id);
 
-  } else if (p_pin == general_purpose_timer::pwm::pwm_pins::pa10 ||
-             p_pin == general_purpose_timer::pwm::pwm_pins::pa2 ||
-             p_pin == general_purpose_timer::pwm::pwm_pins::pb0 ||
-             p_pin == general_purpose_timer::pwm::pwm_pins::pb8) {  // channel 3
+  } else if (p_pin == pwm::pins::pa10 || p_pin == pwm::pins::pa2 ||
+             p_pin == pwm::pins::pb0 || p_pin == pwm::pins::pb8) {  // channel 3
     bit_modify(reg->capture_compare_mode_register_2)
       .insert<output_compare_odd>(pwm_mode_1)
       .insert<channel_output_select_odd>(set_output)
       .set(odd_channel_preload_enable);
     setup_channel(reg, 3, peripheral_id);
 
-  } else if (p_pin == general_purpose_timer::pwm::pwm_pins::pa11 ||
-             p_pin == general_purpose_timer::pwm::pwm_pins::pa3 ||
-             p_pin == general_purpose_timer::pwm::pwm_pins::pb1 ||
-             p_pin == general_purpose_timer::pwm::pwm_pins::pb9) {  // channel 4
+  } else if (p_pin == pwm::pins::pa11 || p_pin == pwm::pins::pa3 ||
+             p_pin == pwm::pins::pb1 || p_pin == pwm::pins::pb9) {  // channel 4
     bit_modify(reg->capture_compare_mode_register_2)
       .insert<output_compare_even>(pwm_mode_1)
       .insert<channel_output_select_even>(set_output)
@@ -242,80 +230,79 @@ void setup(general_purpose_timer::pwm::pwm_pins p_pin)
 
 }  // namespace
 
-general_purpose_timer::pwm::pwm(general_purpose_timer::pwm::pwm_pins p_pin)
+pwm::pwm(pwm::pins p_pin)
   : m_pin{ p_pin }
 {
   // config pin to alternate function push - pull
   auto const p_id = get_peripheral_id(p_pin);
   m_peripheral_id = p_id;
   auto const p_reg = get_pwm_reg(p_id);
-  // pwm_availability.set((int)p_pin);
   auto const pwm_pin_mask = bit_mask{ .position = (hal::u16)p_pin, .width = 1 };
-  bit_modify(pwm_availability).set(pwm_pin_mask);
+  bit_modify(availability).set(pwm_pin_mask);
 
   power_on(p_id);
   switch (p_pin) {
-    case general_purpose_timer::pwm::pwm_pins::pa10:
+    case pwm::pins::pa10:
       configure_pin({ .port = 'A', .pin = 10 }, push_pull_alternative_output);
       m_compare_register_addr = &p_reg->capture_compare_register_3;
       break;
-    case general_purpose_timer::pwm::pwm_pins::pa11:
+    case pwm::pins::pa11:
       configure_pin({ .port = 'A', .pin = 11 }, push_pull_alternative_output);
       m_compare_register_addr = &p_reg->capture_compare_register_4;
       break;
-    case general_purpose_timer::pwm::pwm_pins::pa8:
+    case pwm::pins::pa8:
       configure_pin({ .port = 'A', .pin = 8 }, push_pull_alternative_output);
       m_compare_register_addr = &p_reg->capture_compare_register;
       break;
-    case general_purpose_timer::pwm::pwm_pins::pa9:
+    case pwm::pins::pa9:
       configure_pin({ .port = 'A', .pin = 9 }, push_pull_alternative_output);
       m_compare_register_addr = &p_reg->capture_compare_register_2;
       break;
-    case general_purpose_timer::pwm::pwm_pins::pa0:
+    case pwm::pins::pa0:
       configure_pin({ .port = 'A', .pin = 0 }, push_pull_alternative_output);
       m_compare_register_addr = &p_reg->capture_compare_register;
       break;
-    case general_purpose_timer::pwm::pwm_pins::pa1:
+    case pwm::pins::pa1:
       configure_pin({ .port = 'A', .pin = 1 }, push_pull_alternative_output);
       m_compare_register_addr = &p_reg->capture_compare_register_2;
       break;
-    case general_purpose_timer::pwm::pwm_pins::pa2:
+    case pwm::pins::pa2:
       configure_pin({ .port = 'A', .pin = 2 }, push_pull_alternative_output);
       m_compare_register_addr = &p_reg->capture_compare_register_3;
       break;
-    case general_purpose_timer::pwm::pwm_pins::pa3:
+    case pwm::pins::pa3:
       configure_pin({ .port = 'A', .pin = 3 }, push_pull_alternative_output);
       m_compare_register_addr = &p_reg->capture_compare_register_4;
       break;
-    case general_purpose_timer::pwm::pwm_pins::pa6:
+    case pwm::pins::pa6:
       configure_pin({ .port = 'A', .pin = 6 }, push_pull_alternative_output);
       m_compare_register_addr = &p_reg->capture_compare_register;
       break;
-    case general_purpose_timer::pwm::pwm_pins::pa7:
+    case pwm::pins::pa7:
       configure_pin({ .port = 'A', .pin = 7 }, push_pull_alternative_output);
       m_compare_register_addr = &p_reg->capture_compare_register_2;
       break;
-    case general_purpose_timer::pwm::pwm_pins::pb0:
+    case pwm::pins::pb0:
       configure_pin({ .port = 'B', .pin = 0 }, push_pull_alternative_output);
       m_compare_register_addr = &p_reg->capture_compare_register_3;
       break;
-    case general_purpose_timer::pwm::pwm_pins::pb1:
+    case pwm::pins::pb1:
       configure_pin({ .port = 'B', .pin = 1 }, push_pull_alternative_output);
       m_compare_register_addr = &p_reg->capture_compare_register_4;
       break;
-    case general_purpose_timer::pwm::pwm_pins::pb6:
+    case pwm::pins::pb6:
       configure_pin({ .port = 'B', .pin = 6 }, push_pull_alternative_output);
       m_compare_register_addr = &p_reg->capture_compare_register;
       break;
-    case general_purpose_timer::pwm::pwm_pins::pb7:
+    case pwm::pins::pb7:
       configure_pin({ .port = 'B', .pin = 7 }, push_pull_alternative_output);
       m_compare_register_addr = &p_reg->capture_compare_register_2;
       break;
-    case general_purpose_timer::pwm::pwm_pins::pb8:
+    case pwm::pins::pb8:
       configure_pin({ .port = 'B', .pin = 8 }, push_pull_alternative_output);
       m_compare_register_addr = &p_reg->capture_compare_register_3;
       break;
-    case general_purpose_timer::pwm::pwm_pins::pb9:
+    case pwm::pins::pb9:
       configure_pin({ .port = 'B', .pin = 9 }, push_pull_alternative_output);
       m_compare_register_addr = &p_reg->capture_compare_register_4;
       break;
@@ -324,7 +311,7 @@ general_purpose_timer::pwm::pwm(general_purpose_timer::pwm::pwm_pins p_pin)
   }
   setup(p_pin);
 }
-void general_purpose_timer::pwm::driver_frequency(hertz p_frequency)
+void pwm::driver_frequency(hertz p_frequency)
 {
   pwm_reg_t* reg = get_pwm_reg(m_peripheral_id);
 
@@ -357,7 +344,7 @@ void general_purpose_timer::pwm::driver_frequency(hertz p_frequency)
   // Update duty cycle according to new frequency
   driver_duty_cycle(previous_duty_cycle);
 }
-void general_purpose_timer::pwm::driver_duty_cycle(float p_duty_cycle)
+void pwm::driver_duty_cycle(float p_duty_cycle)
 {
   pwm_reg_t* reg = get_pwm_reg(m_peripheral_id);
   // the output changes from high to low when the counter > ccr, therefore, we
@@ -369,11 +356,11 @@ void general_purpose_timer::pwm::driver_duty_cycle(float p_duty_cycle)
   *m_compare_register_addr = desired_ccr_value;
 }
 
-general_purpose_timer::pwm::~pwm() noexcept
+pwm::~pwm() noexcept
 {
 
   auto const pwm_pin_mask = bit_mask{ .position = (hal::u16)m_pin, .width = 1 };
-  bit_modify(pwm_availability).clear(pwm_pin_mask);
+  bit_modify(availability).clear(pwm_pin_mask);
   power_off(m_peripheral_id);
 }
 }  // namespace hal::stm32f1

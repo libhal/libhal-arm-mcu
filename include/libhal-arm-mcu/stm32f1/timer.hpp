@@ -20,7 +20,11 @@
 #include <libhal/units.hpp>
 
 namespace hal::stm32f1 {
-
+/**
+ * @brief This class cannot be called directly. The user must instantiate a
+ * General Purpose or Advanced timer class first, and then acquire a pwm pin
+ * through that class.
+ */
 class pwm final : public hal::pwm
 {
 public:
@@ -70,6 +74,7 @@ private:
   uint32_t volatile* m_compare_register_addr;
   pins m_pin;
   peripheral m_peripheral_id;
+
   friend class general_purpose_timer;
   friend class advanced_timer;
   /**
@@ -84,8 +89,9 @@ class advanced_timer
 {
 public:
   /**
-   * @brief This class takes in any Pin capable of performing PWM with timers
-   * 1,8. These timers are more capable than general purpose timers.
+   * @brief This class takes in any Advanced timers such as Timers
+   * 1 and 8. These timers can be used to do PWM
+   * generation, as well as other advanced timer specific tasks
    */
   advanced_timer(peripheral p_peripheral);
 
@@ -95,15 +101,18 @@ public:
    * called.
    */
   pwm acquire_pwm(pwm::pins p_pin);
+
+private:
+  peripheral m_peripheral_id;
 };
 
 class general_purpose_timer
 {
 public:
   /**
-   * @brief This class takes in any Pin capable of performing PWM with timers
-   * 2,3,4. This timer can do things like input capture, PWM, as well as
-   * encoder readings
+   * @brief This class takes in any general purpose timers such as Timers
+   * 2,3,4,5,9,10,11,12,13,14 and 15. These timers can be used to do PWM
+   * generation, as well as other timer specific tasks
    */
   general_purpose_timer(peripheral p_peripheral);
 
@@ -113,6 +122,9 @@ public:
    * called.
    */
   pwm acquire_pwm(pwm::pins p_pin);
+
+private:
+  peripheral m_peripheral_id;
 };
 
 }  // namespace hal::stm32f1

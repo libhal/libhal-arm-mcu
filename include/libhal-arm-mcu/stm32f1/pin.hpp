@@ -57,5 +57,4 @@ enum class can_pins : std::uint8_t
   pb9_pb8 = 0b10,
   pd0_pd1 = 0b11,
 };
-
 }  // namespace hal::stm32f1

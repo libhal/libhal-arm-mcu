@@ -66,9 +66,6 @@ inline pwm_reg_t* pwm_timer5 = reinterpret_cast<pwm_reg_t*>(
   0x4000'0C00);  // does not exist on the stm32f103x8 chips
 inline pwm_reg_t* pwm_timer8 = reinterpret_cast<pwm_reg_t*>(
   0x4001'3400);  // TIM8 timer (Does not exist on stm32f103c8 chip)
-// Note: Timers 6 and 7 do not have pwm functionality.
-// Note: Timers 9/12 have only 2 channels of pwm available
-// Note: Timers 10,11,13,14 have 1 channel of pwm.
 
 namespace {
 [[nodiscard]] pwm_reg_t* get_pwm_reg(peripheral p_id)
@@ -101,18 +98,13 @@ namespace {
              p_pin == pwm::pins::pb8 || p_pin == pwm::pins::pb9) {
     return peripheral::timer4;
   }
-  return peripheral::timer8;  // this is a placeholder, to prevent the
-                              // destructor from throwing an exception. The
-                              // error will still be caught because the
-                              // get_pwm_reg function will not recognize it and
-                              // throw an exception
+  hal::safe_throw(hal::operation_not_supported(nullptr));
 }
 
-[[nodiscard]] float get_duty_cycle(pwm::pins p_pin,
+[[nodiscard]] float get_duty_cycle(peripheral peripheral_id,
                                    uint32_t volatile* compare_register)
 {
   // ccr / arr
-  auto const peripheral_id = get_peripheral_id(p_pin);
   pwm_reg_t* const p_reg = get_pwm_reg(peripheral_id);
 
   static constexpr auto first_nonreserved_half = bit_mask::from<0, 15>();
@@ -130,8 +122,8 @@ void setup_channel(pwm_reg_t* p_reg, uint8_t p_channel, peripheral p_timer)
 
   uint8_t const start_pos = (p_channel - 1) * 4;
 
-  auto cc_enable = bit_mask::from(start_pos);
-  auto cc_polarity = bit_mask::from(start_pos + 1);
+  auto const cc_enable = bit_mask::from(start_pos);
+  auto const cc_polarity = bit_mask::from(start_pos + 1);
   static constexpr auto main_output_enable = bit_mask::from<15>();
   static constexpr auto ossr = bit_mask::from<11>();
 
@@ -146,7 +138,7 @@ void setup_channel(pwm_reg_t* p_reg, uint8_t p_channel, peripheral p_timer)
 
   return;
 }
-void setup(pwm::pins p_pin)
+void setup(pwm::pins p_pin, peripheral peripheral_id)
 {
 
   static constexpr auto clock_division = bit_mask::from<8, 9>();
@@ -163,9 +155,10 @@ void setup(pwm::pins p_pin)
   static constexpr auto odd_channel_preload_enable = bit_mask::from<3>();
   static constexpr auto even_channel_preload_enable = bit_mask::from<11>();
   static constexpr auto ug_bit = bit_mask::from<0>();
-  auto const pwm_mode_1 =
-    0b110U;  // The output will be high as long as Counter < CCR
-  auto const peripheral_id = get_peripheral_id(p_pin);
+
+  // The PWM_MODE 1 makes it such that output will be high when Counter < CCR
+  auto const pwm_mode_1 = 0b110U;
+
   auto const set_output = 0b00U;
   pwm_reg_t* const reg = get_pwm_reg(peripheral_id);
 
@@ -212,20 +205,21 @@ void setup(pwm::pins p_pin)
   bit_modify(reg->event_generator_register).set(ug_bit);
   bit_modify(reg->control_register).set(counter_enable);
   bit_modify(reg->control_register).set(auto_reload_preload_enable);
-  reg->prescale_register =
-    0x0U;  // If the desired frequency is really low, and 16 bits are not enough
-           // to represent that, the prescalar value can be increased. Example:
-           // if prescalar = 2, 2 clock ticks would occur before incrementing
-           // the counter by 1.
 
-  reg->counter_register =
-    0x0U;  // The counter increments every clock cycle, and compare's its value
-           // to the CCR to check whether the output should be high or low
+  // If the desired frequency is really low, and 16 bits are not enough
+  // to represent that, the prescalar value can be increased. Example:
+  // if prescalar = 2, 2 clock ticks would occur before incrementing
+  // the counter by 1.
+  reg->prescale_register = 0x0U;
 
-  reg->auto_reload_register =
-    0xFFFF;  // The ARR register is the top, once the counter reaches the ARR,
-             // it starts counting again. ARR can be increased on decreased
-             // depending on frequency.
+  // The counter increments every clock cycle, and compares its value
+  // to the CCR to check whether the output should be high or low
+  reg->counter_register = 0x0U;
+
+  // The ARR register is the top, once the counter reaches the ARR,
+  // it starts counting again. ARR can be increased on decreased
+  // depending on frequency.
+  reg->auto_reload_register = 0xFFFF;
 }
 
 }  // namespace
@@ -234,13 +228,12 @@ pwm::pwm(pwm::pins p_pin)
   : m_pin{ p_pin }
 {
   // config pin to alternate function push - pull
-  auto const p_id = get_peripheral_id(p_pin);
-  m_peripheral_id = p_id;
-  auto const p_reg = get_pwm_reg(p_id);
+  m_peripheral_id = get_peripheral_id(p_pin);
+  auto const p_reg = get_pwm_reg(m_peripheral_id);
   auto const pwm_pin_mask = bit_mask{ .position = (hal::u16)p_pin, .width = 1 };
   bit_modify(availability).set(pwm_pin_mask);
+  power_on(m_peripheral_id);
 
-  power_on(p_id);
   switch (p_pin) {
     case pwm::pins::pa10:
       configure_pin({ .port = 'A', .pin = 10 }, push_pull_alternative_output);
@@ -309,7 +302,7 @@ pwm::pwm(pwm::pins p_pin)
     default:
       safe_throw(hal::operation_not_supported(this));
   }
-  setup(p_pin);
+  setup(p_pin, m_peripheral_id);
 }
 void pwm::driver_frequency(hertz p_frequency)
 {
@@ -318,14 +311,14 @@ void pwm::driver_frequency(hertz p_frequency)
   auto const current_clock = hal::stm32f1::frequency(m_peripheral_id);
 
   auto const previous_duty_cycle =
-    get_duty_cycle(m_pin, m_compare_register_addr);
+    get_duty_cycle(m_peripheral_id, m_compare_register_addr);
 
   if (p_frequency >= current_clock) {
     safe_throw(hal::operation_not_supported(this));
   }
 
-  auto const possible_prescaler_value =
-    static_cast<float>(current_clock / (p_frequency * std::pow(2, 16)));
+  auto const possible_prescaler_value = static_cast<float>(
+    current_clock / (p_frequency * std::numeric_limits<u16>::max()));
 
   std::uint16_t prescale = 0;
   std::uint16_t autoreload = 0xFFFF;
@@ -358,7 +351,6 @@ void pwm::driver_duty_cycle(float p_duty_cycle)
 
 pwm::~pwm() noexcept
 {
-
   auto const pwm_pin_mask = bit_mask{ .position = (hal::u16)m_pin, .width = 1 };
   bit_modify(availability).clear(pwm_pin_mask);
   power_off(m_peripheral_id);

@@ -88,6 +88,8 @@ enum class peripheral : std::uint8_t
   cpu = beyond_bus + 0,
   system_timer = beyond_bus + 1,
   i2s = beyond_bus + 2,
+
+  timer_max = 127  // this is used as a placeholder for the timer class
 };
 
 /// List of interrupt request numbers for this platform

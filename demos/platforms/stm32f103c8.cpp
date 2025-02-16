@@ -28,6 +28,7 @@
 #include <libhal-util/serial.hpp>
 #include <libhal-util/steady_clock.hpp>
 #include <libhal/units.hpp>
+#include <libhal-arm-mcu/stm32f1/timer.hpp>
 
 #include <resource_list.hpp>
 
@@ -136,4 +137,10 @@ void initialize_platform(resource_list& p_resources)
       "- CAN disabled - check CANRX/CANTX connections to transceiver.\n"
       "- System will operate normally if CAN is NOT required.\n\n");
   }
+  static hal::stm32f1::advanced_timer tim1(hal::stm32f1::peripheral::timer1);
+
+  static auto p = tim1.acquire_pwm(hal::stm32f1::pwm::pins::pa8);
+
+  hal::print(uart1, "should not print");
+  p_resources.pwm = &p;
 }

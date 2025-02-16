@@ -10,62 +10,9 @@
 #include "pin.hpp"
 #include "power.hpp"
 
-namespace hal::stm32f1 {
+namespace hal::stm32_generic {
+
 hal::u16 pwm::availability;
-
-struct pwm_reg_t
-{
-  /// Offset: 0x00 Control Register (R/W)
-  std::uint32_t volatile control_register;  // sets up timers
-  /// Offset: 0x04 Control Register 2 (R/W)
-  std::uint32_t volatile control_register_2;
-  /// Offset: 0x08 Peripheral Mode Control Register (R/W)
-  std::uint32_t volatile peripheral_control_register;
-  /// Offset: 0x0C DMA/Interrupt enable register (R/W)
-  std::uint32_t volatile interuupt_enable_register;
-  /// Offset: 0x10 Status Register register (R/W)
-  std::uint32_t volatile status_register;
-  /// Offset: 0x14 Event Generator Register register (R/W)
-  std::uint32_t volatile event_generator_register;
-  /// Offset: 0x18 Capture/Compare mode register (R/W)
-  std::uint32_t volatile capture_compare_mode_register;  // set up modes for the
-  /// Offset: 0x1C Capture/Compare mode register (R/W)
-  std::uint32_t volatile capture_compare_mode_register_2;
-  /// Offset: 0x20 Capture/Compare Enable register (R/W)
-  std::uint32_t volatile cc_enable_register;
-  /// Offset: 0x24 Counter (R/W)
-  std::uint32_t volatile counter_register;
-  /// Offset: 0x28 Prescalar (R/W)
-  std::uint32_t volatile prescale_register;
-  /// Offset: 0x2C Auto Reload Register (R/W)
-  std::uint32_t volatile auto_reload_register;  // affects frequency
-  /// Offset: 0x30 Repetition Counter Register (R/W)
-  std::uint32_t volatile repetition_counter_register;
-  /// Offset: 0x34 Capture Compare Register (R/W)
-  std::uint32_t volatile capture_compare_register;  // affects duty cycles
-  /// Offset: 0x38 Capture Compare Register (R/W)
-  std::uint32_t volatile capture_compare_register_2;
-  // Offset: 0x3C Capture Compare Register (R/W)
-  std::uint32_t volatile capture_compare_register_3;
-  // Offset: 0x40 Capture Compare Register (R/W)
-  std::uint32_t volatile capture_compare_register_4;
-  /// Offset: 0x44 Break and dead-time register
-  std::uint32_t volatile break_and_deadtime_register;
-  /// Offset: 0x48 DMA control register
-  std::uint32_t volatile dma_control_register;
-  /// Offset: 0x4C DMA address for full transfer
-  std::uint32_t volatile dma_address_register;
-};
-
-inline pwm_reg_t* pwm_timer1 =
-  reinterpret_cast<pwm_reg_t*>(0x4001'2C00);  // TIM1 timer
-inline pwm_reg_t* pwm_timer2 = reinterpret_cast<pwm_reg_t*>(0x4000'0000);
-inline pwm_reg_t* pwm_timer3 = reinterpret_cast<pwm_reg_t*>(0x4000'0400);
-inline pwm_reg_t* pwm_timer4 = reinterpret_cast<pwm_reg_t*>(0x4000'0800);
-inline pwm_reg_t* pwm_timer5 = reinterpret_cast<pwm_reg_t*>(
-  0x4000'0C00);  // does not exist on the stm32f103x8 chips
-inline pwm_reg_t* pwm_timer8 = reinterpret_cast<pwm_reg_t*>(
-  0x4001'3400);  // TIM8 timer (Does not exist on stm32f103c8 chip)
 
 namespace {
 [[nodiscard]] pwm_reg_t* get_pwm_reg(peripheral p_id)
@@ -130,7 +77,7 @@ void setup_channel(pwm_reg_t* p_reg, uint8_t p_channel, peripheral p_timer)
   bit_modify(p_reg->cc_enable_register).set(cc_enable);
   bit_modify(p_reg->cc_enable_register).clear(cc_polarity);
 
-  if (p_timer == peripheral::timer1) {
+  if (p_reg == pwm_timer1 || p_reg == pwm_timer8) {
     bit_modify(p_reg->break_and_deadtime_register)
       .clear(ossr)
       .set(main_output_enable);  // complementary channel stuff

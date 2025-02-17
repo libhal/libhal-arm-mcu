@@ -14,12 +14,14 @@
 
 #pragma once
 
-#include "libhal-arm-mcu/stm32_generic/pwm.hpp"
 #include <libhal-arm-mcu/stm32f1/constants.hpp>
+#include <libhal-arm-mcu/stm32_generic/pwm.hpp>
+
 #include <libhal-util/bit.hpp>
 #include <libhal/pwm.hpp>
 #include <libhal/units.hpp>
 
+#include "libhal-arm-mcu/stm32f1/clock.hpp"
 #include "stm32f1/pin.hpp"
 #include "stm32f1/power.hpp"
 
@@ -50,14 +52,10 @@ enum class pins : u8
   pb9 = 15,
 };
 
-inline hal::stm32_generic::pwm_reg_t* pwm_timer1 =
-  reinterpret_cast<hal::stm32_generic::pwm_reg_t*>(0x4001'2C00);  // TIM1 timer
-inline hal::stm32_generic::pwm_reg_t* pwm_timer2 =
-  reinterpret_cast<hal::stm32_generic::pwm_reg_t*>(0x4000'0000);
-inline hal::stm32_generic::pwm_reg_t* pwm_timer3 =
-  reinterpret_cast<hal::stm32_generic::pwm_reg_t*>(0x4000'0400);
-inline hal::stm32_generic::pwm_reg_t* pwm_timer4 =
-  reinterpret_cast<hal::stm32_generic::pwm_reg_t*>(0x4000'0800);
+inline void* pwm_timer1 = reinterpret_cast<void*>(0x4001'2C00);  // TIM1 timer
+inline void* pwm_timer2 = reinterpret_cast<void*>(0x4000'0000);
+inline void* pwm_timer3 = reinterpret_cast<void*>(0x4000'0400);
+inline void* pwm_timer4 = reinterpret_cast<void*>(0x4000'0800);
 
 template<peripheral select>
 class advanced_timer
@@ -88,17 +86,20 @@ public:
    * again, the same channel won't be available until the destructor is
    * called.
    */
-  stm32_generic::pwm acquire_pwm(timer1_pwm_pin p_pin)
+  hal::stm32_generic::pwm acquire_pwm(timer1_pwm_pin p_pin)
   {
     static_assert(select == peripheral::timer1,
                   "You can acquire only a timer1 or timer8 pin in this class");
 
-    return acquire_pwm<select>((pins)p_pin, pwm_timer1);
+    return acquire_pwm<select>(
+      (pins)p_pin, pwm_timer1, stm32f1::frequency(peripheral::timer1));
   }
   peripheral m_peripheral_id;
 
 private:
-  stm32_generic::pwm acquire_pwm(pins p_pin, stm32_generic::pwm_reg_t* p_reg)
+  hal::stm32_generic::pwm acquire_pwm(pins p_pin,
+                                 void* p_reg,
+                                 hertz current_timer_frequency)
   {
     // do all stuff pwm constructor stuff here.
     // find pwm register, do channel setup stuff, and then send to pwm as a
@@ -125,7 +126,7 @@ private:
       default:
         break;  // will never go in here
     }
-    return { p_reg, channel };
+    return { p_reg, channel, current_timer_frequency };
   }
 };
 
@@ -173,32 +174,37 @@ public:
    * again, the same channel won't be available until the destructor is
    * called.
    */
-  stm32_generic::pwm acquire_pwm(timer2_pwm_pin p_pin)
+  hal::stm32_generic::pwm acquire_pwm(timer2_pwm_pin p_pin)
   {
     static_assert(
       select == peripheral::timer2,
       "You can acquire a pin part of the selected timer peripheral");
-    return acquire_pwm<select>((pins)p_pin, pwm_timer2);
+    return acquire_pwm<select>(
+      (pins)p_pin, pwm_timer2, stm32f1::frequency(peripheral::timer2));
   }
 
-  stm32_generic::pwm acquire_pwm(timer3_pwm_pin p_pin)
+  hal::stm32_generic::pwm acquire_pwm(timer3_pwm_pin p_pin)
   {
     static_assert(
       select == peripheral::timer3,
       "You can acquire a pin part of the selected timer peripheral");
-    return acquire_pwm((pins)p_pin, pwm_timer3);
+    return acquire_pwm(
+      (pins)p_pin, pwm_timer3, stm32f1::frequency(peripheral::timer3));
   }
 
-  stm32_generic::pwm acquire_pwm(timer4_pwm_pin p_pin)
+  hal::stm32_generic::pwm acquire_pwm(timer4_pwm_pin p_pin)
   {
     static_assert(
       select == peripheral::timer4,
       "You can acquire a pin part of the selected timer peripheral");
-    return acquire_pwm<select>((pins)p_pin, pwm_timer4);
+    return acquire_pwm<select>(
+      (pins)p_pin, pwm_timer4, stm32f1::frequency(peripheral::timer4));
   }
 
 private:
-  stm32_generic::pwm acquire_pwm(pins p_pin, stm32_generic::pwm_reg_t* p_reg)
+  hal::stm32_generic::pwm acquire_pwm(pins p_pin,
+                                 stm32_generic::pwm_reg_t* p_reg,
+                                 hertz current_timer_frequency)
   {
     // do all stuff pwm constructor stuff here.
     // find pwm register, do channel setup stuff, and then send to pwm as a
@@ -257,7 +263,7 @@ private:
       default:
         break;  // will never go in here
     }
-    return { p_reg, channel };
+    return { p_reg, channel, current_timer_frequency };
   }
   peripheral m_peripheral_id;
 };

@@ -45,6 +45,7 @@ libhal_test_and_make_library(
   src/lpc40/uart.cpp
 
   # stm32_generic
+  src/stm32_generic/pwm.cpp
   src/stm32_generic/spi.cpp
   src/stm32_generic/uart.cpp
 
@@ -61,7 +62,6 @@ libhal_test_and_make_library(
   src/stm32f1/pin.hpp
   src/stm32f1/power.cpp
   src/stm32f1/power.hpp
-  src/stm32f1/pwm.cpp
   src/stm32f1/rcc_reg.hpp
   src/stm32f1/timer.cpp
   src/stm32f1/uart_reg.hpp

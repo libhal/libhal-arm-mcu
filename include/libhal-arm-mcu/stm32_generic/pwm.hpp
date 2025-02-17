@@ -1,10 +1,16 @@
 #pragma once
 
-#include "libhal-arm-mcu/stm32f1/timer.hpp"
-#include <libhal-arm-mcu/stm32f1/constants.hpp>
+#include "libhal-arm-mcu/stm32f1/constants.hpp"
 #include <libhal-util/bit.hpp>
 #include <libhal/pwm.hpp>
 #include <libhal/units.hpp>
+namespace hal::stm32f1 {
+template<peripheral select>
+class advanced_timer;
+
+template<peripheral select>
+class general_purpose_timer;
+}  // namespace hal::stm32f1
 
 namespace hal::stm32_generic {
 struct pwm_reg_t
@@ -68,28 +74,30 @@ public:
    * peripheral is powered off
    */
   ~pwm() noexcept;
+  template<hal::stm32f1::peripheral select>
+  friend class hal::stm32f1::advanced_timer;
+
+  template<hal::stm32f1::peripheral select>
+  friend class hal::stm32f1::general_purpose_timer;
 
 private:
   /**
    * @brief The pwm constructor is private because the only way one should be
    * able to access pwm is through the timer class
    */
-  pwm(stm32_generic::pwm_reg_t*
-        pwm_pin, int channel);  // this just needs to take a p_reg address and a channel number
+  pwm(void* pwm_pin,
+      int channel,
+      hertz p_clock_freq);  // this just needs to take a p_reg address and a
+                            // channel number
 
   void driver_frequency(hertz p_frequency) override;
   void driver_duty_cycle(float p_duty_cycle) override;
 
   uint32_t volatile* m_compare_register_addr;
   // pins m_pin;
-  stm32f1::peripheral m_peripheral_id;
-  
-  template<stm32f1::peripheral select>
-  friend class stm32f1::general_purpose_timer;
-
-  template <stm32f1::peripheral select>
-  friend class stm32f1::advanced_timer;
-
+  stm32_generic::pwm_reg_t* m_reg;
+  int m_channel;
+  hertz m_clock_freq;
 
   /**
    * @brief The same pin could be accessed from different timer classes, and

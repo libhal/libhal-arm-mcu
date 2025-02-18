@@ -1,6 +1,7 @@
 #pragma once
 
 #include "libhal-arm-mcu/stm32_generic/pwm.hpp"
+#include "libhal-arm-mcu/stm32f1/timer.hpp"
 #include <libhal-arm-mcu/stm32f1/constants.hpp>
 #include <libhal/units.hpp>
 namespace hal::stm32f1 {
@@ -10,6 +11,11 @@ class advanced_timer;
 template<hal::stm32f1::peripheral select>
 class general_purpose_timer;
 
+/** @brief This class is a wrapper for the pwm class, and manages the pwm
+ * availability of the various different pins, and keeps track of whether a pwm
+ * is available or not. It inherits hal::pwm because this object is returned to
+ * the timer instance and can be used as an hal::pwm in any application.
+ */
 class pwm_wrapper : public hal::pwm
 {
 public:
@@ -31,13 +37,9 @@ private:
    * able to access pwm is through the timer class
    */
   pwm_wrapper(void* p_reg,
-              int p_channel,
-              hertz p_clock_freq,
-              bool is_advanced,
+              stm32_generic::pwm_settings settings,
               hal::u16 pin_num);
-  // frequency
   void driver_frequency(hertz p_frequency) override;
-  // duty cycle
   void driver_duty_cycle(float p_duty_cycle) override;
   // destructor
   hal::stm32_generic::pwm m_pwm;

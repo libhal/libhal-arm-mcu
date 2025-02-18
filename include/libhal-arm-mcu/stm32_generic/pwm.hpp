@@ -23,7 +23,8 @@ struct pwm_reg_t
   /// Offset: 0x14 Event Generator Register register (R/W)
   std::uint32_t volatile event_generator_register;
   /// Offset: 0x18 Capture/Compare mode register (R/W)
-  std::uint32_t volatile capture_compare_mode_register;  // set up modes for the
+  std::uint32_t volatile capture_compare_mode_register;  // set up modes for
+                                                         // channel
   /// Offset: 0x1C Capture/Compare mode register (R/W)
   std::uint32_t volatile capture_compare_mode_register_2;
   /// Offset: 0x20 Capture/Compare Enable register (R/W)
@@ -52,6 +53,13 @@ struct pwm_reg_t
   std::uint32_t volatile dma_address_register;
 };
 
+struct pwm_settings
+{
+  int channel;
+  hertz frequency;
+  bool is_advanced;
+};
+
 /**
  * @brief This class cannot be called directly. The user must instantiate a
  * General Purpose or Advanced timer class first, and then acquire a pwm pin
@@ -69,11 +77,7 @@ public:
    * peripheral is powered off
    */
   ~pwm() = default;
-  // template<hal::stm32f1::peripheral select>
-  // friend class hal::stm32f1::advanced_timer;
 
-  // template<hal::stm32f1::peripheral select>
-  // friend class hal::stm32f1::general_purpose_timer;
   friend class hal::stm32f1::pwm_wrapper;
 
 private:
@@ -82,20 +86,15 @@ private:
    * able to access pwm is through the timer class
    */
   pwm(void* pwm_pin,
-      int channel,
-      hertz p_clock_freq,
-      bool is_advanced);  // this just needs to take a p_reg address and a
-                            // channel number
+      pwm_settings settings);  // this just needs to take a p_reg address and a
+                               // channel number
 
   void driver_frequency(hertz p_frequency) override;
   void driver_duty_cycle(float p_duty_cycle) override;
 
   uint32_t volatile* m_compare_register_addr;
-  // pins m_pin;
   stm32_generic::pwm_reg_t* m_reg;
   int m_channel;
   hertz m_clock_freq;
-
-
 };
 }  // namespace hal::stm32_generic

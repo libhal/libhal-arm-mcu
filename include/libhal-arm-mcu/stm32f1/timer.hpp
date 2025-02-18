@@ -26,8 +26,7 @@ namespace hal::stm32f1 {
  * @brief Default pins for the various timer peripherals. These pins can perform
  * any timer operation.
  */
-// note to me: pwm availability needs to be handles here per advanced and
-// general_purpose_timer classes.
+
 enum class pins : u8
 {
   pa0 = 0,
@@ -56,11 +55,7 @@ enum class timer1_pin : u8
   pa10 = (u8)pins::pa10,
   pa11 = (u8)pins::pa11,
 };
-/**
- * @brief This class takes in any general purpose timers such as Timers
- * 2,3,4,5,9,10,11,12,13,14 and 15. These timers can be used to do PWM
- * generation, as well as other timer specific tasks
- */
+
 enum class timer2_pin : u8
 {
   pa0 = (u8)pins::pa0,
@@ -108,11 +103,18 @@ struct peripheral_map<peripheral::timer4>
 {
   using pin = timer4_pin;
 };
-inline void* pwm_timer1 = reinterpret_cast<void*>(0x4001'2C00);  // TIM1 timer
+
+inline void* pwm_timer1 = reinterpret_cast<void*>(0x4001'2C00);
 inline void* pwm_timer2 = reinterpret_cast<void*>(0x4000'0000);
 inline void* pwm_timer3 = reinterpret_cast<void*>(0x4000'0400);
 inline void* pwm_timer4 = reinterpret_cast<void*>(0x4000'0800);
 
+/**
+ * @brief This template class takes can do any timer operation for timers 1
+ * and 8. The peripheral ID is the template argument, in order to ensure
+ * that the pins used correspond to the correct timer instantiation as well as
+ * the correct coresponding pins at compile time.
+ */
 template<peripheral select>
 class advanced_timer
 {
@@ -139,7 +141,12 @@ private:
                                         void* p_reg,
                                         hertz current_timer_frequency);
 };
-
+/**
+ * @brief This template class takes can do any timer operation for timers 2
+ * through 15. The peripheral ID is the template argument, in order to ensure
+ * that the pins used correspond to the correct timer instantiation as well as
+ * the correct coresponding pins at compile time.
+ */
 template<peripheral select>
 class general_purpose_timer
 {

@@ -14,10 +14,6 @@ hal::stm32f1::pwm_wrapper advanced_timer<select>::acquire_pwm(
   void* p_reg,
   hertz current_timer_frequency)
 {
-  // do all stuff pwm constructor stuff here.
-  // find pwm register, do channel setup stuff, and then send to pwm as a
-  // register.
-  power_on(select);
   int channel = 0;
   switch (p_pin) {
     case pins::pa8:
@@ -39,7 +35,12 @@ hal::stm32f1::pwm_wrapper advanced_timer<select>::acquire_pwm(
     default:
       break;  // will never go in here
   }
-  return { p_reg, channel, current_timer_frequency, true, (hal::u16)p_pin };
+
+  return { p_reg,
+           { .channel = channel,
+             .frequency = current_timer_frequency,
+             .is_advanced = true },
+           (hal::u16)p_pin };
 }
 template<>
 hal::stm32f1::pwm_wrapper advanced_timer<peripheral::timer1>::acquire_pwm(
@@ -59,11 +60,10 @@ hal::stm32f1::pwm_wrapper general_purpose_timer<select>::acquire_pwm(
   void* p_reg,
   hertz current_timer_frequency)
 {
-  // do all stuff pwm constructor stuff here.
-  // find pwm register, do channel setup stuff, and then send to pwm as a
-  // register.
+  // a generic pwm class requires a pin and a channel in order to use the right
+  // registers, therefore we pass in the channel as an argumet in the generic
+  // pwm class's constructor
   int channel = 0;
-  power_on(select);
   switch (p_pin) {
     case pins::pa0:
       configure_pin({ .port = 'A', .pin = 0 }, push_pull_alternative_output);
@@ -116,7 +116,11 @@ hal::stm32f1::pwm_wrapper general_purpose_timer<select>::acquire_pwm(
     default:
       break;  // will never go in here
   }
-  return { p_reg, channel, current_timer_frequency, false, (hal::u16)p_pin };
+  return { p_reg,
+           { .channel = channel,
+             .frequency = current_timer_frequency,
+             .is_advanced = false },
+           (hal::u16)p_pin };
 }
 template<>
 hal::stm32f1::pwm_wrapper
@@ -145,8 +149,10 @@ general_purpose_timer<peripheral::timer4>::acquire_pwm(pin_type p_pin)
   return this->acquire_pwm(
     (pins)p_pin, pwm_timer4, stm32f1::frequency(peripheral::timer4));
 };
-
-template <peripheral> struct peripheral_map {
+// default peripheral_map constructor
+template<peripheral>
+struct peripheral_map
+{
   using pin = void;
 };
 

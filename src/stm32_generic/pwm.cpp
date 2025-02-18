@@ -75,7 +75,7 @@ uint32_t volatile* setup(pwm_reg_t* p_reg, int p_channel, bool p_is_advanced)
     .insert<clock_division>(0b00U)
     .insert<edge_aligned_mode>(0b00U)
     .clear(direction);
-  uint32_t volatile* compare_register;
+  uint32_t volatile* compare_register = nullptr;
   switch (p_channel) {
     case (1):
       // Preload enable must be done for corresponding OCxPE
@@ -110,7 +110,7 @@ uint32_t volatile* setup(pwm_reg_t* p_reg, int p_channel, bool p_is_advanced)
       compare_register = &p_reg->capture_compare_register_4;
       break;
     default:
-      compare_register = 0;
+      compare_register = nullptr;
       break;
   }
 
@@ -138,12 +138,12 @@ uint32_t volatile* setup(pwm_reg_t* p_reg, int p_channel, bool p_is_advanced)
 
 }  // namespace
 
-pwm::pwm(void* p_reg, int p_channel, hertz p_clock_freq, bool is_advanced)
+pwm::pwm(void* p_reg, pwm_settings p_settings)
   : m_reg(reinterpret_cast<pwm_reg_t*>(p_reg))
-  , m_channel(p_channel)
-  , m_clock_freq(p_clock_freq)
+  , m_channel(p_settings.channel)
+  , m_clock_freq(p_settings.frequency)
 {
-  m_compare_register_addr = setup(m_reg, m_channel, is_advanced);
+  m_compare_register_addr = setup(m_reg, m_channel, p_settings.is_advanced);
 }
 void pwm::driver_frequency(hertz p_frequency)
 {

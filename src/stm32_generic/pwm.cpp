@@ -10,8 +10,6 @@
 
 namespace hal::stm32_generic {
 
-hal::u16 pwm::availability;
-
 namespace {
 
 [[nodiscard]] float get_duty_cycle(stm32_generic::pwm_reg_t* p_reg,
@@ -29,7 +27,7 @@ namespace {
 
   return (static_cast<float>(compare_value) / static_cast<float>(arr_value));
 }
-void setup_channel(pwm_reg_t* p_reg, uint8_t p_channel)
+void setup_channel(pwm_reg_t* p_reg, uint8_t p_channel, bool p_is_advanced)
 {
 
   uint8_t const start_pos = (p_channel - 1) * 4;
@@ -42,7 +40,7 @@ void setup_channel(pwm_reg_t* p_reg, uint8_t p_channel)
   bit_modify(p_reg->cc_enable_register).set(cc_enable);
   bit_modify(p_reg->cc_enable_register).clear(cc_polarity);
 
-  if (p_reg == pwm_timer1 || p_reg == pwm_timer8) {
+  if (p_is_advanced) {
     bit_modify(p_reg->break_and_deadtime_register)
       .clear(ossr)
       .set(main_output_enable);  // complementary channel stuff
@@ -50,7 +48,7 @@ void setup_channel(pwm_reg_t* p_reg, uint8_t p_channel)
 
   return;
 }
-void setup(pwm_reg_t* p_reg, int p_channel)
+uint32_t volatile* setup(pwm_reg_t* p_reg, int p_channel, bool p_is_advanced)
 {
 
   static constexpr auto clock_division = bit_mask::from<8, 9>();
@@ -77,33 +75,46 @@ void setup(pwm_reg_t* p_reg, int p_channel)
     .insert<clock_division>(0b00U)
     .insert<edge_aligned_mode>(0b00U)
     .clear(direction);
+  uint32_t volatile* compare_register;
+  switch (p_channel) {
+    case (1):
+      // Preload enable must be done for corresponding OCxPE
+      bit_modify(p_reg->capture_compare_mode_register)
+        .insert<output_compare_odd>(pwm_mode_1)
+        .insert<channel_output_select_odd>(set_output)
+        .set(odd_channel_preload_enable);
+      compare_register = &p_reg->capture_compare_register;
+      break;
 
-  if (p_channel == 1) {
-    // Preload enable must be done for corresponding OCxPE
-    bit_modify(p_reg->capture_compare_mode_register)
-      .insert<output_compare_odd>(pwm_mode_1)
-      .insert<channel_output_select_odd>(set_output)
-      .set(odd_channel_preload_enable);
+    case (2):
+      bit_modify(p_reg->capture_compare_mode_register)
+        .insert<output_compare_even>(pwm_mode_1)
+        .insert<channel_output_select_even>(set_output)
+        .set(even_channel_preload_enable);
+      compare_register = &p_reg->capture_compare_register_2;
+      break;
 
-  } else if (p_channel == 2) {
-    bit_modify(p_reg->capture_compare_mode_register)
-      .insert<output_compare_even>(pwm_mode_1)
-      .insert<channel_output_select_even>(set_output)
-      .set(even_channel_preload_enable);
+    case (3):
+      bit_modify(p_reg->capture_compare_mode_register_2)
+        .insert<output_compare_odd>(pwm_mode_1)
+        .insert<channel_output_select_odd>(set_output)
+        .set(odd_channel_preload_enable);
+      compare_register = &p_reg->capture_compare_register_3;
+      break;
 
-  } else if (p_channel == 3) {
-    bit_modify(p_reg->capture_compare_mode_register_2)
-      .insert<output_compare_odd>(pwm_mode_1)
-      .insert<channel_output_select_odd>(set_output)
-      .set(odd_channel_preload_enable);
-
-  } else if (p_channel == 4) {
-    bit_modify(p_reg->capture_compare_mode_register_2)
-      .insert<output_compare_even>(pwm_mode_1)
-      .insert<channel_output_select_even>(set_output)
-      .set(even_channel_preload_enable);
+    case (4):
+      bit_modify(p_reg->capture_compare_mode_register_2)
+        .insert<output_compare_even>(pwm_mode_1)
+        .insert<channel_output_select_even>(set_output)
+        .set(even_channel_preload_enable);
+      compare_register = &p_reg->capture_compare_register_4;
+      break;
+    default:
+      compare_register = 0;
+      break;
   }
-  setup_channel(p_reg, p_channel);
+
+  setup_channel(p_reg, p_channel, p_is_advanced);
   bit_modify(p_reg->event_generator_register).set(ug_bit);
   bit_modify(p_reg->control_register).set(counter_enable);
   bit_modify(p_reg->control_register).set(auto_reload_preload_enable);
@@ -122,21 +133,17 @@ void setup(pwm_reg_t* p_reg, int p_channel)
   // it starts counting again. ARR can be increased on decreased
   // depending on frequency.
   p_reg->auto_reload_register = 0xFFFF;
+  return compare_register;
 }
 
 }  // namespace
 
-pwm::pwm(void* p_reg, int p_channel, hertz p_clock_freq)
+pwm::pwm(void* p_reg, int p_channel, hertz p_clock_freq, bool is_advanced)
   : m_reg(reinterpret_cast<pwm_reg_t*>(p_reg))
   , m_channel(p_channel)
   , m_clock_freq(p_clock_freq)
 {
-  // config pin to alternate function push - pull
-
-  auto const pwm_pin_mask = bit_mask{ .position = (hal::u16)p_pin, .width = 1 };
-  bit_modify(availability)
-    .set(pwm_pin_mask);  // need to handle pwm pin availability somewhere else
-  setup(m_reg, m_channel);
+  setup(m_reg, m_channel, is_advanced);
 }
 void pwm::driver_frequency(hertz p_frequency)
 {
@@ -178,10 +185,4 @@ void pwm::driver_duty_cycle(float p_duty_cycle)
   *m_compare_register_addr = desired_ccr_value;
 }
 
-pwm::~pwm() noexcept
-{
-  auto const pwm_pin_mask = bit_mask{ .position = (hal::u16)m_pin, .width = 1 };
-  bit_modify(availability).clear(pwm_pin_mask);
-  power_off(m_peripheral_id);
-}
 }  // namespace hal::stm32_generic

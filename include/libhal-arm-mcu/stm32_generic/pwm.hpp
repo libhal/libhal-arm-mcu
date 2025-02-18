@@ -1,15 +1,10 @@
 #pragma once
-
 #include "libhal-arm-mcu/stm32f1/constants.hpp"
 #include <libhal-util/bit.hpp>
 #include <libhal/pwm.hpp>
 #include <libhal/units.hpp>
 namespace hal::stm32f1 {
-template<peripheral select>
-class advanced_timer;
-
-template<peripheral select>
-class general_purpose_timer;
+class pwm_wrapper;
 }  // namespace hal::stm32f1
 
 namespace hal::stm32_generic {
@@ -73,12 +68,13 @@ public:
    * @brief when it is destroyed the corresponding
    * peripheral is powered off
    */
-  ~pwm() noexcept;
-  template<hal::stm32f1::peripheral select>
-  friend class hal::stm32f1::advanced_timer;
+  ~pwm() = default;
+  // template<hal::stm32f1::peripheral select>
+  // friend class hal::stm32f1::advanced_timer;
 
-  template<hal::stm32f1::peripheral select>
-  friend class hal::stm32f1::general_purpose_timer;
+  // template<hal::stm32f1::peripheral select>
+  // friend class hal::stm32f1::general_purpose_timer;
+  friend class hal::stm32f1::pwm_wrapper;
 
 private:
   /**
@@ -87,7 +83,8 @@ private:
    */
   pwm(void* pwm_pin,
       int channel,
-      hertz p_clock_freq);  // this just needs to take a p_reg address and a
+      hertz p_clock_freq,
+      bool is_advanced);  // this just needs to take a p_reg address and a
                             // channel number
 
   void driver_frequency(hertz p_frequency) override;
@@ -99,11 +96,6 @@ private:
   int m_channel;
   hertz m_clock_freq;
 
-  /**
-   * @brief The same pin could be accessed from different timer classes, and
-   * to prevent when a PWM is acquired, we keep track of all pwms that are
-   * acquired at any given moment
-   */
-  static hal::u16 availability;
+
 };
 }  // namespace hal::stm32_generic

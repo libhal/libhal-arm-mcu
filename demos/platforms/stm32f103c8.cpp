@@ -21,6 +21,7 @@
 #include <libhal-arm-mcu/stm32f1/output_pin.hpp>
 #include <libhal-arm-mcu/stm32f1/pwm_wrapper.hpp>
 #include <libhal-arm-mcu/stm32f1/spi.hpp>
+#include <libhal-arm-mcu/stm32f1/timer.hpp>
 #include <libhal-arm-mcu/stm32f1/uart.hpp>
 #include <libhal-arm-mcu/system_control.hpp>
 #include <libhal-util/bit_bang_i2c.hpp>
@@ -29,7 +30,6 @@
 #include <libhal-util/serial.hpp>
 #include <libhal-util/steady_clock.hpp>
 #include <libhal/units.hpp>
-#include <libhal-arm-mcu/stm32f1/timer.hpp>
 
 #include <resource_list.hpp>
 
@@ -148,13 +148,13 @@ void initialize_platform(resource_list& p_resources)
   static hal::stm32f1::advanced_timer<hal::stm32f1::peripheral::timer1> timer;
   static hal::stm32f1::pwm_wrapper p = timer.acquire_pwm(myPin1);
 
-  hal::print(uart1, "pwm wrapper created HRURURURU");
+  hal::print(uart1, "pwm wrapper created HRURURURU\n");
 
   // static hal::stm32f1::peripheral_map<hal::stm32f1::peripheral::timer3>::pin
   //   myPin2 = hal::stm32f1::timer3_pin::pa6;
-  // static hal::stm32f1::general_purpose_timer<hal::stm32f1::peripheral::timer2> timer2;
-  // timer2.acquire_pwm(myPin2); //testing if it compile time erros
+  // static
+  // hal::stm32f1::general_purpose_timer<hal::stm32f1::peripheral::timer2>
+  // timer2; timer2.acquire_pwm(myPin2); //testing if it compile time erros
   // hal::print(uart1, "should not print");
   p_resources.pwm = &p;
-
 }

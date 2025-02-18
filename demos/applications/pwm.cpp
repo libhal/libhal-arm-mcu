@@ -24,6 +24,8 @@ void application(resource_list& p_map)
 
   auto& pwm = *p_map.pwm.value();
   auto& clock = *p_map.clock.value();
+  auto& terminal = *p_map.console.value();
+  hal::print(terminal, "in pwm.cpp\n");
 
   while (true) {
     pwm.frequency(1.0_kHz);
@@ -31,15 +33,17 @@ void application(resource_list& p_map)
     for (unsigned iteration = 0; iteration <= 100; iteration += 1) {
       auto duty_cycle = static_cast<float>(iteration) / 100.0f;
       pwm.duty_cycle(duty_cycle);
-      hal::delay(clock, 100ms);
+      hal::delay(clock, 10ms);
     }
+    hal::print(terminal, "finished constantfreq\n");
 
     pwm.duty_cycle(0.5f);
 
     for (unsigned iteration = 0; iteration < 100; iteration++) {
       auto frequency = 100.0_Hz * (static_cast<float>(iteration) * 10);
       pwm.frequency(frequency);
-      hal::delay(clock, 100ms);
+      hal::delay(clock, 10ms);
     }
+    hal::print(terminal, "finished constant duty cycle\n");
   }
 }

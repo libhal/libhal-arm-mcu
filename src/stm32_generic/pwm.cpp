@@ -143,7 +143,7 @@ pwm::pwm(void* p_reg, int p_channel, hertz p_clock_freq, bool is_advanced)
   , m_channel(p_channel)
   , m_clock_freq(p_clock_freq)
 {
-  setup(m_reg, m_channel, is_advanced);
+  m_compare_register_addr = setup(m_reg, m_channel, is_advanced);
 }
 void pwm::driver_frequency(hertz p_frequency)
 {

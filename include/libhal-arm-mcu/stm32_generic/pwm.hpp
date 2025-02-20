@@ -1,5 +1,4 @@
 #pragma once
-#include "libhal-arm-mcu/stm32f1/constants.hpp"
 #include <libhal-util/bit.hpp>
 #include <libhal/pwm.hpp>
 #include <libhal/units.hpp>
@@ -8,7 +7,7 @@ class pwm_wrapper;
 }  // namespace hal::stm32f1
 
 namespace hal::stm32_generic {
-struct pwm_reg_t
+struct timer_reg_t
 {
   /// Offset: 0x00 Control Register (R/W)
   std::uint32_t volatile control_register;  // sets up timers
@@ -61,39 +60,38 @@ struct pwm_settings
 };
 
 /**
- * @brief This class cannot be called directly. The user must instantiate a
- * General Purpose or Advanced timer class first, and then acquire a pwm pin
- * through that class.
+ * @brief This class cannot be called directly.
+ *
+ * The user must instantiate a General Purpose or Advanced timer class first,
+ * and then acquire a pwm pin through that class.
  */
 class pwm final : public hal::pwm
 {
 public:
+  friend class hal::stm32f1::pwm_wrapper;
+
   pwm(pwm const& p_other) = delete;
   pwm& operator=(pwm const& p_other) = delete;
-  pwm(pwm&& p_other) noexcept = delete;
-  pwm& operator=(pwm&& p_other) noexcept = delete;
-  /**
-   * @brief when it is destroyed the corresponding
-   * peripheral is powered off
-   */
-  ~pwm() = default;
 
-  friend class hal::stm32f1::pwm_wrapper;
+  ~pwm() = default;
 
 private:
   /**
    * @brief The pwm constructor is private because the only way one should be
    * able to access pwm is through the timer class
+   *
+   * @param pwm_pin is a void pointer that points to the beginning of a timer
+   * peripheral
+   * @param settings consist of channel number, frequency of the timer, and a
+   * boolean to indicate whether the timer is advanced or not.
    */
-  pwm(void* pwm_pin,
-      pwm_settings settings);  // this just needs to take a p_reg address and a
-                               // channel number
+  pwm(void* p_reg, pwm_settings p_settings);
 
   void driver_frequency(hertz p_frequency) override;
   void driver_duty_cycle(float p_duty_cycle) override;
 
+  stm32_generic::timer_reg_t* m_reg;
   uint32_t volatile* m_compare_register_addr;
-  stm32_generic::pwm_reg_t* m_reg;
   int m_channel;
   hertz m_clock_freq;
 };

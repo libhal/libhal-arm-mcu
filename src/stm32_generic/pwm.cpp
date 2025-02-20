@@ -1,6 +1,6 @@
 #include <cmath>
 
-#include "libhal-arm-mcu/stm32_generic/pwm.hpp"
+#include <libhal-arm-mcu/stm32_generic/pwm.hpp>
 #include <libhal-arm-mcu/stm32f1/clock.hpp>
 #include <libhal-arm-mcu/stm32f1/constants.hpp>
 #include <libhal-arm-mcu/stm32f1/pin.hpp>
@@ -12,7 +12,7 @@ namespace hal::stm32_generic {
 
 namespace {
 
-[[nodiscard]] float get_duty_cycle(stm32_generic::pwm_reg_t* p_reg,
+[[nodiscard]] float get_duty_cycle(stm32_generic::timer_reg_t* p_reg,
                                    uint32_t volatile* compare_register)
 {
   // ccr / arr
@@ -27,7 +27,7 @@ namespace {
 
   return (static_cast<float>(compare_value) / static_cast<float>(arr_value));
 }
-void setup_channel(pwm_reg_t* p_reg, uint8_t p_channel, bool p_is_advanced)
+void setup_channel(timer_reg_t* p_reg, uint8_t p_channel, bool p_is_advanced)
 {
 
   uint8_t const start_pos = (p_channel - 1) * 4;
@@ -48,7 +48,7 @@ void setup_channel(pwm_reg_t* p_reg, uint8_t p_channel, bool p_is_advanced)
 
   return;
 }
-uint32_t volatile* setup(pwm_reg_t* p_reg, int p_channel, bool p_is_advanced)
+uint32_t volatile* setup(timer_reg_t* p_reg, int p_channel, bool p_is_advanced)
 {
 
   static constexpr auto clock_division = bit_mask::from<8, 9>();
@@ -139,7 +139,7 @@ uint32_t volatile* setup(pwm_reg_t* p_reg, int p_channel, bool p_is_advanced)
 }  // namespace
 
 pwm::pwm(void* p_reg, pwm_settings p_settings)
-  : m_reg(reinterpret_cast<pwm_reg_t*>(p_reg))
+  : m_reg(reinterpret_cast<timer_reg_t*>(p_reg))
   , m_channel(p_settings.channel)
   , m_clock_freq(p_settings.frequency)
 {

@@ -18,13 +18,16 @@
 #include <libhal-arm-mcu/stm32f1/constants.hpp>
 #include <libhal-arm-mcu/stm32f1/pwm_wrapper.hpp>
 #include <libhal-util/bit.hpp>
+#include <libhal-util/enum.hpp>
 #include <libhal/pwm.hpp>
 #include <libhal/units.hpp>
+#include <type_traits>
 
 namespace hal::stm32f1 {
 /**
- * @brief Default pins for the various timer peripherals. These pins can perform
- * any timer operation.
+ * @brief Default pins for the various timer peripherals.
+ *
+ * These pins can perform any timer operation.
  */
 
 enum class pins : u8
@@ -46,64 +49,61 @@ enum class pins : u8
   pb8 = 14,
   pb9 = 15,
 };
-/**
+/** @brief pins that are connected to the timer1 peripheral
  */
 enum class timer1_pin : u8
 {
-  pa8 = (u8)pins::pa8,
-  pa9 = (u8)pins::pa9,
-  pa10 = (u8)pins::pa10,
-  pa11 = (u8)pins::pa11,
+  pa8 = hal::value(pins::pa8),
+  pa9 = hal::value(pins::pa9),
+  pa10 = hal::value(pins::pa10),
+  pa11 = hal::value(pins::pa11),
 };
 
+/** @brief pins that are connected to the timer2 peripheral
+ */
 enum class timer2_pin : u8
 {
-  pa0 = (u8)pins::pa0,
-  pa1 = (u8)pins::pa1,
-  pa2 = (u8)pins::pa2,
-  pa3 = (u8)pins::pa3,
+  pa0 = hal::value(pins::pa0),
+  pa1 = hal::value(pins::pa1),
+  pa2 = hal::value(pins::pa2),
+  pa3 = hal::value(pins::pa3),
 };
-
+/** @brief pins that are connected to the timer3 peripheral
+ */
 enum class timer3_pin : u8
 {
-  pa6 = (u8)pins::pa6,
-  pa7 = (u8)pins::pa7,
-  pb0 = (u8)pins::pb0,
-  pb1 = (u8)pins::pb1,
+  pa6 = hal::value(pins::pa6),
+  pa7 = hal::value(pins::pa7),
+  pb0 = hal::value(pins::pb0),
+  pb1 = hal::value(pins::pb1),
 };
-
+/** @brief pins that are connected to the timer4 peripheral
+ */
 enum class timer4_pin : u8
 {
-  pb6 = (u8)pins::pb6,
-  pb7 = (u8)pins::pb7,
-  pb8 = (u8)pins::pb8,
-  pb9 = (u8)pins::pb9,
+  pb6 = hal::value(pins::pb6),
+  pb7 = hal::value(pins::pb7),
+  pb8 = hal::value(pins::pb8),
+  pb9 = hal::value(pins::pb9),
 };
 
-template<peripheral select>
-struct peripheral_map;
-
-template<>
-struct peripheral_map<peripheral::timer1>
+/** @brief Gets the pwm timer type at compile time.
+ */
+template<peripheral id>
+consteval auto get_pwm_timer_type()
 {
-  using pin = timer1_pin;
-};
-template<>
-struct peripheral_map<peripheral::timer2>
-{
-  using pin = timer2_pin;
-};
-template<>
-struct peripheral_map<peripheral::timer3>
-{
-  using pin = timer3_pin;
-};
-template<>
-struct peripheral_map<peripheral::timer4>
-{
-  using pin = timer4_pin;
-};
-
+  if constexpr (id == peripheral::timer1) {
+    return std::type_identity<timer1_pin>();
+  } else if constexpr (id == peripheral::timer2) {
+    return std::type_identity<timer2_pin>();
+  } else if constexpr (id == peripheral::timer3) {
+    return std::type_identity<timer3_pin>();
+  } else if constexpr (id == peripheral::timer4) {
+    return std::type_identity<timer4_pin>();
+  } else {
+    return std::type_identity<void>();
+  }
+}
 inline void* pwm_timer1 = reinterpret_cast<void*>(0x4001'2C00);
 inline void* pwm_timer2 = reinterpret_cast<void*>(0x4000'0000);
 inline void* pwm_timer3 = reinterpret_cast<void*>(0x4000'0400);
@@ -111,9 +111,14 @@ inline void* pwm_timer4 = reinterpret_cast<void*>(0x4000'0800);
 
 /**
  * @brief This template class takes can do any timer operation for timers 1
- * and 8. The peripheral ID is the template argument, in order to ensure
+ * and 8.
+ *
+ * The peripheral ID is the template argument, in order to ensure
  * that the pins used correspond to the correct timer instantiation as well as
  * the correct coresponding pins at compile time.
+ *
+ * These timers can be used to do PWM generation, as well as other advanced
+ * timer specific tasks
  */
 template<peripheral select>
 class advanced_timer
@@ -121,20 +126,26 @@ class advanced_timer
 public:
   static_assert(select == peripheral::timer1,
                 "Only timer 1 is allowed as advanced timers for this driver");
+  using pin_type = decltype(get_pwm_timer_type<select>())::type;
 
-  /**
-   * @brief This class takes in any Advanced timers such as Timers
-   * 1 and 8. These timers can be used to do PWM
-   * generation, as well as other advanced timer specific tasks
-   */
+  advanced_timer(advanced_timer const& p_other) = delete;
+  advanced_timer& operator=(advanced_timer const& p_other) = delete;
+  advanced_timer(advanced_timer&& p_other) noexcept = delete;
+  advanced_timer& operator=(advanced_timer&& p_other) noexcept = delete;
+
   advanced_timer() = default;
-  using pin_type = peripheral_map<select>::pin;
   /**
-   * @brief Only one PWM channel is allowed. If someone tries to acquire it
-   * again, the same channel won't be available until the destructor is
-   * called.
+   * @brief Acquire a PWM channel from this timer
+   *
+   * Only one PWM channel is allowed to exist per timer.
+   * If a PWM channel object is destroyed, then another PWM channel can be
+   * acquired from this timer.
+   *
+   * @throws hal::device_or_resource_busy - If the application attempts to
+   * acquire a pwm channel while a pwm channel bound to this timer already
+   * exists.
    */
-  hal::stm32f1::pwm_wrapper acquire_pwm(pin_type p_pin);
+  [[nodiscard]] hal::stm32f1::pwm_wrapper acquire_pwm(pin_type p_pin);
 
 private:
   hal::stm32f1::pwm_wrapper acquire_pwm(pins p_pin,
@@ -143,9 +154,11 @@ private:
 };
 /**
  * @brief This template class takes can do any timer operation for timers 2
- * through 15. The peripheral ID is the template argument, in order to ensure
- * that the pins used correspond to the correct timer instantiation as well as
- * the correct coresponding pins at compile time.
+ * through 15.
+ *
+ * The peripheral ID is the template argument, in order to ensure that the pins
+ * used correspond to the correct timer instantiation as well as the correct
+ * coresponding pins at compile time.
  */
 template<peripheral select>
 class general_purpose_timer
@@ -155,16 +168,28 @@ public:
                   select == peripheral::timer4,
                 "Only timers 2, 3, or 4 are allowed as general purpose timers "
                 "for this driver");
+  using pin_type = decltype(get_pwm_timer_type<select>())::type;
 
+  general_purpose_timer(general_purpose_timer const& p_other) = delete;
+  general_purpose_timer& operator=(general_purpose_timer const& p_other) =
+    delete;
+  general_purpose_timer(general_purpose_timer&& p_other) noexcept = delete;
+  general_purpose_timer& operator=(general_purpose_timer&& p_other) noexcept =
+    delete;
   general_purpose_timer() = default;
-  using pin_type = peripheral_map<select>::pin;
 
   /**
-   * @brief Only one PWM channel is allowed. If someone tries to acquire it
-   * again, the same channel won't be available until the destructor is
-   * called.
+   * @brief Acquire a PWM channel from this timer
+   *
+   * Only one PWM channel is allowed to exist per timer.
+   * If a PWM channel object is destroyed, then another PWM channel can be
+   * acquired from this timer.
+   *
+   * @throws hal::device_or_resource_busy - If the application attempts to
+   * acquire a pwm channel while a pwm channel bound to this timer already
+   * exists.
    */
-  hal::stm32f1::pwm_wrapper acquire_pwm(pin_type p_pin);
+  [[nodiscard]] hal::stm32f1::pwm_wrapper acquire_pwm(pin_type p_pin);
 
 private:
   hal::stm32f1::pwm_wrapper acquire_pwm(pins p_pin,

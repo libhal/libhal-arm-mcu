@@ -52,8 +52,8 @@ class libhal_arm_mcu_conan(ConanFile):
     }
 
     def requirements(self):
-        self.requires("libhal/[^4.9.0]", transitive_headers=True)
-        self.requires("libhal-util/[^5.3.0]", transitive_headers=True)
+        self.requires("libhal/[^4.9.8]", transitive_headers=True)
+        self.requires("libhal-util/[^5.4.2]", transitive_headers=True)
         self.requires("ring-span-lite/[^0.7.0]", transitive_headers=True)
         self.requires("scope-lite/0.2.0")
 

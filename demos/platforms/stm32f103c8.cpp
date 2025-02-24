@@ -14,6 +14,7 @@
 
 #include <libhal-arm-mcu/dwt_counter.hpp>
 #include <libhal-arm-mcu/startup.hpp>
+#include <libhal-arm-mcu/stm32f1/adc.hpp>
 #include <libhal-arm-mcu/stm32f1/can.hpp>
 #include <libhal-arm-mcu/stm32f1/clock.hpp>
 #include <libhal-arm-mcu/stm32f1/constants.hpp>
@@ -22,6 +23,7 @@
 #include <libhal-arm-mcu/stm32f1/spi.hpp>
 #include <libhal-arm-mcu/stm32f1/uart.hpp>
 #include <libhal-arm-mcu/system_control.hpp>
+#include <libhal-util/atomic_spin_lock.hpp>
 #include <libhal-util/bit_bang_i2c.hpp>
 #include <libhal-util/bit_bang_spi.hpp>
 #include <libhal-util/inert_drivers/inert_adc.hpp>
@@ -40,6 +42,7 @@ void initialize_platform(resource_list& p_resources)
 
   // Set the MCU to the maximum clock speed
   hal::stm32f1::maximum_speed_using_internal_oscillator();
+  hal::stm32f1::release_jtag_pins();
 
   auto cpu_frequency = hal::stm32f1::frequency(hal::stm32f1::peripheral::cpu);
   static hal::cortex_m::dwt_counter steady_clock(cpu_frequency);
@@ -54,22 +57,21 @@ void initialize_platform(resource_list& p_resources)
   static hal::stm32f1::input_pin input_pin('B', 4);
   p_resources.input_pin = &input_pin;
 
-  static hal::stm32f1::output_pin sda_output_pin('A', 0);
-  static hal::stm32f1::output_pin scl_output_pin('A', 15);
+  static hal::atomic_spin_lock adc_lock;
+  static hal::stm32f1::adc_peripheral_manager adc(
+    hal::stm32f1::adc_peripheral_manager::adc_selection::adc1, adc_lock);
+  static auto pb0 =
+    adc.acquire_channel(hal::stm32f1::adc_peripheral_manager::pins::pb0);
+  p_resources.adc = &pb0;
 
-  sda_output_pin.configure({
-    .resistor = hal::pin_resistor::pull_up,
-    .open_drain = true,
-  });
-  scl_output_pin.configure({
-    .resistor = hal::pin_resistor::pull_up,
-    .open_drain = true,
-  });
-  static hal::bit_bang_i2c::pins bit_bang_pins{
-    .sda = &sda_output_pin,
-    .scl = &scl_output_pin,
-  };
-  static hal::bit_bang_i2c bit_bang_i2c(bit_bang_pins, steady_clock);
+  static hal::stm32f1::output_pin sda_output_pin('B', 7);
+  static hal::stm32f1::output_pin scl_output_pin('B', 6);
+  static hal::bit_bang_i2c bit_bang_i2c(
+    hal::bit_bang_i2c::pins{
+      .sda = &sda_output_pin,
+      .scl = &scl_output_pin,
+    },
+    steady_clock);
   p_resources.i2c = &bit_bang_i2c;
 
   static hal::stm32f1::output_pin spi_chip_select('A', 4);

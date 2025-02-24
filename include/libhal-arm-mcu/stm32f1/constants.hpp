@@ -88,6 +88,7 @@ enum class peripheral : std::uint8_t
   cpu = beyond_bus + 0,
   system_timer = beyond_bus + 1,
   i2s = beyond_bus + 2,
+
 };
 
 /// List of interrupt request numbers for this platform

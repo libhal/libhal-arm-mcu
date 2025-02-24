@@ -31,7 +31,7 @@ void application(resource_list& p_map)
     for (unsigned iteration = 0; iteration <= 100; iteration += 1) {
       auto duty_cycle = static_cast<float>(iteration) / 100.0f;
       pwm.duty_cycle(duty_cycle);
-      hal::delay(clock, 100ms);
+      hal::delay(clock, 10ms);
     }
 
     pwm.duty_cycle(0.5f);
@@ -39,7 +39,7 @@ void application(resource_list& p_map)
     for (unsigned iteration = 0; iteration < 100; iteration++) {
       auto frequency = 100.0_Hz * (static_cast<float>(iteration) * 10);
       pwm.frequency(frequency);
-      hal::delay(clock, 100ms);
+      hal::delay(clock, 10ms);
     }
   }
 }

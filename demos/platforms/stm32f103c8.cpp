@@ -54,7 +54,6 @@ void initialize_platform(resource_list& p_resources)
   static hal::stm32f1::output_pin led('C', 13);
   p_resources.status_led = &led;
 
-  // pin G0 on the STM micromod is port B, pin 4
   static hal::stm32f1::input_pin input_pin('B', 4);
   p_resources.input_pin = &input_pin;
 

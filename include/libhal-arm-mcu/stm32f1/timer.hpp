@@ -14,6 +14,8 @@
 
 #pragma once
 
+#include <type_traits>
+
 #include <libhal-arm-mcu/stm32f1/clock.hpp>
 #include <libhal-arm-mcu/stm32f1/constants.hpp>
 #include <libhal-arm-mcu/stm32f1/pwm_wrapper.hpp>
@@ -21,7 +23,6 @@
 #include <libhal-util/enum.hpp>
 #include <libhal/pwm.hpp>
 #include <libhal/units.hpp>
-#include <type_traits>
 
 namespace hal::stm32f1 {
 /**
@@ -29,7 +30,6 @@ namespace hal::stm32f1 {
  *
  * These pins can perform any timer operation.
  */
-
 enum class pins : u8
 {
   pa0 = 0,
@@ -38,18 +38,26 @@ enum class pins : u8
   pa3 = 3,
   pa6 = 4,
   pa7 = 5,
-  pa8 = 6,
-  pa9 = 7,
-  pa10 = 8,
-  pa11 = 9,
-  pb0 = 10,
-  pb1 = 11,
+  pb0 = 6,
+  pb1 = 7,
+  pa8 = 8,
+  pa9 = 9,
+  pa10 = 10,
+  pa11 = 11,
   pb6 = 12,
   pb7 = 13,
   pb8 = 14,
   pb9 = 15,
+  pc6 = 16,
+  pc7 = 17,
+  pc8 = 18,
+  pc9 = 19,
+  pb14 = 20,
+  pb15 = 21,
 };
-/** @brief pins that are connected to the timer1 peripheral
+
+/**
+ * @brief pins that are connected to the timer1 peripheral
  */
 enum class timer1_pin : u8
 {
@@ -59,7 +67,8 @@ enum class timer1_pin : u8
   pa11 = hal::value(pins::pa11),
 };
 
-/** @brief pins that are connected to the timer2 peripheral
+/**
+ * @brief pins that are connected to the timer 2 and 5 and 9 peripheral
  */
 enum class timer2_pin : u8
 {
@@ -68,7 +77,9 @@ enum class timer2_pin : u8
   pa2 = hal::value(pins::pa2),
   pa3 = hal::value(pins::pa3),
 };
-/** @brief pins that are connected to the timer3 peripheral
+
+/**
+ * @brief pins that are connected to the timer3 peripheral
  */
 enum class timer3_pin : u8
 {
@@ -77,7 +88,9 @@ enum class timer3_pin : u8
   pb0 = hal::value(pins::pb0),
   pb1 = hal::value(pins::pb1),
 };
-/** @brief pins that are connected to the timer4 peripheral
+
+/**
+ * @brief pins that are connected to the timer4 peripheral
  */
 enum class timer4_pin : u8
 {
@@ -87,7 +100,81 @@ enum class timer4_pin : u8
   pb9 = hal::value(pins::pb9),
 };
 
-/** @brief Gets the pwm timer type at compile time.
+/**
+ * @brief pins that are connected to the timer 2, 5 and 9 peripheral
+ */
+enum class timer5_pin : u8
+{
+  pa0 = hal::value(pins::pa0),
+  pa1 = hal::value(pins::pa1),
+  pa2 = hal::value(pins::pa2),
+  pa3 = hal::value(pins::pa3),
+};
+
+/**
+ * @brief pins that are connected to the timer8 peripheral
+ */
+enum class timer8_pin : u8
+{
+  pc6 = hal::value(pins::pc6),
+  pc7 = hal::value(pins::pc7),
+  pc8 = hal::value(pins::pc8),
+  pc9 = hal::value(pins::pc9),
+};
+
+/**
+ * @brief pins that are connected to the timers 2, 5, 9 peripherals
+ */
+enum class timer9_pin : u8
+{
+  pa2 = hal::value(pins::pa2),
+  pa3 = hal::value(pins::pa3),
+};
+
+/**
+ * @brief pins that are connected to the timers 4 and 10 peripherals
+ */
+enum class timer10_pin : u8
+{
+  pb8 = hal::value(pins::pb8),
+};
+
+/**
+ * @brief pins that are connected to the timers 4 and 11 peripherals
+ */
+enum class timer11_pin : u8  // won't work
+{
+  pb9 = hal::value(pins::pb9),
+};
+
+/**
+ * @brief pins that are connected to the 12 peripheral
+ */
+enum class timer12_pin : u8
+{
+  pb14 = hal::value(pins::pb14),
+  pb15 = hal::value(pins::pb15),
+};
+
+/**
+ * @brief pins that are connected to the 13 and 3 peripheral
+ */
+enum class timer13_pin : u8
+{
+  pa6 = hal::value(pins::pa6),
+};
+
+/**
+ * @brief pins that are connected to the 14 and 3 peripheral.
+ *
+ */
+enum class timer14_pin : u8
+{
+  pa7 = hal::value(pins::pa7),
+};
+
+/**
+ * @brief Gets the pwm timer type at compile time.
  */
 template<peripheral id>
 consteval auto get_pwm_timer_type()
@@ -100,14 +187,26 @@ consteval auto get_pwm_timer_type()
     return std::type_identity<timer3_pin>();
   } else if constexpr (id == peripheral::timer4) {
     return std::type_identity<timer4_pin>();
+  } else if constexpr (id == peripheral::timer5) {
+    return std::type_identity<timer5_pin>();
+  } else if constexpr (id == peripheral::timer8) {
+    return std::type_identity<timer8_pin>();
+  } else if constexpr (id == peripheral::timer9) {
+    return std::type_identity<timer9_pin>();
+  } else if constexpr (id == peripheral::timer10) {
+    return std::type_identity<timer10_pin>();
+  } else if constexpr (id == peripheral::timer11) {
+    return std::type_identity<timer11_pin>();
+  } else if constexpr (id == peripheral::timer12) {
+    return std::type_identity<timer12_pin>();
+  } else if constexpr (id == peripheral::timer13) {
+    return std::type_identity<timer13_pin>();
+  } else if constexpr (id == peripheral::timer14) {
+    return std::type_identity<timer14_pin>();
   } else {
     return std::type_identity<void>();
   }
 }
-inline void* pwm_timer1 = reinterpret_cast<void*>(0x4001'2C00);
-inline void* pwm_timer2 = reinterpret_cast<void*>(0x4000'0000);
-inline void* pwm_timer3 = reinterpret_cast<void*>(0x4000'0400);
-inline void* pwm_timer4 = reinterpret_cast<void*>(0x4000'0800);
 
 /**
  * @brief This template class takes can do any timer operation for timers 1
@@ -124,8 +223,9 @@ template<peripheral select>
 class advanced_timer
 {
 public:
-  static_assert(select == peripheral::timer1,
-                "Only timer 1 is allowed as advanced timers for this driver");
+  static_assert(
+    select == peripheral::timer1 or select == peripheral::timer8,
+    "Only timer 1 or 8 is allowed as advanced timers for this driver");
   using pin_type = decltype(get_pwm_timer_type<select>())::type;
 
   advanced_timer(advanced_timer const& p_other) = delete;
@@ -146,15 +246,10 @@ public:
    * exists.
    */
   [[nodiscard]] hal::stm32f1::pwm_wrapper acquire_pwm(pin_type p_pin);
-
-private:
-  hal::stm32f1::pwm_wrapper acquire_pwm(pins p_pin,
-                                        void* p_reg,
-                                        hertz current_timer_frequency);
 };
 /**
  * @brief This template class takes can do any timer operation for timers 2
- * through 15.
+ * through 15 and excluding timers 6 and 7
  *
  * The peripheral ID is the template argument, in order to ensure that the pins
  * used correspond to the correct timer instantiation as well as the correct
@@ -164,10 +259,15 @@ template<peripheral select>
 class general_purpose_timer
 {
 public:
-  static_assert(select == peripheral::timer2 or select == peripheral::timer3 or
-                  select == peripheral::timer4,
-                "Only timers 2, 3, or 4 are allowed as general purpose timers "
-                "for this driver");
+  static_assert(
+    select == peripheral::timer2 or select == peripheral::timer3 or
+      select == peripheral::timer4 or select == peripheral::timer5 or
+      select == peripheral::timer9 or select == peripheral::timer10 or
+      select == peripheral::timer11 or select == peripheral::timer12 or
+      select == peripheral::timer13 or select == peripheral::timer14,
+    "Only timers 2, 3, 4,6,9,10,11,12,13 and 14 are allowed as general purpose "
+    "timers "
+    "for this driver");
   using pin_type = decltype(get_pwm_timer_type<select>())::type;
 
   general_purpose_timer(general_purpose_timer const& p_other) = delete;
@@ -190,11 +290,6 @@ public:
    * exists.
    */
   [[nodiscard]] hal::stm32f1::pwm_wrapper acquire_pwm(pin_type p_pin);
-
-private:
-  hal::stm32f1::pwm_wrapper acquire_pwm(pins p_pin,
-                                        void* p_reg,
-                                        hertz current_timer_frequency);
 };
 
 }  // namespace hal::stm32f1

@@ -1,75 +1,51 @@
 #pragma once
+
 #include <libhal-util/bit.hpp>
+#include <libhal/initializers.hpp>
 #include <libhal/pwm.hpp>
 #include <libhal/units.hpp>
+
 namespace hal::stm32f1 {
 class pwm_wrapper;
 }  // namespace hal::stm32f1
 
 namespace hal::stm32_generic {
-struct timer_reg_t
-{
-  /// Offset: 0x00 Control Register (R/W)
-  std::uint32_t volatile control_register;  // sets up timers
-  /// Offset: 0x04 Control Register 2 (R/W)
-  std::uint32_t volatile control_register_2;
-  /// Offset: 0x08 Peripheral Mode Control Register (R/W)
-  std::uint32_t volatile peripheral_control_register;
-  /// Offset: 0x0C DMA/Interrupt enable register (R/W)
-  std::uint32_t volatile interuupt_enable_register;
-  /// Offset: 0x10 Status Register register (R/W)
-  std::uint32_t volatile status_register;
-  /// Offset: 0x14 Event Generator Register register (R/W)
-  std::uint32_t volatile event_generator_register;
-  /// Offset: 0x18 Capture/Compare mode register (R/W)
-  std::uint32_t volatile capture_compare_mode_register;  // set up modes for
-                                                         // channel
-  /// Offset: 0x1C Capture/Compare mode register (R/W)
-  std::uint32_t volatile capture_compare_mode_register_2;
-  /// Offset: 0x20 Capture/Compare Enable register (R/W)
-  std::uint32_t volatile cc_enable_register;
-  /// Offset: 0x24 Counter (R/W)
-  std::uint32_t volatile counter_register;
-  /// Offset: 0x28 Prescalar (R/W)
-  std::uint32_t volatile prescale_register;
-  /// Offset: 0x2C Auto Reload Register (R/W)
-  std::uint32_t volatile auto_reload_register;  // affects frequency
-  /// Offset: 0x30 Repetition Counter Register (R/W)
-  std::uint32_t volatile repetition_counter_register;
-  /// Offset: 0x34 Capture Compare Register (R/W)
-  std::uint32_t volatile capture_compare_register;  // affects duty cycles
-  /// Offset: 0x38 Capture Compare Register (R/W)
-  std::uint32_t volatile capture_compare_register_2;
-  // Offset: 0x3C Capture Compare Register (R/W)
-  std::uint32_t volatile capture_compare_register_3;
-  // Offset: 0x40 Capture Compare Register (R/W)
-  std::uint32_t volatile capture_compare_register_4;
-  /// Offset: 0x44 Break and dead-time register
-  std::uint32_t volatile break_and_deadtime_register;
-  /// Offset: 0x48 DMA control register
-  std::uint32_t volatile dma_control_register;
-  /// Offset: 0x4C DMA address for full transfer
-  std::uint32_t volatile dma_address_register;
-};
 
 struct pwm_settings
 {
+  /// Each Timer Peripheral has 2-4 channels, and this number allows the driver
+  /// to use the correct output pin
   int channel;
+  /// PWM depends on the frequency of the timer peripheral it uses.
   hertz frequency;
+  /// Advanced timers work slightly different than general purpose ones.
   bool is_advanced;
 };
 
 /**
- * @brief This class cannot be called directly.
+ * @brief This class should not be constructed directly.
  *
- * The user must instantiate a General Purpose or Advanced timer class first,
+ * The user should instantiate a General Purpose or Advanced timer class first,
  * and then acquire a pwm pin through that class.
  */
 class pwm final : public hal::pwm
 {
 public:
   friend class hal::stm32f1::pwm_wrapper;
-
+  /**
+   * @brief Construct generic stm32 pwm driver
+   *
+   * Care should be taken in constructing this outside of a platform specific
+   * timer class. If both a platform specific timer class and this object exist,
+   * care must be taken to ensure that the drivers do not conflict with each
+   * others.
+   *
+   * @param p_reg is a void pointer that points to the beginning of a timer
+   * peripheral
+   * @param p_settings consist of channel number, frequency of the timer, and a
+   * boolean to indicate whether the timer is advanced or not.
+   */
+  pwm(hal::unsafe, void* p_reg, pwm_settings p_settings);
   pwm(pwm const& p_other) = delete;
   pwm& operator=(pwm const& p_other) = delete;
 
@@ -77,22 +53,19 @@ public:
 
 private:
   /**
-   * @brief The pwm constructor is private because the only way one should be
-   * able to access pwm is through the timer class
-   *
-   * @param pwm_pin is a void pointer that points to the beginning of a timer
-   * peripheral
-   * @param settings consist of channel number, frequency of the timer, and a
-   * boolean to indicate whether the timer is advanced or not.
+   * @brief This constructor is constructed in pwm_wrapper.
+   * The purpose of this is to send the settings through the initialize function
+   * instead, because the channel calculation and pin configuration is done in
+   * the contructor and the regular constructor cannot be initialized through
+   * the initializer list.
    */
-  pwm(void* p_reg, pwm_settings p_settings);
-
+  pwm() = default;
   void driver_frequency(hertz p_frequency) override;
   void driver_duty_cycle(float p_duty_cycle) override;
+  void initialize(void* p_reg, pwm_settings p_settings);
 
-  stm32_generic::timer_reg_t* m_reg;
-  uint32_t volatile* m_compare_register_addr;
-  int m_channel;
+  void* m_reg;
+  u32 volatile* m_compare_register_addr;
   hertz m_clock_freq;
 };
 }  // namespace hal::stm32_generic

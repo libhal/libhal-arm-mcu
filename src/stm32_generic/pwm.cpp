@@ -1,5 +1,7 @@
 #include <cmath>
 
+#include <utility>
+
 #include <libhal-arm-mcu/stm32_generic/pwm.hpp>
 #include <libhal-arm-mcu/stm32f1/clock.hpp>
 #include <libhal-arm-mcu/stm32f1/constants.hpp>
@@ -9,28 +11,73 @@
 #include <libhal/error.hpp>
 
 namespace hal::stm32_generic {
-
-namespace {
-
-[[nodiscard]] float get_duty_cycle(stm32_generic::timer_reg_t* p_reg,
-                                   uint32_t volatile* compare_register)
+struct timer_reg_t
 {
-  // ccr / arr
-
+  /// Offset: 0x00 Control Register (R/W)
+  u32 volatile control_register;  // sets up timers
+  /// Offset: 0x04 Control Register 2 (R/W)
+  u32 volatile control_register_2;
+  /// Offset: 0x08 Peripheral Mode Control Register (R/W)
+  u32 volatile peripheral_control_register;
+  /// Offset: 0x0C DMA/Interrupt enable register (R/W)
+  u32 volatile interuupt_enable_register;
+  /// Offset: 0x10 Status Register register (R/W)
+  u32 volatile status_register;
+  /// Offset: 0x14 Event Generator Register register (R/W)
+  u32 volatile event_generator_register;
+  /// Offset: 0x18 Capture/Compare mode register (R/W)
+  u32 volatile capture_compare_mode_register;  // set up modes for
+                                               // channel
+  /// Offset: 0x1C Capture/Compare mode register (R/W)
+  u32 volatile capture_compare_mode_register_2;
+  /// Offset: 0x20 Capture/Compare Enable register (R/W)
+  u32 volatile cc_enable_register;
+  /// Offset: 0x24 Counter (R/W)
+  u32 volatile counter_register;
+  /// Offset: 0x28 Prescalar (R/W)
+  u32 volatile prescale_register;
+  /// Offset: 0x2C Auto Reload Register (R/W)
+  u32 volatile auto_reload_register;  // affects frequency
+  /// Offset: 0x30 Repetition Counter Register (R/W)
+  u32 volatile repetition_counter_register;
+  /// Offset: 0x34 Capture Compare Register (R/W)
+  u32 volatile capture_compare_register;  // affects duty cycles
+  /// Offset: 0x38 Capture Compare Register (R/W)
+  u32 volatile capture_compare_register_2;
+  // Offset: 0x3C Capture Compare Register (R/W)
+  u32 volatile capture_compare_register_3;
+  // Offset: 0x40 Capture Compare Register (R/W)
+  u32 volatile capture_compare_register_4;
+  /// Offset: 0x44 Break and dead-time register
+  u32 volatile break_and_deadtime_register;
+  /// Offset: 0x48 DMA control register
+  u32 volatile dma_control_register;
+  /// Offset: 0x4C DMA address for full transfer
+  u32 volatile dma_address_register;
+};
+namespace {
+[[nodiscard]] timer_reg_t* get_timer_reg(void* p_reg)
+{
+  return reinterpret_cast<timer_reg_t*>(p_reg);
+}
+[[nodiscard]] float get_duty_cycle(stm32_generic::timer_reg_t* p_reg,
+                                   u32 volatile* compare_register)
+{
+  // The duty cycle can be calculated by getting the compare register value and
+  // dividing by the reload value
   static constexpr auto first_nonreserved_half = bit_mask::from<0, 15>();
 
-  std::uint16_t compare_value =
+  u16 compare_value =
     hal::bit_extract<first_nonreserved_half>(*compare_register);
 
-  std::uint16_t arr_value =
+  u16 arr_value =
     hal::bit_extract<first_nonreserved_half>(p_reg->auto_reload_register);
 
   return (static_cast<float>(compare_value) / static_cast<float>(arr_value));
 }
-void setup_channel(timer_reg_t* p_reg, uint8_t p_channel, bool p_is_advanced)
+void setup_channel(timer_reg_t* p_reg, u8 p_channel, bool p_is_advanced)
 {
-
-  uint8_t const start_pos = (p_channel - 1) * 4;
+  u8 const start_pos = (p_channel - 1) * 4;
 
   auto const cc_enable = bit_mask::from(start_pos);
   auto const cc_polarity = bit_mask::from(start_pos + 1);
@@ -45,12 +92,9 @@ void setup_channel(timer_reg_t* p_reg, uint8_t p_channel, bool p_is_advanced)
       .clear(ossr)
       .set(main_output_enable);  // complementary channel stuff
   }
-
-  return;
 }
-uint32_t volatile* setup(timer_reg_t* p_reg, int p_channel, bool p_is_advanced)
+u32 volatile* setup(timer_reg_t* p_reg, int p_channel, bool p_is_advanced)
 {
-
   static constexpr auto clock_division = bit_mask::from<8, 9>();
   static constexpr auto edge_aligned_mode = bit_mask::from<5, 6>();
   static constexpr auto direction = bit_mask::from<4>();
@@ -67,17 +111,17 @@ uint32_t volatile* setup(timer_reg_t* p_reg, int p_channel, bool p_is_advanced)
   static constexpr auto ug_bit = bit_mask::from<0>();
 
   // The PWM_MODE 1 makes it such that output will be high when Counter < CCR
-  auto const pwm_mode_1 = 0b110U;
+  constexpr auto pwm_mode_1 = 0b110U;
 
-  auto const set_output = 0b00U;
+  constexpr auto set_output = 0b00U;
 
   bit_modify(p_reg->control_register)
     .insert<clock_division>(0b00U)
     .insert<edge_aligned_mode>(0b00U)
     .clear(direction);
-  uint32_t volatile* compare_register = nullptr;
+  u32 volatile* compare_register = nullptr;
   switch (p_channel) {
-    case (1):
+    case 1:
       // Preload enable must be done for corresponding OCxPE
       bit_modify(p_reg->capture_compare_mode_register)
         .insert<output_compare_odd>(pwm_mode_1)
@@ -86,7 +130,7 @@ uint32_t volatile* setup(timer_reg_t* p_reg, int p_channel, bool p_is_advanced)
       compare_register = &p_reg->capture_compare_register;
       break;
 
-    case (2):
+    case 2:
       bit_modify(p_reg->capture_compare_mode_register)
         .insert<output_compare_even>(pwm_mode_1)
         .insert<channel_output_select_even>(set_output)
@@ -94,7 +138,7 @@ uint32_t volatile* setup(timer_reg_t* p_reg, int p_channel, bool p_is_advanced)
       compare_register = &p_reg->capture_compare_register_2;
       break;
 
-    case (3):
+    case 3:
       bit_modify(p_reg->capture_compare_mode_register_2)
         .insert<output_compare_odd>(pwm_mode_1)
         .insert<channel_output_select_odd>(set_output)
@@ -102,7 +146,7 @@ uint32_t volatile* setup(timer_reg_t* p_reg, int p_channel, bool p_is_advanced)
       compare_register = &p_reg->capture_compare_register_3;
       break;
 
-    case (4):
+    case 4:
       bit_modify(p_reg->capture_compare_mode_register_2)
         .insert<output_compare_even>(pwm_mode_1)
         .insert<channel_output_select_even>(set_output)
@@ -110,8 +154,7 @@ uint32_t volatile* setup(timer_reg_t* p_reg, int p_channel, bool p_is_advanced)
       compare_register = &p_reg->capture_compare_register_4;
       break;
     default:
-      compare_register = nullptr;
-      break;
+      std::unreachable();
   }
 
   setup_channel(p_reg, p_channel, p_is_advanced);
@@ -135,20 +178,37 @@ uint32_t volatile* setup(timer_reg_t* p_reg, int p_channel, bool p_is_advanced)
   p_reg->auto_reload_register = 0xFFFF;
   return compare_register;
 }
-
+u32 volatile* common_setup(pwm_settings p_settings, timer_reg_t* p_reg)
+{
+  if (p_settings.channel <= 4 && p_settings.channel > 0) {
+    u32 volatile* p_compare_register_addr =
+      setup(p_reg, p_settings.channel, p_settings.is_advanced);
+    return p_compare_register_addr;
+  } else {
+    hal::safe_throw(hal::operation_not_supported(nullptr));
+  }
+}
 }  // namespace
 
-pwm::pwm(void* p_reg, pwm_settings p_settings)
-  : m_reg(reinterpret_cast<timer_reg_t*>(p_reg))
-  , m_channel(p_settings.channel)
+pwm::pwm(hal::unsafe, void* p_reg, pwm_settings p_settings)
+  : m_reg(p_reg)
   , m_clock_freq(p_settings.frequency)
 {
-  m_compare_register_addr = setup(m_reg, m_channel, p_settings.is_advanced);
+  timer_reg_t* reg = get_timer_reg(m_reg);
+  m_compare_register_addr = common_setup(p_settings, reg);
+}
+void pwm::initialize(void* p_reg, pwm_settings p_settings)
+{
+  m_reg = p_reg;
+  m_clock_freq = p_settings.frequency;
+  timer_reg_t* reg = get_timer_reg(m_reg);
+  m_compare_register_addr = common_setup(p_settings, reg);
 }
 void pwm::driver_frequency(hertz p_frequency)
 {
-  auto const previous_duty_cycle =
-    get_duty_cycle(m_reg, m_compare_register_addr);
+  timer_reg_t* reg = get_timer_reg(m_reg);
+
+  auto const previous_duty_cycle = get_duty_cycle(reg, m_compare_register_addr);
 
   if (p_frequency >= m_clock_freq) {
     safe_throw(hal::operation_not_supported(this));
@@ -157,8 +217,8 @@ void pwm::driver_frequency(hertz p_frequency)
   auto const possible_prescaler_value = static_cast<float>(
     m_clock_freq / (p_frequency * std::numeric_limits<u16>::max()));
 
-  std::uint16_t prescale = 0;
-  std::uint16_t autoreload = 0xFFFF;
+  u16 prescale = 0;
+  u16 autoreload = 0xFFFF;
 
   if (possible_prescaler_value > 1) {
     // If the frequency is too low, the prescalar will be greater, which will
@@ -166,10 +226,10 @@ void pwm::driver_frequency(hertz p_frequency)
     prescale = std::floor(possible_prescaler_value);
   } else {
     // The frequency is too high, so the ARR value needs to be reduced.
-    autoreload = static_cast<std::uint16_t>(m_clock_freq / p_frequency);
+    autoreload = static_cast<u16>(m_clock_freq / p_frequency);
   }
-  m_reg->auto_reload_register = autoreload;
-  m_reg->prescale_register = prescale;
+  reg->auto_reload_register = autoreload;
+  reg->prescale_register = prescale;
 
   // Update duty cycle according to new frequency
   driver_duty_cycle(previous_duty_cycle);
@@ -179,8 +239,10 @@ void pwm::driver_duty_cycle(float p_duty_cycle)
   // the output changes from high to low when the counter > ccr, therefore, we
   // simply make the CCR equal to the required duty cycle fraction of the ARR
   // value.
-  auto desired_ccr_value = static_cast<std::uint16_t>(
-    static_cast<float>(m_reg->auto_reload_register) * p_duty_cycle);
+  timer_reg_t* reg = get_timer_reg(m_reg);
+
+  auto desired_ccr_value = static_cast<u16>(
+    static_cast<float>(reg->auto_reload_register) * p_duty_cycle);
 
   *m_compare_register_addr = desired_ccr_value;
 }

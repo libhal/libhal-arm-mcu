@@ -1,5 +1,6 @@
 #include <cmath>
 
+#include <limits>
 #include <utility>
 
 #include <libhal-arm-mcu/stm32_generic/pwm.hpp>
@@ -60,29 +61,15 @@ namespace {
 {
   return reinterpret_cast<timer_reg_t*>(p_reg);
 }
-[[nodiscard]] float get_duty_cycle(stm32_generic::timer_reg_t* p_reg,
-                                   u32 volatile* compare_register)
-{
-  // The duty cycle can be calculated by getting the compare register value and
-  // dividing by the reload value
-  static constexpr auto first_nonreserved_half = bit_mask::from<0, 15>();
 
-  u16 compare_value =
-    hal::bit_extract<first_nonreserved_half>(*compare_register);
-
-  u16 arr_value =
-    hal::bit_extract<first_nonreserved_half>(p_reg->auto_reload_register);
-
-  return (static_cast<float>(compare_value) / static_cast<float>(arr_value));
-}
 void setup_channel(timer_reg_t* p_reg, u8 p_channel, bool p_is_advanced)
 {
-  u8 const start_pos = (p_channel - 1) * 4;
-
-  auto const cc_enable = bit_mask::from(start_pos);
-  auto const cc_polarity = bit_mask::from(start_pos + 1);
   static constexpr auto main_output_enable = bit_mask::from<15>();
   static constexpr auto ossr = bit_mask::from<11>();
+
+  u8 const start_pos = (p_channel - 1) * 4;
+  auto const cc_enable = bit_mask::from(start_pos);
+  auto const cc_polarity = bit_mask::from(start_pos + 1);
 
   bit_modify(p_reg->cc_enable_register).set(cc_enable);
   bit_modify(p_reg->cc_enable_register).clear(cc_polarity);
@@ -93,6 +80,7 @@ void setup_channel(timer_reg_t* p_reg, u8 p_channel, bool p_is_advanced)
       .set(main_output_enable);  // complementary channel stuff
   }
 }
+
 u32 volatile* setup(timer_reg_t* p_reg, int p_channel, bool p_is_advanced)
 {
   static constexpr auto clock_division = bit_mask::from<8, 9>();
@@ -112,7 +100,6 @@ u32 volatile* setup(timer_reg_t* p_reg, int p_channel, bool p_is_advanced)
 
   // The PWM_MODE 1 makes it such that output will be high when Counter < CCR
   constexpr auto pwm_mode_1 = 0b110U;
-
   constexpr auto set_output = 0b00U;
 
   bit_modify(p_reg->control_register)
@@ -176,11 +163,13 @@ u32 volatile* setup(timer_reg_t* p_reg, int p_channel, bool p_is_advanced)
   // it starts counting again. ARR can be increased on decreased
   // depending on frequency.
   p_reg->auto_reload_register = 0xFFFF;
+
   return compare_register;
 }
-u32 volatile* common_setup(pwm_settings p_settings, timer_reg_t* p_reg)
+
+u32 volatile* common_setup(pwm_channel_info p_settings, timer_reg_t* p_reg)
 {
-  if (p_settings.channel <= 4 && p_settings.channel > 0) {
+  if (p_settings.channel <= 4) {
     u32 volatile* p_compare_register_addr =
       setup(p_reg, p_settings.channel, p_settings.is_advanced);
     return p_compare_register_addr;
@@ -190,61 +179,113 @@ u32 volatile* common_setup(pwm_settings p_settings, timer_reg_t* p_reg)
 }
 }  // namespace
 
-pwm::pwm(hal::unsafe, void* p_reg, pwm_settings p_settings)
+pwm::pwm(unsafe, void* p_reg, pwm_channel_info p_settings)
   : m_reg(p_reg)
-  , m_clock_freq(p_settings.frequency)
 {
   timer_reg_t* reg = get_timer_reg(m_reg);
   m_compare_register_addr = common_setup(p_settings, reg);
 }
-void pwm::initialize(void* p_reg, pwm_settings p_settings)
+
+void pwm::initialize(unsafe, void* p_reg, pwm_channel_info p_settings)
 {
   m_reg = p_reg;
-  m_clock_freq = p_settings.frequency;
   timer_reg_t* reg = get_timer_reg(m_reg);
   m_compare_register_addr = common_setup(p_settings, reg);
 }
-void pwm::driver_frequency(hertz p_frequency)
+
+u32 pwm::frequency(u32 p_input_clock_frequency)
 {
   timer_reg_t* reg = get_timer_reg(m_reg);
 
-  auto const previous_duty_cycle = get_duty_cycle(reg, m_compare_register_addr);
+  auto const prescaled_clock = p_input_clock_frequency / reg->prescale_register;
+  auto const final_frequency = prescaled_clock / reg->auto_reload_register;
 
-  if (p_frequency >= m_clock_freq) {
-    safe_throw(hal::operation_not_supported(this));
-  }
-
-  auto const possible_prescaler_value = static_cast<float>(
-    m_clock_freq / (p_frequency * std::numeric_limits<u16>::max()));
-
-  u16 prescale = 0;
-  u16 autoreload = 0xFFFF;
-
-  if (possible_prescaler_value > 1) {
-    // If the frequency is too low, the prescalar will be greater, which will
-    // take more time to reach the ARR value
-    prescale = std::floor(possible_prescaler_value);
-  } else {
-    // The frequency is too high, so the ARR value needs to be reduced.
-    autoreload = static_cast<u16>(m_clock_freq / p_frequency);
-  }
-  reg->auto_reload_register = autoreload;
-  reg->prescale_register = prescale;
-
-  // Update duty cycle according to new frequency
-  driver_duty_cycle(previous_duty_cycle);
+  return final_frequency;
 }
-void pwm::driver_duty_cycle(float p_duty_cycle)
+
+void pwm::duty_cycle(u16 p_duty_cycle)
 {
   // the output changes from high to low when the counter > ccr, therefore, we
   // simply make the CCR equal to the required duty cycle fraction of the ARR
   // value.
   timer_reg_t* reg = get_timer_reg(m_reg);
 
-  auto desired_ccr_value = static_cast<u16>(
-    static_cast<float>(reg->auto_reload_register) * p_duty_cycle);
+  auto const reload_value = static_cast<u16>(reg->auto_reload_register);
+  auto const upscaled_value = reload_value * p_duty_cycle;
+  auto const normalized_ccr_value =
+    upscaled_value / std::numeric_limits<u16>::max();
 
-  *m_compare_register_addr = desired_ccr_value;
+  *m_compare_register_addr = normalized_ccr_value;
 }
 
+pwm_group_frequency::pwm_group_frequency(hal::unsafe, void* p_reg)
+  : m_reg(p_reg)
+{
+}
+
+void pwm_group_frequency::set_group_frequency(pwm_timer_frequency p_frequency)
+{
+  timer_reg_t* reg = get_timer_reg(m_reg);
+
+  // Calculate new frequency
+  auto const [frequency, clock_frequency] = p_frequency;
+  if (frequency >= clock_frequency) {
+    safe_throw(hal::operation_not_supported(this));
+  }
+
+  auto const possible_prescaler_value =
+    (clock_frequency / (frequency * std::numeric_limits<u16>::max()));
+
+  u16 prescale = 0;
+  u16 auto_reload = 0xFFFF;
+
+  if (possible_prescaler_value > 0) {
+    // If the frequency is low enough, the prescale can be increased, which
+    // will take more time to reach the ARR value
+    prescale = possible_prescaler_value;
+  } else {
+    // The frequency is too high, so the ARR value needs to be reduced.
+    auto_reload = static_cast<u16>(clock_frequency / frequency);
+  }
+
+  // ===========================================================================
+  // Updating all PWM duty cycles
+  // ===========================================================================
+
+  // NOTE: The capture_compare_register only contain 16-bits of information so
+  // we can legally cast them to u16 and lose no information.
+  auto const capture1 = static_cast<u16>(reg->capture_compare_register);
+  auto const capture2 = static_cast<u16>(reg->capture_compare_register_2);
+  auto const capture3 = static_cast<u16>(reg->capture_compare_register_3);
+  auto const capture4 = static_cast<u16>(reg->capture_compare_register_4);
+  auto const previous_auto_reload = reg->auto_reload_register;
+
+  // Duty_new = (Duty_prev / AutoReload_prev) * AutoReload_new;
+  //
+  // Can also be written as:
+  //
+  // Duty_new = (Duty_prev * AutoReload_new) / AutoReload_prev;
+  //
+  // We choose the 2nd option because we can perform the operations with
+  // integers without loss of precision.
+
+  auto const new_capture1_upscaled = static_cast<u32>(capture1 * auto_reload);
+  auto const new_capture2_upscaled = static_cast<u32>(capture2 * auto_reload);
+  auto const new_capture3_upscaled = static_cast<u32>(capture3 * auto_reload);
+  auto const new_capture4_upscaled = static_cast<u32>(capture4 * auto_reload);
+
+  auto const new_capture1 = (new_capture1_upscaled / previous_auto_reload);
+  auto const new_capture2 = (new_capture2_upscaled / previous_auto_reload);
+  auto const new_capture3 = (new_capture3_upscaled / previous_auto_reload);
+  auto const new_capture4 = (new_capture4_upscaled / previous_auto_reload);
+
+  reg->capture_compare_register = new_capture1;
+  reg->capture_compare_register_2 = new_capture2;
+  reg->capture_compare_register_3 = new_capture3;
+  reg->capture_compare_register_4 = new_capture4;
+
+  // Set the prescale & auto reload register
+  reg->prescale_register = prescale;
+  reg->auto_reload_register = auto_reload;
+}
 }  // namespace hal::stm32_generic

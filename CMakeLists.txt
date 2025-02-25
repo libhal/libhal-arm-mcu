@@ -50,22 +50,15 @@ libhal_test_and_make_library(
   src/stm32_generic/uart.cpp
 
   # stm32f1
-  src/stm32f1/can_reg.hpp
   src/stm32f1/can.cpp
   src/stm32f1/clock.cpp
-  src/stm32f1/dma.hpp
-  src/stm32f1/flash_reg.hpp
   src/stm32f1/input_pin.cpp
   src/stm32f1/interrupt.cpp
   src/stm32f1/output_pin.cpp
   src/stm32f1/pin.cpp
-  src/stm32f1/pin.hpp
   src/stm32f1/power.cpp
-  src/stm32f1/power.hpp
   src/stm32f1/pwm_wrapper.cpp
-  src/stm32f1/rcc_reg.hpp
   src/stm32f1/timer.cpp
-  src/stm32f1/uart_reg.hpp
   src/stm32f1/uart.cpp
   src/stm32f1/spi.cpp
   src/stm32f1/adc.cpp

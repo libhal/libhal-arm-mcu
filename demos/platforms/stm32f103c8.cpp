@@ -21,6 +21,7 @@
 #include <libhal-arm-mcu/stm32f1/input_pin.hpp>
 #include <libhal-arm-mcu/stm32f1/output_pin.hpp>
 #include <libhal-arm-mcu/stm32f1/spi.hpp>
+#include <libhal-arm-mcu/stm32f1/timer.hpp>
 #include <libhal-arm-mcu/stm32f1/uart.hpp>
 #include <libhal-arm-mcu/system_control.hpp>
 #include <libhal-util/atomic_spin_lock.hpp>
@@ -29,11 +30,13 @@
 #include <libhal-util/inert_drivers/inert_adc.hpp>
 #include <libhal-util/serial.hpp>
 #include <libhal-util/steady_clock.hpp>
+#include <libhal/pwm.hpp>
 #include <libhal/units.hpp>
 
 #include <resource_list.hpp>
 
 constexpr bool use_bit_bang_spi = false;
+constexpr bool use_libhal_4_pwm = false;
 
 void initialize_platform(resource_list& p_resources)
 {
@@ -106,6 +109,24 @@ void initialize_platform(resource_list& p_resources)
     spi = &spi1;
   }
   p_resources.spi = spi;
+
+  hal::pwm16_channel* pwm_channel = nullptr;
+  hal::pwm_group_manager* pwm_frequency = nullptr;
+
+  if constexpr (use_libhal_4_pwm) {
+    // Use old PWM
+  } else {
+    static hal::stm32f1::general_purpose_timer<hal::stm32f1::peripheral::timer2>
+      timer;
+    static auto timer_pwm_channel =
+      timer.acquire_pwm16_channel(hal::stm32f1::timer2_pin::pa1);
+    pwm_channel = &timer_pwm_channel;
+    static auto timer1_pwm_frequency = timer.acquire_pwm_group_frequency();
+    pwm_frequency = &timer1_pwm_frequency;
+  }
+
+  p_resources.pwm_channel = pwm_channel;
+  p_resources.pwm_frequency = pwm_frequency;
 
   try {
     using namespace std::chrono_literals;

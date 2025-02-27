@@ -197,7 +197,13 @@ u32 pwm::frequency(u32 p_input_clock_frequency)
 {
   timer_reg_t* reg = get_timer_reg(m_reg);
 
-  auto const prescaled_clock = p_input_clock_frequency / reg->prescale_register;
+  // See page 419 in RM0008.pdf to find this equation:
+  //
+  //   Bits 15:0 PSC[15:0]: Prescaler value
+  //   The counter clock frequency CK_CNT is equal to fCK_PSC / (PSC[15:0] + 1)
+  //
+  auto const prescale_value = reg->prescale_register + 1;
+  auto const prescaled_clock = p_input_clock_frequency / prescale_value;
   auto const final_frequency = prescaled_clock / reg->auto_reload_register;
 
   return final_frequency;

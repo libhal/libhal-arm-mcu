@@ -31,15 +31,15 @@ void application(resource_list& p_map)
     for (unsigned iteration = 0; iteration <= 100; iteration += 1) {
       auto duty_cycle = static_cast<float>(iteration) / 100.0f;
       pwm.duty_cycle(duty_cycle);
-      hal::delay(clock, 10ms);
+      hal::delay(clock, 100ms);
     }
 
     pwm.duty_cycle(0.5f);
 
-    for (unsigned iteration = 0; iteration < 100; iteration++) {
-      auto frequency = 100.0_Hz * (static_cast<float>(iteration) * 10);
+    for (unsigned iteration = 1; iteration < 20; iteration++) {
+      auto const frequency = 100.0_Hz * iteration;
       pwm.frequency(frequency);
-      hal::delay(clock, 10ms);
+      hal::delay(clock, 100ms);
     }
   }
 }

@@ -14,7 +14,7 @@ namespace {
 /**
  * @brief Static variable to track PWM availability.
  */
-hal::u32 m_availability;
+hal::u32 availability;
 }  // namespace
 
 namespace hal::stm32f1 {
@@ -132,8 +132,8 @@ pwm::pwm(void* p_reg,
                    });
 
   auto const pwm_pin_mask = bit_mask::from(m_pin_num);
-  if (not hal::bit_extract(pwm_pin_mask, m_availability)) {
-    bit_modify(m_availability).set(pwm_pin_mask);
+  if (not hal::bit_extract(pwm_pin_mask, availability)) {
+    bit_modify(availability).set(pwm_pin_mask);
   } else {
     hal::safe_throw(hal::device_or_resource_busy(nullptr));
   }
@@ -155,7 +155,7 @@ void pwm::driver_duty_cycle(float p_duty_cycle)
 pwm::~pwm()
 {
   auto const pwm_pin_mask = bit_mask::from(m_pin_num);
-  bit_modify(m_availability).clear(pwm_pin_mask);
+  bit_modify(availability).clear(pwm_pin_mask);
 }
 
 pwm16_channel::pwm16_channel(void* p_reg,
@@ -271,8 +271,8 @@ pwm16_channel::pwm16_channel(void* p_reg,
                    });
 
   auto const pwm_pin_mask = bit_mask::from(m_pin_num);
-  if (not hal::bit_extract(pwm_pin_mask, m_availability)) {
-    bit_modify(m_availability).set(pwm_pin_mask);
+  if (not hal::bit_extract(pwm_pin_mask, availability)) {
+    bit_modify(availability).set(pwm_pin_mask);
   } else {
     hal::safe_throw(hal::device_or_resource_busy(nullptr));
   }
@@ -291,7 +291,7 @@ void pwm16_channel::driver_duty_cycle(u16 p_duty_cycle)
 pwm16_channel::~pwm16_channel()
 {
   auto const pwm_pin_mask = bit_mask::from(m_pin_num);
-  bit_modify(m_availability).clear(pwm_pin_mask);
+  bit_modify(availability).clear(pwm_pin_mask);
 }
 
 pwm_group_frequency::pwm_group_frequency(void* p_reg,

@@ -57,7 +57,7 @@ libhal_test_and_make_library(
   src/stm32f1/output_pin.cpp
   src/stm32f1/pin.cpp
   src/stm32f1/power.cpp
-  src/stm32f1/pwm_wrapper.cpp
+  src/stm32f1/pwm.cpp
   src/stm32f1/timer.cpp
   src/stm32f1/uart.cpp
   src/stm32f1/spi.cpp

@@ -222,6 +222,9 @@ template<peripheral select>
 class advanced_timer
 {
 public:
+  template<peripheral>
+  friend class advanced_timer;
+
   static_assert(
     select == peripheral::timer1 or select == peripheral::timer8,
     "Only timer 1 or 8 is allowed as advanced timers for this driver.");
@@ -232,7 +235,13 @@ public:
   advanced_timer(advanced_timer&& p_other) noexcept = delete;
   advanced_timer& operator=(advanced_timer&& p_other) noexcept = delete;
 
-  advanced_timer();
+  advanced_timer()
+  {
+    // Use advanced_timer<peripheral::timer1>::setup as the only instance of the
+    // setup function, allowing this constructor instance to be inlined to a
+    // single call to setup. Otherwise, each
+    advanced_timer<peripheral::timer1>::setup(hal::unsafe{}, select);
+  }
 
   /**
    * @brief Acquire a PWM channel from this timer
@@ -269,6 +278,9 @@ public:
    *
    */
   [[nodiscard]] hal::stm32f1::pwm_group_frequency acquire_pwm_group_frequency();
+
+private:
+  static void setup(hal::unsafe, peripheral p_select);
 };
 /**
  * @brief This template class takes can do any timer operation for timers 2
@@ -298,7 +310,13 @@ public:
   general_purpose_timer(general_purpose_timer&& p_other) noexcept = delete;
   general_purpose_timer& operator=(general_purpose_timer&& p_other) noexcept =
     delete;
-  general_purpose_timer();
+
+  static void setup(hal::unsafe, peripheral p_select);
+
+  general_purpose_timer()
+  {
+    general_purpose_timer<peripheral::timer2>::setup(hal::unsafe{}, select);
+  }
 
   /**
    * @brief Acquire a PWM channel from this timer

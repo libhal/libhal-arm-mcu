@@ -70,15 +70,15 @@ void* peripheral_to_general_register()
 }  // namespace
 
 template<peripheral select>
-advanced_timer<select>::advanced_timer()
+void advanced_timer<select>::setup(hal::unsafe, peripheral p_select)
 {
-  power_on(select);
+  power_on(p_select);
 }
 
 template<peripheral select>
-general_purpose_timer<select>::general_purpose_timer()
+void general_purpose_timer<select>::setup(hal::unsafe, peripheral p_select)
 {
-  power_on(select);
+  power_on(p_select);
 }
 
 template<peripheral select>

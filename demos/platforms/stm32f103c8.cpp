@@ -116,13 +116,31 @@ void initialize_platform(resource_list& p_resources)
   if constexpr (use_libhal_4_pwm) {
     // Use old PWM
   } else {
-    static hal::stm32f1::general_purpose_timer<hal::stm32f1::peripheral::timer2>
-      timer;
+    static hal::stm32f1::advanced_timer<hal::stm32f1::peripheral::timer1> timer;
+
     static auto timer_pwm_channel =
-      timer.acquire_pwm16_channel(hal::stm32f1::timer2_pin::pa1);
+      timer.acquire_pwm16_channel(hal::stm32f1::timer1_pin::pa8);
     pwm_channel = &timer_pwm_channel;
+
     static auto timer1_pwm_frequency = timer.acquire_pwm_group_frequency();
     pwm_frequency = &timer1_pwm_frequency;
+
+    static hal::stm32f1::general_purpose_timer<hal::stm32f1::peripheral::timer3>
+      timer3;
+
+    static auto timer_pwm_channel2 =
+      timer3.acquire_pwm16_channel(hal::stm32f1::timer3_pin::pa6);
+    pwm_channel = &timer_pwm_channel2;
+
+    static auto timer1_pwm_frequency2 = timer.acquire_pwm_group_frequency();
+    pwm_frequency = &timer1_pwm_frequency2;
+
+    static auto timer_pwm_channel3 =
+      timer3.acquire_pwm16_channel(hal::stm32f1::timer3_pin::pa6);
+    pwm_channel = &timer_pwm_channel3;
+
+    static auto timer1_pwm_frequency3 = timer.acquire_pwm_group_frequency();
+    pwm_frequency = &timer1_pwm_frequency3;
   }
 
   p_resources.pwm_channel = pwm_channel;

@@ -225,7 +225,7 @@ class advanced_timer
 public:
   static_assert(
     select == peripheral::timer1 or select == peripheral::timer8,
-    "Only timer 1 or 8 is allowed as advanced timers for this driver");
+    "Only timer 1 or 8 is allowed as advanced timers for this driver.");
   using pin_type = decltype(get_pwm_timer_type<select>())::type;
 
   advanced_timer(advanced_timer const& p_other) = delete;
@@ -233,7 +233,24 @@ public:
   advanced_timer(advanced_timer&& p_other) noexcept = delete;
   advanced_timer& operator=(advanced_timer&& p_other) noexcept = delete;
 
-  advanced_timer() = default;
+  advanced_timer();
+
+  /**
+   * @brief Acquire a PWM channel from this timer
+   * @deprecated Use the `acquire_pwm16_channel` and
+   * `acquire_pwm_group_frequency` functions instead. This function will be
+   * removed in libhal 5.
+   *
+   * Only one PWM channel is allowed to exist per timer.
+   * If a PWM channel object is destroyed, then another PWM channel can be
+   * acquired from this timer.
+   *
+   * @throws hal::device_or_resource_busy - If the application attempts to
+   * acquire a pwm channel while a pwm channel bound to this timer already
+   * exists.
+   */
+  [[nodiscard]] hal::stm32f1::pwm acquire_pwm(pin_type p_pin);
+
   /**
    * @brief Acquire a PWM channel from this timer
    *
@@ -245,7 +262,14 @@ public:
    * acquire a pwm channel while a pwm channel bound to this timer already
    * exists.
    */
-  [[nodiscard]] hal::stm32f1::pwm_wrapper acquire_pwm(pin_type p_pin);
+  [[nodiscard]] hal::stm32f1::pwm16_channel acquire_pwm16_channel(
+    pin_type p_pin);
+
+  /**
+   * @brief Acquire a PWM group frequency driver
+   *
+   */
+  [[nodiscard]] hal::stm32f1::pwm_group_frequency acquire_pwm_group_frequency();
 };
 /**
  * @brief This template class takes can do any timer operation for timers 2
@@ -253,7 +277,7 @@ public:
  *
  * The peripheral ID is the template argument, in order to ensure that the pins
  * used correspond to the correct timer instantiation as well as the correct
- * coresponding pins at compile time.
+ * corresponding pins at compile time.
  */
 template<peripheral select>
 class general_purpose_timer
@@ -265,9 +289,8 @@ public:
       select == peripheral::timer9 or select == peripheral::timer10 or
       select == peripheral::timer11 or select == peripheral::timer12 or
       select == peripheral::timer13 or select == peripheral::timer14,
-    "Only timers 2, 3, 4,6,9,10,11,12,13 and 14 are allowed as general purpose "
-    "timers "
-    "for this driver");
+    "Only timers 2, 3, 4, 6, 9, 10, 11, 12, 13, and 14 are allowed as general "
+    "purpose timers for this driver.");
   using pin_type = decltype(get_pwm_timer_type<select>())::type;
 
   general_purpose_timer(general_purpose_timer const& p_other) = delete;
@@ -276,7 +299,23 @@ public:
   general_purpose_timer(general_purpose_timer&& p_other) noexcept = delete;
   general_purpose_timer& operator=(general_purpose_timer&& p_other) noexcept =
     delete;
-  general_purpose_timer() = default;
+  general_purpose_timer();
+
+  /**
+   * @brief Acquire a PWM channel from this timer
+   * @deprecated Use the `acquire_pwm16_channel` and
+   * `acquire_pwm_group_frequency` functions instead. This function will be
+   * removed in libhal 5.
+   *
+   * Only one PWM channel is allowed to exist per timer.
+   * If a PWM channel object is destroyed, then another PWM channel can be
+   * acquired from this timer.
+   *
+   * @throws hal::device_or_resource_busy - If the application attempts to
+   * acquire a pwm channel while a pwm channel bound to this timer already
+   * exists.
+   */
+  [[nodiscard]] hal::stm32f1::pwm acquire_pwm(pin_type p_pin);
 
   /**
    * @brief Acquire a PWM channel from this timer
@@ -289,7 +328,14 @@ public:
    * acquire a pwm channel while a pwm channel bound to this timer already
    * exists.
    */
-  [[nodiscard]] hal::stm32f1::pwm_wrapper acquire_pwm(pin_type p_pin);
+  [[nodiscard]] hal::stm32f1::pwm16_channel acquire_pwm16_channel(
+    pin_type p_pin);
+
+  /**
+   * @brief Acquire a PWM group frequency driver
+   *
+   */
+  [[nodiscard]] hal::stm32f1::pwm_group_frequency acquire_pwm_group_frequency();
 };
 
 }  // namespace hal::stm32f1

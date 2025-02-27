@@ -18,10 +18,9 @@
 
 #include <libhal-arm-mcu/stm32f1/clock.hpp>
 #include <libhal-arm-mcu/stm32f1/constants.hpp>
-#include <libhal-arm-mcu/stm32f1/pwm_wrapper.hpp>
+#include <libhal-arm-mcu/stm32f1/pwm.hpp>
 #include <libhal-util/bit.hpp>
 #include <libhal-util/enum.hpp>
-#include <libhal/pwm.hpp>
 #include <libhal/units.hpp>
 
 namespace hal::stm32f1 {
@@ -214,7 +213,7 @@ consteval auto get_pwm_timer_type()
  *
  * The peripheral ID is the template argument, in order to ensure
  * that the pins used correspond to the correct timer instantiation as well as
- * the correct coresponding pins at compile time.
+ * the correct corresponding pins at compile time.
  *
  * These timers can be used to do PWM generation, as well as other advanced
  * timer specific tasks

@@ -2,7 +2,7 @@
 
 #include <libhal-arm-mcu/stm32_generic/pwm.hpp>
 #include <libhal-arm-mcu/stm32f1/constants.hpp>
-#include <libhal-arm-mcu/stm32f1/pwm_wrapper.hpp>
+#include <libhal-arm-mcu/stm32f1/pwm.hpp>
 #include <libhal-arm-mcu/stm32f1/timer.hpp>
 #include <libhal/error.hpp>
 #include <libhal/pwm.hpp>

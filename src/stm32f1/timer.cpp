@@ -1,6 +1,6 @@
 #include <libhal-arm-mcu/stm32_generic/pwm.hpp>
 #include <libhal-arm-mcu/stm32f1/constants.hpp>
-#include <libhal-arm-mcu/stm32f1/pwm_wrapper.hpp>
+#include <libhal-arm-mcu/stm32f1/pwm.hpp>
 #include <libhal-arm-mcu/stm32f1/timer.hpp>
 #include <libhal-util/bit.hpp>
 #include <libhal-util/enum.hpp>
@@ -11,21 +11,21 @@
 
 namespace hal::stm32f1 {
 // Advanced timer
-inline void* pwm_timer1 = reinterpret_cast<void*>(0x4001'2C00);
+inline void* timer1 = reinterpret_cast<void*>(0x4001'2C00);
 // General purpose timers 2 - 5
-inline void* pwm_timer2 = reinterpret_cast<void*>(0x4000'0000);
-inline void* pwm_timer3 = reinterpret_cast<void*>(0x4000'0400);
-inline void* pwm_timer4 = reinterpret_cast<void*>(0x4000'0800);
-inline void* pwm_timer5 = reinterpret_cast<void*>(0x4000'0C00);
+inline void* timer2 = reinterpret_cast<void*>(0x4000'0000);
+inline void* timer3 = reinterpret_cast<void*>(0x4000'0400);
+inline void* timer4 = reinterpret_cast<void*>(0x4000'0800);
+inline void* timer5 = reinterpret_cast<void*>(0x4000'0C00);
 // Advanced timer
-inline void* pwm_timer8 = reinterpret_cast<void*>(0x4001'3400);
+inline void* timer8 = reinterpret_cast<void*>(0x4001'3400);
 // General purpose timers 9 - 14
-inline void* pwm_timer9 = reinterpret_cast<void*>(0x4001'4C00);
-inline void* pwm_timer10 = reinterpret_cast<void*>(0x4001'5000);
-inline void* pwm_timer11 = reinterpret_cast<void*>(0x4001'5400);
-inline void* pwm_timer12 = reinterpret_cast<void*>(0x4000'1800);
-inline void* pwm_timer13 = reinterpret_cast<void*>(0x4000'1C00);
-inline void* pwm_timer14 = reinterpret_cast<void*>(0x4000'2000);
+inline void* timer9 = reinterpret_cast<void*>(0x4001'4C00);
+inline void* timer10 = reinterpret_cast<void*>(0x4001'5000);
+inline void* timer11 = reinterpret_cast<void*>(0x4001'5400);
+inline void* timer12 = reinterpret_cast<void*>(0x4000'1800);
+inline void* timer13 = reinterpret_cast<void*>(0x4000'1C00);
+inline void* timer14 = reinterpret_cast<void*>(0x4000'2000);
 
 namespace {
 template<peripheral select>
@@ -33,9 +33,9 @@ void* peripheral_to_advanced_register()
 {
   void* reg;
   if constexpr (select == peripheral::timer1) {
-    reg = pwm_timer1;
+    reg = timer1;
   } else {
-    reg = pwm_timer8;
+    reg = timer8;
   }
   return reg;
 }
@@ -45,25 +45,25 @@ void* peripheral_to_general_register()
 {
   void* reg;
   if constexpr (select == peripheral::timer2) {
-    reg = pwm_timer2;
+    reg = timer2;
   } else if constexpr (select == peripheral::timer3) {
-    reg = pwm_timer3;
+    reg = timer3;
   } else if constexpr (select == peripheral::timer4) {
-    reg = pwm_timer4;
+    reg = timer4;
   } else if constexpr (select == peripheral::timer5) {
-    reg = pwm_timer5;
+    reg = timer5;
   } else if constexpr (select == peripheral::timer9) {
-    reg = pwm_timer9;
+    reg = timer9;
   } else if constexpr (select == peripheral::timer10) {
-    reg = pwm_timer10;
+    reg = timer10;
   } else if constexpr (select == peripheral::timer11) {
-    reg = pwm_timer11;
+    reg = timer11;
   } else if constexpr (select == peripheral::timer12) {
-    reg = pwm_timer12;
+    reg = timer12;
   } else if constexpr (select == peripheral::timer13) {
-    reg = pwm_timer13;
+    reg = timer13;
   } else {
-    reg = pwm_timer14;
+    reg = timer14;
   }
   return reg;
 }

@@ -1,10 +1,11 @@
 #pragma once
 
+#include <limits>
+
 #include <libhal-util/bit.hpp>
 #include <libhal/initializers.hpp>
 #include <libhal/pwm.hpp>
 #include <libhal/units.hpp>
-#include <limits>
 
 namespace hal::stm32_generic {
 

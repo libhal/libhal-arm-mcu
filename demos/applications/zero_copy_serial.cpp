@@ -25,7 +25,9 @@ void application(resource_list& p_map)
   using namespace hal::literals;
 
   auto& clock = *p_map.clock.value();
-  auto& console = *p_map.old_uart.value();
+  auto& console = *p_map.console.value();
+
+  auto previous_cursor = console.receive_cursor();
 
   while (true) {
     using namespace std::chrono_literals;
@@ -33,9 +35,24 @@ void application(resource_list& p_map)
 
     std::string_view message = "Hello, World!\n";
     hal::print(console, message);
-    // Echo anything received
-    std::array<hal::byte, 64> read_buffer;
-    console.write(console.read(read_buffer).data);
+
+    auto const new_cursor = console.receive_cursor();
+    hal::print<64>(console, "cursor = %zu\n", new_cursor);
+
+    hal::usize byte_count = 0;
+    if (new_cursor < previous_cursor) {
+      byte_count = console.receive_buffer().size() - new_cursor;
+      // Echo anything received
+      console.write(
+        console.receive_buffer().subspan(previous_cursor, byte_count));
+      previous_cursor = 0;
+    } else {
+      byte_count = new_cursor - previous_cursor;
+      // Echo anything received
+      console.write(
+        console.receive_buffer().subspan(previous_cursor, byte_count));
+      previous_cursor = new_cursor;
+    }
 
     hal::delay(clock, 1s);
   }

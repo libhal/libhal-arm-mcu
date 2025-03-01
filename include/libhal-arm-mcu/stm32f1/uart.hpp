@@ -23,6 +23,7 @@
 #include "dma.hpp"
 
 namespace hal::stm32f1 {
+
 class uart final : public hal::serial
 {
 public:
@@ -57,6 +58,7 @@ public:
        std::uint8_t p_port,
        std::span<hal::byte> p_buffer,
        serial::settings const& p_settings = {});
+  ~uart() override;
 
 private:
   uart(std::uint8_t p_port,
@@ -72,8 +74,12 @@ private:
 
   void* m_uart;
   std::span<hal::byte> m_receive_buffer;
-  std::uint16_t m_read_index;
-  std::uint8_t m_dma;
+  u16 m_read_index;
+  u8 m_dma;
+  u8 m_port_tx;
+  u8 m_pin_tx;
+  u8 m_port_rx;
+  u8 m_pin_rx;
   peripheral m_id;
 };
 }  // namespace hal::stm32f1

@@ -1050,8 +1050,10 @@ can_peripheral_manager::identifier_filter_set::identifier_filter_set(
 can_peripheral_manager::extended_identifier_filter_set::
   extended_identifier_filter_set(hal::u8 p_filter_index, fifo_assignment p_fifo)
   : filter{
-    can_peripheral_manager::extended_identifier_filter{ { p_filter_index, 0 } },
-    can_peripheral_manager::extended_identifier_filter{ { p_filter_index, 1 } },
+    can_peripheral_manager::extended_identifier_filter{
+      { .filter_index = p_filter_index, .word_index = 0 } },
+    can_peripheral_manager::extended_identifier_filter{
+      { .filter_index = p_filter_index, .word_index = 1 } },
   }
 {
   // Required to set filter scale and type

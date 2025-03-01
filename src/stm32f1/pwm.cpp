@@ -21,7 +21,7 @@ namespace hal::stm32f1 {
 pwm::pwm(void* p_reg,
          stm32f1::peripheral p_select,
          bool p_is_advanced,
-         stm32f1::pins p_pin)
+         stm32f1::timer_pins p_pin)
   : m_pwm(unsafe{})
   , m_pwm_frequency(unsafe{}, p_reg)
   , m_pin_num(hal::value(p_pin))
@@ -39,91 +39,91 @@ pwm::pwm(void* p_reg,
   // pwm class's constructor
   u8 channel = 0;
   switch (p_pin) {
-    case pins::pa0:
+    case timer_pins::pa0:
       configure_pin({ .port = 'A', .pin = 0 }, push_pull_alternative_output);
       channel = 1;
       break;
-    case pins::pa1:
+    case timer_pins::pa1:
       configure_pin({ .port = 'A', .pin = 1 }, push_pull_alternative_output);
       channel = 2;
       break;
-    case pins::pa2:
+    case timer_pins::pa2:
       configure_pin({ .port = 'A', .pin = 2 }, push_pull_alternative_output);
       channel = p_select == peripheral::timer9 ? 1 : 3;
       break;
-    case pins::pa3:
+    case timer_pins::pa3:
       configure_pin({ .port = 'A', .pin = 3 }, push_pull_alternative_output);
       channel = p_select == peripheral::timer9 ? 2 : 4;
       break;
-    case pins::pa6:
+    case timer_pins::pa6:
       configure_pin({ .port = 'A', .pin = 6 }, push_pull_alternative_output);
       channel = 1;
       break;
-    case pins::pa7:
+    case timer_pins::pa7:
       configure_pin({ .port = 'A', .pin = 7 }, push_pull_alternative_output);
       channel = p_select == peripheral::timer14 ? 1 : 2;
       break;
-    case pins::pb0:
+    case timer_pins::pb0:
       configure_pin({ .port = 'B', .pin = 0 }, push_pull_alternative_output);
       channel = 3;
       break;
-    case pins::pb1:
+    case timer_pins::pb1:
       configure_pin({ .port = 'B', .pin = 1 }, push_pull_alternative_output);
       channel = 4;
       break;
-    case pins::pb6:
+    case timer_pins::pb6:
       configure_pin({ .port = 'B', .pin = 6 }, push_pull_alternative_output);
       channel = 1;
       break;
-    case pins::pb7:
+    case timer_pins::pb7:
       configure_pin({ .port = 'B', .pin = 7 }, push_pull_alternative_output);
       channel = 2;
       break;
-    case pins::pb8:
+    case timer_pins::pb8:
       configure_pin({ .port = 'B', .pin = 8 }, push_pull_alternative_output);
       channel = p_select == peripheral::timer10 ? 1 : 3;
       break;
-    case pins::pb9:
+    case timer_pins::pb9:
       configure_pin({ .port = 'B', .pin = 9 }, push_pull_alternative_output);
       channel = p_select == peripheral::timer11 ? 1 : 4;
       break;
-    case pins::pa8:
+    case timer_pins::pa8:
       configure_pin({ .port = 'A', .pin = 8 }, push_pull_alternative_output);
       channel = 1;
       break;
-    case pins::pa9:
+    case timer_pins::pa9:
       configure_pin({ .port = 'A', .pin = 9 }, push_pull_alternative_output);
       channel = 2;
       break;
-    case pins::pa10:
+    case timer_pins::pa10:
       configure_pin({ .port = 'A', .pin = 10 }, push_pull_alternative_output);
       channel = 3;
       break;
-    case pins::pa11:
+    case timer_pins::pa11:
       configure_pin({ .port = 'A', .pin = 11 }, push_pull_alternative_output);
       channel = 4;
       break;
-    case pins::pc6:
+    case timer_pins::pc6:
       configure_pin({ .port = 'C', .pin = 6 }, push_pull_alternative_output);
       channel = 1;
       break;
-    case pins::pc7:
+    case timer_pins::pc7:
       configure_pin({ .port = 'C', .pin = 7 }, push_pull_alternative_output);
       channel = 2;
       break;
-    case pins::pc8:
+    case timer_pins::pc8:
       configure_pin({ .port = 'C', .pin = 8 }, push_pull_alternative_output);
       channel = 3;
       break;
-    case pins::pc9:
+    case timer_pins::pc9:
       configure_pin({ .port = 'C', .pin = 9 }, push_pull_alternative_output);
       channel = 4;
       break;
-    case pins::pb14:
+    case timer_pins::pb14:
       configure_pin({ .port = 'B', .pin = 14 }, push_pull_alternative_output);
       channel = 1;
       break;
-    case pins::pb15:
+    case timer_pins::pb15:
       configure_pin({ .port = 'B', .pin = 15 }, push_pull_alternative_output);
       channel = 2;
       break;
@@ -161,7 +161,7 @@ pwm::~pwm()
 pwm16_channel::pwm16_channel(void* p_reg,
                              stm32f1::peripheral p_select,
                              bool p_is_advanced,
-                             stm32f1::pins p_pin)
+                             timer_pins p_pin)
   : m_pwm(unsafe{})
   , m_pin_num(hal::value(p_pin))
   , m_select(p_select)
@@ -171,91 +171,91 @@ pwm16_channel::pwm16_channel(void* p_reg,
   // pwm class's constructor
   u8 channel = 0;
   switch (p_pin) {
-    case pins::pa0:
+    case timer_pins::pa0:
       configure_pin({ .port = 'A', .pin = 0 }, push_pull_alternative_output);
       channel = 1;
       break;
-    case pins::pa1:
+    case timer_pins::pa1:
       configure_pin({ .port = 'A', .pin = 1 }, push_pull_alternative_output);
       channel = 2;
       break;
-    case pins::pa2:
+    case timer_pins::pa2:
       configure_pin({ .port = 'A', .pin = 2 }, push_pull_alternative_output);
       channel = p_select == peripheral::timer9 ? 1 : 3;
       break;
-    case pins::pa3:
+    case timer_pins::pa3:
       configure_pin({ .port = 'A', .pin = 3 }, push_pull_alternative_output);
       channel = p_select == peripheral::timer9 ? 2 : 4;
       break;
-    case pins::pa6:
+    case timer_pins::pa6:
       configure_pin({ .port = 'A', .pin = 6 }, push_pull_alternative_output);
       channel = 1;
       break;
-    case pins::pa7:
+    case timer_pins::pa7:
       configure_pin({ .port = 'A', .pin = 7 }, push_pull_alternative_output);
       channel = p_select == peripheral::timer14 ? 1 : 2;
       break;
-    case pins::pb0:
+    case timer_pins::pb0:
       configure_pin({ .port = 'B', .pin = 0 }, push_pull_alternative_output);
       channel = 3;
       break;
-    case pins::pb1:
+    case timer_pins::pb1:
       configure_pin({ .port = 'B', .pin = 1 }, push_pull_alternative_output);
       channel = 4;
       break;
-    case pins::pb6:
+    case timer_pins::pb6:
       configure_pin({ .port = 'B', .pin = 6 }, push_pull_alternative_output);
       channel = 1;
       break;
-    case pins::pb7:
+    case timer_pins::pb7:
       configure_pin({ .port = 'B', .pin = 7 }, push_pull_alternative_output);
       channel = 2;
       break;
-    case pins::pb8:
+    case timer_pins::pb8:
       configure_pin({ .port = 'B', .pin = 8 }, push_pull_alternative_output);
       channel = p_select == peripheral::timer10 ? 1 : 3;
       break;
-    case pins::pb9:
+    case timer_pins::pb9:
       configure_pin({ .port = 'B', .pin = 9 }, push_pull_alternative_output);
       channel = p_select == peripheral::timer11 ? 1 : 4;
       break;
-    case pins::pa8:
+    case timer_pins::pa8:
       configure_pin({ .port = 'A', .pin = 8 }, push_pull_alternative_output);
       channel = 1;
       break;
-    case pins::pa9:
+    case timer_pins::pa9:
       configure_pin({ .port = 'A', .pin = 9 }, push_pull_alternative_output);
       channel = 2;
       break;
-    case pins::pa10:
+    case timer_pins::pa10:
       configure_pin({ .port = 'A', .pin = 10 }, push_pull_alternative_output);
       channel = 3;
       break;
-    case pins::pa11:
+    case timer_pins::pa11:
       configure_pin({ .port = 'A', .pin = 11 }, push_pull_alternative_output);
       channel = 4;
       break;
-    case pins::pc6:
+    case timer_pins::pc6:
       configure_pin({ .port = 'C', .pin = 6 }, push_pull_alternative_output);
       channel = 1;
       break;
-    case pins::pc7:
+    case timer_pins::pc7:
       configure_pin({ .port = 'C', .pin = 7 }, push_pull_alternative_output);
       channel = 2;
       break;
-    case pins::pc8:
+    case timer_pins::pc8:
       configure_pin({ .port = 'C', .pin = 8 }, push_pull_alternative_output);
       channel = 3;
       break;
-    case pins::pc9:
+    case timer_pins::pc9:
       configure_pin({ .port = 'C', .pin = 9 }, push_pull_alternative_output);
       channel = 4;
       break;
-    case pins::pb14:
+    case timer_pins::pb14:
       configure_pin({ .port = 'B', .pin = 14 }, push_pull_alternative_output);
       channel = 1;
       break;
-    case pins::pb15:
+    case timer_pins::pb15:
       configure_pin({ .port = 'B', .pin = 15 }, push_pull_alternative_output);
       channel = 2;
       break;

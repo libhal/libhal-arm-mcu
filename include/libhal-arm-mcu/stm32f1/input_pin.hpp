@@ -21,6 +21,8 @@
 namespace hal::stm32f1 {
 /**
  * @brief Input pin implementation for the stm32f10x
+ * @deprecated Use the `hal::gpio<peripheral>` class instead. This will be
+ * removed in the next later stage.
  *
  * Input pin only seems to support floating pins, does not support pull up or
  * pull down
@@ -40,7 +42,7 @@ public:
             std::uint8_t p_pin);  // NOLINT
 
 private:
-  void driver_configure([[maybe_unused]] settings const& p_settings) override;
+  void driver_configure(settings const& p_settings) override;
   bool driver_level() override;
 
   std::uint8_t m_port{};

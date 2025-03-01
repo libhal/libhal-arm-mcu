@@ -16,9 +16,10 @@
 #include <libhal-util/steady_clock.hpp>
 #include <libhal/can.hpp>
 
+#include <libhal/zero_copy_serial.hpp>
 #include <resource_list.hpp>
 
-void print_can_message(hal::serial& p_console,
+void print_can_message(hal::zero_copy_serial& p_console,
                        hal::can_message const& p_message)
 {
   hal::print<256>(p_console,

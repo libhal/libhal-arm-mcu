@@ -21,18 +21,18 @@
 namespace hal::stm32f1 {
 
 /// Number of bits between each enable register
-static constexpr std::uint32_t bus_id_offset = 32;
+static constexpr u32 bus_id_offset = 32;
 /// Bit position of AHB
-static constexpr std::uint32_t ahb_bus = bus_id_offset * 0;
+static constexpr u32 ahb_bus = bus_id_offset * 0;
 /// Bit position of APB1
-static constexpr std::uint32_t apb1_bus = bus_id_offset * 1;
+static constexpr u32 apb1_bus = bus_id_offset * 1;
 /// Bit position of AHB2
-static constexpr std::uint32_t apb2_bus = bus_id_offset * 2;
+static constexpr u32 apb2_bus = bus_id_offset * 2;
 /// Bit position of systems outside of any bus
-static constexpr std::uint32_t beyond_bus = bus_id_offset * 3;
+static constexpr u32 beyond_bus = bus_id_offset * 3;
 
 /// List of each peripheral and their power on id number for this platform
-enum class peripheral : std::uint8_t
+enum class peripheral : u8
 {
   dma1 = ahb_bus + 0,
   dma2 = ahb_bus + 1,

@@ -16,11 +16,12 @@
 
 #include <type_traits>
 
+#include <libhal-arm-mcu/stm32_generic/pwm.hpp>
 #include <libhal-arm-mcu/stm32f1/clock.hpp>
 #include <libhal-arm-mcu/stm32f1/constants.hpp>
-#include <libhal-arm-mcu/stm32f1/pwm.hpp>
 #include <libhal-util/bit.hpp>
 #include <libhal-util/enum.hpp>
+#include <libhal/pwm.hpp>
 #include <libhal/units.hpp>
 
 namespace hal::stm32f1 {
@@ -29,7 +30,7 @@ namespace hal::stm32f1 {
  *
  * These pins can perform any timer operation.
  */
-enum class pins : u8
+enum class timer_pins : u8
 {
   pa0 = 0,
   pa1 = 1,
@@ -60,10 +61,10 @@ enum class pins : u8
  */
 enum class timer1_pin : u8
 {
-  pa8 = hal::value(pins::pa8),
-  pa9 = hal::value(pins::pa9),
-  pa10 = hal::value(pins::pa10),
-  pa11 = hal::value(pins::pa11),
+  pa8 = hal::value(timer_pins::pa8),
+  pa9 = hal::value(timer_pins::pa9),
+  pa10 = hal::value(timer_pins::pa10),
+  pa11 = hal::value(timer_pins::pa11),
 };
 
 /**
@@ -71,10 +72,10 @@ enum class timer1_pin : u8
  */
 enum class timer2_pin : u8
 {
-  pa0 = hal::value(pins::pa0),
-  pa1 = hal::value(pins::pa1),
-  pa2 = hal::value(pins::pa2),
-  pa3 = hal::value(pins::pa3),
+  pa0 = hal::value(timer_pins::pa0),
+  pa1 = hal::value(timer_pins::pa1),
+  pa2 = hal::value(timer_pins::pa2),
+  pa3 = hal::value(timer_pins::pa3),
 };
 
 /**
@@ -82,10 +83,10 @@ enum class timer2_pin : u8
  */
 enum class timer3_pin : u8
 {
-  pa6 = hal::value(pins::pa6),
-  pa7 = hal::value(pins::pa7),
-  pb0 = hal::value(pins::pb0),
-  pb1 = hal::value(pins::pb1),
+  pa6 = hal::value(timer_pins::pa6),
+  pa7 = hal::value(timer_pins::pa7),
+  pb0 = hal::value(timer_pins::pb0),
+  pb1 = hal::value(timer_pins::pb1),
 };
 
 /**
@@ -93,10 +94,10 @@ enum class timer3_pin : u8
  */
 enum class timer4_pin : u8
 {
-  pb6 = hal::value(pins::pb6),
-  pb7 = hal::value(pins::pb7),
-  pb8 = hal::value(pins::pb8),
-  pb9 = hal::value(pins::pb9),
+  pb6 = hal::value(timer_pins::pb6),
+  pb7 = hal::value(timer_pins::pb7),
+  pb8 = hal::value(timer_pins::pb8),
+  pb9 = hal::value(timer_pins::pb9),
 };
 
 /**
@@ -104,10 +105,10 @@ enum class timer4_pin : u8
  */
 enum class timer5_pin : u8
 {
-  pa0 = hal::value(pins::pa0),
-  pa1 = hal::value(pins::pa1),
-  pa2 = hal::value(pins::pa2),
-  pa3 = hal::value(pins::pa3),
+  pa0 = hal::value(timer_pins::pa0),
+  pa1 = hal::value(timer_pins::pa1),
+  pa2 = hal::value(timer_pins::pa2),
+  pa3 = hal::value(timer_pins::pa3),
 };
 
 /**
@@ -115,10 +116,10 @@ enum class timer5_pin : u8
  */
 enum class timer8_pin : u8
 {
-  pc6 = hal::value(pins::pc6),
-  pc7 = hal::value(pins::pc7),
-  pc8 = hal::value(pins::pc8),
-  pc9 = hal::value(pins::pc9),
+  pc6 = hal::value(timer_pins::pc6),
+  pc7 = hal::value(timer_pins::pc7),
+  pc8 = hal::value(timer_pins::pc8),
+  pc9 = hal::value(timer_pins::pc9),
 };
 
 /**
@@ -126,8 +127,8 @@ enum class timer8_pin : u8
  */
 enum class timer9_pin : u8
 {
-  pa2 = hal::value(pins::pa2),
-  pa3 = hal::value(pins::pa3),
+  pa2 = hal::value(timer_pins::pa2),
+  pa3 = hal::value(timer_pins::pa3),
 };
 
 /**
@@ -135,7 +136,7 @@ enum class timer9_pin : u8
  */
 enum class timer10_pin : u8
 {
-  pb8 = hal::value(pins::pb8),
+  pb8 = hal::value(timer_pins::pb8),
 };
 
 /**
@@ -143,7 +144,7 @@ enum class timer10_pin : u8
  */
 enum class timer11_pin : u8  // won't work
 {
-  pb9 = hal::value(pins::pb9),
+  pb9 = hal::value(timer_pins::pb9),
 };
 
 /**
@@ -151,8 +152,8 @@ enum class timer11_pin : u8  // won't work
  */
 enum class timer12_pin : u8
 {
-  pb14 = hal::value(pins::pb14),
-  pb15 = hal::value(pins::pb15),
+  pb14 = hal::value(timer_pins::pb14),
+  pb15 = hal::value(timer_pins::pb15),
 };
 
 /**
@@ -160,7 +161,7 @@ enum class timer12_pin : u8
  */
 enum class timer13_pin : u8
 {
-  pa6 = hal::value(pins::pa6),
+  pa6 = hal::value(timer_pins::pa6),
 };
 
 /**
@@ -169,7 +170,7 @@ enum class timer13_pin : u8
  */
 enum class timer14_pin : u8
 {
-  pa7 = hal::value(pins::pa7),
+  pa7 = hal::value(timer_pins::pa7),
 };
 
 /**
@@ -207,6 +208,172 @@ consteval auto get_pwm_timer_type()
   }
 }
 
+class advanced_timer_manager;
+
+template<hal::stm32f1::peripheral select>
+class general_purpose_timer;
+
+/**
+ * @brief This class is a wrapper for the pwm class.
+ *
+ * It manages the pwm availability of the various different pins, and keeps
+ * track of whether a pwm is available or not. It inherits hal::pwm because this
+ * object is returned to the timer instance and can be used as an hal::pwm in
+ * any application.
+ */
+class pwm16_channel : public hal::pwm16_channel
+{
+public:
+  friend class hal::stm32f1::advanced_timer_manager;
+
+  template<hal::stm32f1::peripheral select>
+  friend class hal::stm32f1::general_purpose_timer;
+
+  pwm16_channel(pwm16_channel const& p_other) = delete;
+  pwm16_channel& operator=(pwm16_channel const& p_other) = delete;
+  pwm16_channel(pwm16_channel&& p_other) noexcept = default;
+  pwm16_channel& operator=(pwm16_channel&& p_other) noexcept = default;
+  ~pwm16_channel() override;
+
+private:
+  /**
+   * @brief The pwm constructor is private because the only way one should be
+   * able to access pwm is through the timer class
+   *
+   * @param p_reg is a void pointer that points to the beginning of a timer
+   * peripheral
+   * @param p_select is the timer peripheral that this instance is using.
+   * @param p_is_advanced whether the current peripheral is advanced or not
+   * @param p_pins This number is used to update the an internal bitmap
+   * containing which PWM pins have already been acquired as well as configure
+   * the pins and their channels. On construction the bit indicated by this
+   * value is checked to see if it is set. If it is set, an exception is thrown
+   * indicating that this resource has already been acquired. Otherwise, this
+   * driver sets that bit. On destruction that bit is cleared to allow another
+   * driver to utilize that pin in the future.
+   *
+   * @throws device_or_resource_busy when a pwm is already being used on a pin.
+   */
+  pwm16_channel(void* p_reg,
+                stm32f1::peripheral p_select,
+                bool p_is_advanced,
+                timer_pins p_pin);
+
+  u32 driver_frequency() override;
+  void driver_duty_cycle(u16 p_duty_cycle) override;
+
+  hal::stm32_generic::pwm m_pwm;
+  hal::u16 m_pin_num;
+  stm32f1::peripheral m_select;
+};
+
+/**
+ * @brief This class is a wrapper for the pwm class.
+ *
+ * It manages the pwm availability of the various different pins, and keeps
+ * track of whether a pwm is available or not. It inherits hal::pwm because this
+ * object is returned to the timer instance and can be used as an hal::pwm in
+ * any application.
+ */
+class pwm_group_frequency : public hal::pwm_group_manager
+{
+public:
+  friend class hal::stm32f1::advanced_timer_manager;
+
+  template<hal::stm32f1::peripheral select>
+  friend class hal::stm32f1::general_purpose_timer;
+
+  pwm_group_frequency(pwm_group_frequency const& p_other) = delete;
+  pwm_group_frequency& operator=(pwm_group_frequency const& p_other) = delete;
+  pwm_group_frequency(pwm_group_frequency&& p_other) noexcept = default;
+  pwm_group_frequency& operator=(pwm_group_frequency&& p_other) noexcept =
+    default;
+  ~pwm_group_frequency() override = default;
+
+private:
+  /**
+   * @brief The pwm constructor is private because the only way one should be
+   * able to access pwm is through the timer class
+   *
+   * @param p_reg is a void pointer that points to the beginning of a timer
+   * peripheral
+   * @param p_select is the timer peripheral that this instance is using.
+   * @param p_is_advanced whether the current peripheral is advanced or not
+   * @param p_pins This number is used to update the an internal bitmap
+   * containing which PWM pins have already been acquired as well as configure
+   * the pins and their channels. On construction the bit indicated by this
+   * value is checked to see if it is set. If it is set, an exception is thrown
+   * indicating that this resource has already been acquired. Otherwise, this
+   * driver sets that bit. On destruction that bit is cleared to allow another
+   * driver to utilize that pin in the future.
+   *
+   * @throws device_or_resource_busy when a pwm is already being used on a pin.
+   */
+  pwm_group_frequency(void* p_reg, stm32f1::peripheral p_select);
+
+  void driver_frequency(u32 p_hertz) override;
+
+  hal::stm32_generic::pwm_group_frequency m_pwm_frequency;
+  stm32f1::peripheral m_select;
+};
+
+/**
+ * @brief This class is a wrapper for the pwm class.
+ * @deprecated Please use pwm16_channel and/or pwm_group_frequency. This class
+ * implements the `hal::pwm` interface which will be deprecated in libhal 5.
+ *
+ * It manages the pwm availability of the various different pins, and keeps
+ * track of whether a pwm is available or not. It inherits hal::pwm because this
+ * object is returned to the timer instance and can be used as an hal::pwm in
+ * any application.
+ */
+class pwm : public hal::pwm
+{
+public:
+  friend class hal::stm32f1::advanced_timer_manager;
+
+  template<hal::stm32f1::peripheral select>
+  friend class hal::stm32f1::general_purpose_timer;
+
+  pwm(pwm const& p_other) = delete;
+  pwm& operator=(pwm const& p_other) = delete;
+  pwm(pwm&& p_other) noexcept = default;
+  pwm& operator=(pwm&& p_other) noexcept = default;
+  ~pwm() override;
+
+private:
+  /**
+   * @brief The pwm constructor is private because the only way one should be
+   * able to access pwm is through the timer class
+   *
+   * @param p_reg is a void pointer that points to the beginning of a timer
+   * peripheral
+   * @param p_select is the timer peripheral that this instance is using.
+   * @param p_is_advanced whether the current peripheral is advanced or not
+   * @param p_pins This number is used to update the an internal bitmap
+   * containing which PWM pins have already been acquired as well as configure
+   * the pins and their channels. On construction the bit indicated by this
+   * value is checked to see if it is set. If it is set, an exception is thrown
+   * indicating that this resource has already been acquired. Otherwise, this
+   * driver sets that bit. On destruction that bit is cleared to allow another
+   * driver to utilize that pin in the future.
+   *
+   * @throws device_or_resource_busy when a pwm is already being used on a pin.
+   */
+  pwm(void* p_reg,
+      stm32f1::peripheral p_select,
+      bool p_is_advanced,
+      stm32f1::timer_pins p_pin);
+
+  void driver_frequency(hertz p_frequency) override;
+  void driver_duty_cycle(float p_duty_cycle) override;
+
+  hal::stm32_generic::pwm m_pwm;
+  hal::stm32_generic::pwm_group_frequency m_pwm_frequency;
+  hal::u16 m_pin_num;
+  stm32f1::peripheral m_select;
+};
+
 /**
  * @brief This template class takes can do any timer operation for timers 1
  * and 8.
@@ -218,21 +385,41 @@ consteval auto get_pwm_timer_type()
  * These timers can be used to do PWM generation, as well as other advanced
  * timer specific tasks
  */
-template<peripheral select>
-class advanced_timer
+class advanced_timer_manager
 {
 public:
+  advanced_timer_manager(advanced_timer_manager const& p_other) = delete;
+  advanced_timer_manager& operator=(advanced_timer_manager const& p_other) =
+    delete;
+  advanced_timer_manager(advanced_timer_manager&& p_other) noexcept = delete;
+  advanced_timer_manager& operator=(advanced_timer_manager&& p_other) noexcept =
+    delete;
+
+  ~advanced_timer_manager();
+
+protected:
+  advanced_timer_manager(peripheral p_id);
+
+  [[nodiscard]] hal::stm32f1::pwm acquire_pwm(timer_pins p_pin);
+  [[nodiscard]] hal::stm32f1::pwm16_channel acquire_pwm16_channel(
+    timer_pins p_pin);
+  [[nodiscard]] hal::stm32f1::pwm_group_frequency acquire_pwm_group_frequency();
+
+  peripheral m_id;
+};
+
+template<peripheral select>
+class advanced_timer final : public advanced_timer_manager
+{
   static_assert(
     select == peripheral::timer1 or select == peripheral::timer8,
     "Only timer 1 or 8 is allowed as advanced timers for this driver.");
   using pin_type = decltype(get_pwm_timer_type<select>())::type;
 
-  advanced_timer(advanced_timer const& p_other) = delete;
-  advanced_timer& operator=(advanced_timer const& p_other) = delete;
-  advanced_timer(advanced_timer&& p_other) noexcept = delete;
-  advanced_timer& operator=(advanced_timer&& p_other) noexcept = delete;
-
-  advanced_timer();
+  advanced_timer()
+    : advanced_timer_manager(select)
+  {
+  }
 
   /**
    * @brief Acquire a PWM channel from this timer
@@ -248,7 +435,10 @@ public:
    * acquire a pwm channel while a pwm channel bound to this timer already
    * exists.
    */
-  [[nodiscard]] hal::stm32f1::pwm acquire_pwm(pin_type p_pin);
+  [[nodiscard]] hal::stm32f1::pwm acquire_pwm(pin_type p_pin)
+  {
+    return advanced_timer_manager::acquire_pwm(static_cast<timer_pins>(p_pin));
+  }
 
   /**
    * @brief Acquire a PWM channel from this timer
@@ -262,14 +452,13 @@ public:
    * exists.
    */
   [[nodiscard]] hal::stm32f1::pwm16_channel acquire_pwm16_channel(
-    pin_type p_pin);
-
-  /**
-   * @brief Acquire a PWM group frequency driver
-   *
-   */
-  [[nodiscard]] hal::stm32f1::pwm_group_frequency acquire_pwm_group_frequency();
+    pin_type p_pin)
+  {
+    return advanced_timer_manager::acquire_pwm16_channel(
+      static_cast<timer_pins>(p_pin));
+  }
 };
+
 /**
  * @brief This template class takes can do any timer operation for timers 2
  * through 15 and excluding timers 6 and 7
@@ -299,6 +488,7 @@ public:
   general_purpose_timer& operator=(general_purpose_timer&& p_other) noexcept =
     delete;
   general_purpose_timer();
+  ~general_purpose_timer();
 
   /**
    * @brief Acquire a PWM channel from this timer
@@ -331,8 +521,15 @@ public:
     pin_type p_pin);
 
   /**
-   * @brief Acquire a PWM group frequency driver
+   * @brief Acquire a PWM channel from this timer
    *
+   * Only one PWM channel is allowed to exist per timer.
+   * If a PWM channel object is destroyed, then another PWM channel can be
+   * acquired from this timer.
+   *
+   * @throws hal::device_or_resource_busy - If the application attempts to
+   * acquire a pwm channel while a pwm channel bound to this timer already
+   * exists.
    */
   [[nodiscard]] hal::stm32f1::pwm_group_frequency acquire_pwm_group_frequency();
 };

@@ -77,8 +77,7 @@ void setup_default_vector_table(std::span<interrupt_pointer> p_vector_table)
 
   // Fill the interrupt handler and vector table with a function that does
   // nothing functions.
-  std::fill(
-    p_vector_table.begin(), p_vector_table.end(), &default_interrupt_handler);
+  std::ranges::fill(p_vector_table, &default_interrupt_handler);
 }
 
 constexpr bool is_the_same_vector_buffer(

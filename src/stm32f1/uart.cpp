@@ -81,6 +81,19 @@ inline usart_t* to_usart(void* p_uart)
 {
   return reinterpret_cast<usart_t*>(p_uart);
 }
+
+struct port_info
+{
+  u8 port_tx = 'A';
+  u8 pin_tx = 9;
+  u8 port_rx = 'A';
+  u8 pin_rx = 10;
+  u8 dma_channel = 6;
+  peripheral id;
+};
+
+// port_info
+
 }  // namespace
 
 uart::uart(hal::runtime,
@@ -139,8 +152,12 @@ uart::uart(std::uint8_t p_port,
 
   // Power on the usart/uart id
   power_on(m_id);
+
   // Power on dma1 which has the usart channels
-  power_on(peripheral::dma1);
+  // TODO(): DMA1 is shared across multiple peripherals
+  if (not is_on(peripheral::dma1)) {
+    power_on(peripheral::dma1);
+  }
 
   auto& uart_reg = *to_usart(m_uart);
 

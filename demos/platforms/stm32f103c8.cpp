@@ -41,13 +41,15 @@ constexpr bool use_libhal_4_pwm = false;
 void initialize_platform(resource_list& p_resources)
 {
   using namespace hal::literals;
+  using st_peripheral = hal::stm32f1::peripheral;
+
   p_resources.reset = []() { hal::cortex_m::reset(); };
 
   // Set the MCU to the maximum clock speed
   hal::stm32f1::maximum_speed_using_internal_oscillator();
   hal::stm32f1::release_jtag_pins();
 
-  auto cpu_frequency = hal::stm32f1::frequency(hal::stm32f1::peripheral::cpu);
+  auto cpu_frequency = hal::stm32f1::frequency(st_peripheral::cpu);
   static hal::cortex_m::dwt_counter steady_clock(cpu_frequency);
   p_resources.clock = &steady_clock;
 
@@ -116,13 +118,14 @@ void initialize_platform(resource_list& p_resources)
   if constexpr (use_libhal_4_pwm) {
     // Use old PWM
   } else {
-    static hal::stm32f1::general_purpose_timer<hal::stm32f1::peripheral::timer2>
-      timer;
+    static hal::stm32f1::general_purpose_timer<st_peripheral::timer2> timer2;
     static auto timer_pwm_channel =
-      timer.acquire_pwm16_channel(hal::stm32f1::timer2_pin::pa1);
+      timer2.acquire_pwm16_channel(hal::stm32f1::timer2_pin::pa1);
     pwm_channel = &timer_pwm_channel;
-    static auto timer1_pwm_frequency = timer.acquire_pwm_group_frequency();
+    static auto timer1_pwm_frequency = timer2.acquire_pwm_group_frequency();
     pwm_frequency = &timer1_pwm_frequency;
+
+    static hal::stm32f1::general_purpose_timer<st_peripheral::timer2> timer2_v2;
   }
 
   p_resources.pwm_channel = pwm_channel;

@@ -20,6 +20,7 @@
 #include <libhal/error.hpp>
 #include <libhal/units.hpp>
 
+#include "libhal-arm-mcu/stm32f1/constants.hpp"
 #include "pin.hpp"
 #include "power.hpp"
 
@@ -31,17 +32,19 @@ input_pin::input_pin(std::uint8_t p_port,  // NOLINT
   , m_pin(p_pin)
 {
   // Ensure that AFIO is powered on before attempting to access it
-  power_on(peripheral::afio);
+  if (not is_on(peripheral::afio)) {
+    power_on(peripheral::afio);
+  }
 
-  if (p_port == 'A') {
+  if (p_port == 'A' && not is_on(peripheral::gpio_a)) {
     power_on(peripheral::gpio_a);
-  } else if (p_port == 'B') {
+  } else if (p_port == 'B' && not is_on(peripheral::gpio_b)) {
     power_on(peripheral::gpio_b);
-  } else if (p_port == 'C') {
+  } else if (p_port == 'C' && not is_on(peripheral::gpio_c)) {
     power_on(peripheral::gpio_c);
-  } else if (p_port == 'D') {
+  } else if (p_port == 'D' && not is_on(peripheral::gpio_d)) {
     power_on(peripheral::gpio_d);
-  } else if (p_port == 'E') {
+  } else if (p_port == 'E' && not is_on(peripheral::gpio_e)) {
     power_on(peripheral::gpio_e);
   } else {
     hal::safe_throw(hal::argument_out_of_domain(this));
@@ -61,8 +64,8 @@ void input_pin::driver_configure(settings const& p_settings)
 
 bool input_pin::driver_level()
 {
-  auto pin_value = bit_extract(bit_mask::from(m_pin), gpio(m_port).idr);
-
+  auto const pin_value =
+    bit_extract(bit_mask::from(m_pin), gpio_reg(m_port).idr);
   return static_cast<bool>(pin_value);
 }
 }  // namespace hal::stm32f1

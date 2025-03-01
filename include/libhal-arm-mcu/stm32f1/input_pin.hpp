@@ -40,7 +40,7 @@ public:
             std::uint8_t p_pin);  // NOLINT
 
 private:
-  void driver_configure([[maybe_unused]] settings const& p_settings) override;
+  void driver_configure(settings const& p_settings) override;
   bool driver_level() override;
 
   std::uint8_t m_port{};

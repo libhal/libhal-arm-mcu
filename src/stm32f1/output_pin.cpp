@@ -45,16 +45,16 @@ void output_pin::driver_level(bool p_high)
 {
   if (p_high) {
     // The first 16 bits of the register set the output state
-    gpio(m_port).bsrr = 1 << m_pin;
+    gpio_reg(m_port).bsrr = 1 << m_pin;
   } else {
     // The last 16 bits of the register reset the output state
-    gpio(m_port).bsrr = 1 << (16 + m_pin);
+    gpio_reg(m_port).bsrr = 1 << (16 + m_pin);
   }
 }
 
 bool output_pin::driver_level()
 {
-  auto pin_value = bit_extract(bit_mask::from(m_pin), gpio(m_port).idr);
+  auto pin_value = bit_extract(bit_mask::from(m_pin), gpio_reg(m_port).idr);
 
   return static_cast<bool>(pin_value);
 }

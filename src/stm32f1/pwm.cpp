@@ -14,7 +14,7 @@ namespace {
 /**
  * @brief Static variable to track PWM availability.
  */
-hal::u32 availability;
+hal::u32 availability = 0;
 }  // namespace
 
 namespace hal::stm32f1 {
@@ -27,6 +27,13 @@ pwm::pwm(void* p_reg,
   , m_pin_num(hal::value(p_pin))
   , m_select(p_select)
 {
+  auto const pwm_pin_mask = bit_mask::from(m_pin_num);
+  if (not hal::bit_extract(pwm_pin_mask, availability)) {
+    bit_modify(availability).set(pwm_pin_mask);
+  } else {
+    hal::safe_throw(hal::device_or_resource_busy(nullptr));
+  }
+
   // a generic pwm class requires a pin and a channel in order to use the right
   // registers, therefore we pass in the channel as an argument in the generic
   // pwm class's constructor
@@ -130,13 +137,6 @@ pwm::pwm(void* p_reg,
                      .channel = channel,
                      .is_advanced = p_is_advanced,
                    });
-
-  auto const pwm_pin_mask = bit_mask::from(m_pin_num);
-  if (not hal::bit_extract(pwm_pin_mask, availability)) {
-    bit_modify(availability).set(pwm_pin_mask);
-  } else {
-    hal::safe_throw(hal::device_or_resource_busy(nullptr));
-  }
 }
 
 void pwm::driver_frequency(hertz p_frequency)

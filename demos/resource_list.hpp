@@ -29,6 +29,7 @@
 #include <libhal/spi.hpp>
 #include <libhal/steady_clock.hpp>
 #include <libhal/stream_dac.hpp>
+#include <libhal/zero_copy_serial.hpp>
 
 struct resource_list
 {
@@ -40,6 +41,7 @@ struct resource_list
   // message will be printed if the `console` field has been set, then call
   // std::terminate.
   std::optional<hal::serial*> console;
+  std::optional<hal::zero_copy_serial*> zero_copy_serial;
   std::optional<hal::output_pin*> status_led;
   std::optional<hal::steady_clock*> clock;
   std::optional<hal::can_transceiver*> can_transceiver;

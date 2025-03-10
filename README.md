@@ -17,7 +17,7 @@ To learn about the available drivers and APIs see the headers
 directory.
 
 To see how each driver is used see the
-[`demos/`](https://github.com/libhal/libhal-lpc40/tree/main/demos) directory.
+[`demos/`](https://github.com/libhal/libhal-arm-mcu/tree/main/demos) directory.
 
 Fully rendered Doxygen APIs will be provided when
 [issue#37](https://github.com/libhal/libhal-arm-mcu/issues/37) is closed.
@@ -25,7 +25,7 @@ Fully rendered Doxygen APIs will be provided when
 ## 🧰 Setup
 
 To get started with libhal, follow the
-[🚀 Getting Started](https://libhal.github.io/3./getting_started/) guide.
+[🚀 Getting Started](https://libhal.github.io/latest/getting_started/) guide.
 
 ## 📡 Installing Profiles
 
@@ -42,18 +42,28 @@ conan config install -sf conan/profiles/v1 -tf profiles https://github.com/libha
 Note that running these commands multiple times is safe. The command will
 simply overwrite the old files with the latest files.
 
-## 🏗️ Building Demos
+## 🏗️ Building Demo Applications
 
 To build demos, start at the root of the repo and execute the following command:
 
 ```bash
-conan build demos -pr lpc4078 -s build_type=Debug
+conan build demos -pr lpc4078 -s arm-gcc-12.3
 ```
 
-This will build the demos for the `lpc4078` microcontroller in `Debug` mode.
-Replace `lpc4078` with any of the other complete profiles found in the
-`./conan/profiles/v1/`. Incomplete profiles do not match an exact device such
-as `lpc40` or `stm32f1`.
+This will build the demos for the `lpc4078` microcontroller in `MinSizeRel`
+mode. Replace `lpc4078` with any of the other complete profiles found in the
+`./conan/profiles/v1/`. An example of an incomplete profiles do not match an
+exact device such as `lpc40` or `stm32f1` which are used to build full
+profiles. You can also select the compiler you want to use with the
+`arm-gcc-12.3` compiler flag.
+
+Add the flag `-s build_type=Debug` to build in debug mode:
+
+```bash
+conan build demos -pr lpc4078 -s arm-gcc-12.3 -s build_type=Debug
+```
+
+Build type `Debug`, `MinSizeRel`, and `Release` are all available.
 
 ## 💾 Flashing/Programming
 
@@ -69,20 +79,20 @@ serial/uart adaptor.
 See the README on [`nxpprog`](https://github.com/libhal/nxpprog), for details on
 how to use NXPPROG.
 
-To install nxpprog:
+To install `nxpprog`:
 
 ```bash
-python3 -m pip install -U nxpprog
+pipx install nxpprog
 ```
 
 To flash command is:
 
 ```bash
-nxpprog --control --binary demos/lpc4078/blinker.elf.bin --device /dev/tty.usbserial-10
+nxpprog --control --binary demos/build/lpc4078/MinSizeRel/blinker.elf.bin --device /dev/tty.usbserial-10
 ```
 
-- Replace `demos/lpc4078/blinker.elf.bin` with the path to the binary you'd like
-  to flash.
+- Replace `demos/build/lpc4078/MinSizeRel/blinker.elf.bin` with the path to the
+  binary you'd like to flash.
 - Replace `/dev/tty.usbserial-10` with the path to your serial port on your
   machine.
 
@@ -98,17 +108,17 @@ For more information, please refer to the README of
 To install stm32loader:
 
 ```bash
-python3 -m pip install stm32loader
+pipx install stm32loader
 ```
 
 To flash command is:
 
 ```bash
-stm32loader -p /dev/tty.usbserial-10 -e -w -v demos/build/stm32f103c8/Debug/blinker.elf.bin
+stm32loader -p /dev/tty.usbserial-10 -e -w -v demos/build/stm32f103c8/MinSizeRel/blinker.elf.bin
 ```
 
-- Replace `demos/build/stm32f103c8/Debug/blinker.elf.bin` with the path to the
-  binary you'd like to flash.
+- Replace `demos/build/stm32f103c8/MinSizeRel/blinker.elf.bin` with the path to
+  the binary you'd like to flash.
 - Replace `/dev/tty.usbserial-10` with the path to your serial port on your
   machine.
 
@@ -127,8 +137,8 @@ details.
 For reference the flashing command is:
 
 ```bash
-pyocd flash --target lpc4088 demos/build/lpc4078/Debug/blinker.elf.bin
-pyocd flash --target stm32f103rc demos/build/stm32f103c8/Debug/blinker.elf.bin
+pyocd flash --target lpc4088 demos/build/lpc4078/MinSizeRel/blinker.elf.bin
+pyocd flash --target stm32f103rc demos/build/stm32f103c8/MinSizeRel/blinker.elf.bin
 ```
 
 Note that the targets for your exact part may not exist in `pyocd`. Because of
@@ -163,13 +173,78 @@ application. If you don't know, using the latest is usually a good choice.
 The CMake from the starter project will already be ready to support the new
 platform library. No change needed.
 
-To perform a test build simple run `conan build` as is done above with the
+To perform a test build simple run `conan build .` as is done above with the
 desired target platform profile.
+
+## ❌ Using `libhal-arm-mcu` in your library
+
+This library is a platform library and as such should only be depended upon by
+applications. Platform libraries do not require ABI stability and thus do not
+guarantee it. Depending on a platform library is undefined behavior if an ABI
+break occurs.
+
+## 🌟 Package Semantic Versioning Explained
+
+In libhal, different libraries have different requirements and expectations for
+how their libraries will be used and how to interpret changes in the semantic
+version of a library.
+
+If you are not familiar with [SEMVER](https://semver.org/) you can click the
+link to learn more.
+
+### 💥 Major changes
+
+The major number will increment in the event of:
+
+1. An API break
+2. A behavior change
+
+We define an API break as an intentional change to the public interface, found
+within the `include/` directory, that removes or changes an API in such a way
+that code that previously built would no longer be capable of building.
+
+We define a "behavior change" as an intentional change to the documentation of
+a public API that would change the API's behavior such that previous and later
+versions of the same API would do observably different things.
+
+The usage of the term "intentional" means that the break or behavior change was
+expected and accepted for a release. If an API break occurs on accident when it
+wasn't previously desired, then such a change should be rolled back and an
+alternative non-API breaking solution should be found.
+
+You can depend on the major number to provide API and behavioral
+stability for your application. If you upgrade to a new major numbered version
+of libhal, your code and applications may or may not continue to work as
+expected or compile. Because of this, we try our best to not update the
+major number.
+
+### 🚀 Minor changes
+
+The minor number will increment if a new interface, API, or type is introduced
+into the public interface OR an ABI break has occurred. ABI breaks with
+applications cause no issue and thus are allowed to be minor implementation
+breaking changes.
+
+### 🐞 Patch Changes
+
+The patch number will increment if:
+
+1. Bug fixes that align code to the behavior of an API, improves performance
+   or improves code size efficiency.
+2. Any changes occur within the `/include/libhal-arm-mcu/experimental`
+   directory.
+
+For now, you cannot expect ABI or API stability with anything in the
+`/include/libhal-arm-mcu/experimental` directory.
 
 ## 🏁 Startup & Initialization
 
 Startup is managed by the [`picolibc`](https://keithp.com/picolibc/) runtime.
-In terms of startup `picolibc` has to manage doing two things. For one, it must construct a minimal interrupt vector table with two entries. The 1st entry is the address of the top of the stack. The 2nd entry is the address of the function that will be executed on reset. `picolibc` sets this to its own `_start` function. `_start` does the following:
+In terms of startup `picolibc` has to manage doing two things. For one, it must
+construct a minimal interrupt vector table with two entries. The 1st entry is
+the address of the top of the stack. The 2nd entry is the address of the
+function that will be executed on reset. `picolibc` sets this to its own
+`_start` function. `_start` does the following:
 
 1. Sets the main stack registers
 2. Write the `.data` section from read-only memory
@@ -255,6 +330,36 @@ like to use for the debugging session.
 ### Using OpenOCD
 
 Coming soon... (its more complicated)
+
+## 📦 Building & Installing the Library Package
+
+If you'd like to build and install this package into your local conan cache,
+execute the following command:
+
+```bash
+conan create . -pr stm32f103c8 -pr arm-gcc-12.3 --version=latest
+```
+
+- Replace `latest` with the SEMVER version that fits the changes you've made. Or
+  just choose a number greater than whats been released.
+- Replace `-pr stm32f103c8` with your desired platform.
+- Replace `-pr arm-gcc-12.3` with your desired compiler.
+- Add `-s build_type=` to specify the build type you want to build for.
+
+If you want to build the package unit tests without creating a package
+installed within your cache, you can replace `create` with `build` and remove
+the `--version` flag like so:
+
+```bash
+conan build . -pr stm32f103c8 -pr arm-gcc-12.3
+```
+
+> [!NOTE]
+> Currently, we do not support `clang-tidy` checks on cross builds. So if you
+> want to check the package against `clang-tidy` you will need to execute the
+> command `conan build .` which will build the package for your computer which
+> will allow the unit tests to be executable on your machine. The unit test
+> will be executed at the end of the build process.
 
 ## :busts_in_silhouette: Contributing
 

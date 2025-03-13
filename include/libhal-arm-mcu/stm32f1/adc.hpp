@@ -60,16 +60,6 @@ public:
   class channel;
 
   /**
-   * @brief Construct a new adc peripheral manager object.
-   *
-   * @param p_adc_selection - The specified adc peripheral to use.
-   * @param p_lock - An externally declared lock to use for thread safety when
-   * trying to read from the adc's. This can be a basic_lock or any type that
-   * derives from it.
-   */
-  adc_manager(peripheral p_id, hal::basic_lock& p_lock);
-
-  /**
    * @brief Creates and configures an adc channel under the calling adc
    * peripheral manager.
    *
@@ -84,7 +74,17 @@ public:
   adc_manager(adc_manager&& p_other) noexcept = delete;
   adc_manager& operator=(adc_manager&& p_other) noexcept = delete;
 
-private:
+protected:
+  /**
+   * @brief Construct a new adc peripheral manager object.
+   *
+   * @param p_adc_selection - The specified adc peripheral to use.
+   * @param p_lock - An externally declared lock to use for thread safety when
+   * trying to read from the adc's. This can be a basic_lock or any type that
+   * derives from it.
+   */
+  adc_manager(peripheral p_id, hal::basic_lock& p_lock);
+
   float read_channel(adc_pins p_pin);
   void setup();
 

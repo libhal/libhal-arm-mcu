@@ -21,6 +21,8 @@
 namespace hal::stm32f1 {
 /**
  * @brief Output pin implementation for the stm32::f10x
+ * @deprecated Use the `hal::gpio<peripheral>` class instead. This will be
+ * removed in the next later stage.
  *
  */
 class output_pin final : public hal::output_pin

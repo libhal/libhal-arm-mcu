@@ -15,22 +15,22 @@
 #pragma once
 
 #include <array>
-#include <cstdint>
 
-#include <libhal-util/bit.hpp>
-#include <libhal/error.hpp>
-
+#include <libhal-stm32f1/constants.hpp>
 #include <libhal-stm32f1/pin.hpp>
+#include <libhal-util/bit.hpp>
+#include <libhal-util/enum.hpp>
+#include <libhal/error.hpp>
 
 namespace hal::stm32f1 {
 
 struct alternative_function_io_t
 {
-  std::uint32_t volatile evcr;
-  std::uint32_t volatile mapr;
-  std::array<std::uint32_t, 4> volatile exticr;
-  std::uint32_t reserved0;
-  std::uint32_t volatile mapr2;
+  u32 volatile evcr;
+  u32 volatile mapr;
+  std::array<u32, 4> volatile exticr;
+  u32 reserved0;
+  u32 volatile mapr2;
 };
 
 /**
@@ -39,13 +39,13 @@ struct alternative_function_io_t
  */
 struct gpio_t
 {
-  std::uint32_t volatile crl;
-  std::uint32_t volatile crh;
-  std::uint32_t volatile idr;
-  std::uint32_t volatile odr;
-  std::uint32_t volatile bsrr;
-  std::uint32_t volatile brr;
-  std::uint32_t volatile lckr;
+  u32 volatile crl;
+  u32 volatile crh;
+  u32 volatile idr;
+  u32 volatile odr;
+  u32 volatile bsrr;
+  u32 volatile brr;
+  u32 volatile lckr;
 };
 
 /**
@@ -55,25 +55,13 @@ struct gpio_t
 struct pin_config_t
 {
   /// Configuration bit 1
-  std::uint8_t CNF1;
+  u8 CNF1;
   /// Configuration bit 0
-  std::uint8_t CNF0;
+  u8 CNF0;
   /// Mode bits
-  std::uint8_t MODE;
+  u8 MODE;
   /// Output data register
-  std::uint8_t PxODR;
-};
-
-/**
- * @brief Pin select structure
- *
- */
-struct pin_select_t
-{
-  /// @brief Port letter, must be a capitol letter from 'A' to 'G'
-  std::uint8_t port;
-  /// @brief Pin number, must be between 0 to 15
-  std::uint8_t pin;
+  u8 PxODR;
 };
 
 static constexpr pin_config_t push_pull_gpio_output = {
@@ -132,13 +120,56 @@ static constexpr pin_config_t input_pull_up = {
   .PxODR = 0b1,  // Pull Up
 };
 
+constexpr auto cnf1 = bit_mask::from<3>();
+constexpr auto cnf0 = bit_mask::from<2>();
+constexpr auto mode = bit_mask::from<0, 1>();
+
+/**
+ * @brief This is the default state of each pin when the stm32f1 resets
+ *
+ * This is used to determine if a pin is in the reset state prior to
+ * configuration. This is also used to set the pin state when `reset_pin` is
+ * called.
+ */
+static constexpr auto reset_pin_config = bit_value<u32>(0)
+                                           .insert<cnf1>(input_float.CNF1)
+                                           .insert<cnf0>(input_float.CNF0)
+                                           .insert<mode>(input_float.MODE)
+                                           .get();
+
 /**
  * @brief Construct pin manipulation object
  *
  * @param p_pin_select - the pin to configure
  * @param p_config - Configuration to set the pin to
+ * @throw hal::argument_out_of_domain - pin select is outside of the range of
+ * available pins.
+ * @throw hal::device_or_resource_busy - pin has already been configured once
+ * from its reset state and thus is in use by something else in the code.
  */
-void configure_pin(pin_select_t p_pin_select, pin_config_t p_config);
+void configure_pin(pin_select p_pin_select, pin_config_t p_config);
+
+/**
+ * @brief Set pin to the system reset state
+ *
+ * This releases control over the pin and allows the pin to be reused by other
+ * drivers.
+ *
+ * @param p_pin_select - the pin to configure
+ * @param p_config - Configuration to set the pin to
+ */
+void reset_pin(pin_select p_pin_select);
+
+/**
+ * @brief Throws an exception if a pin is not available
+ *
+ * Use this function to validate if a pin is available.
+ *
+ * @param p_pin_select - the pin to validate
+ * @throw hal::device_or_resource_busy - if the pin is not available, meaning it
+ * was not in the reset state.
+ */
+void throw_if_pin_is_unavailable(pin_select p_pin_select);
 
 /**
  * @brief Remap can pins
@@ -153,17 +184,18 @@ void remap_pins(can_pins p_pin_select);
  * @param p_port - port letter, must be from 'A' to 'G'
  * @return gpio_t& - gpio register map
  */
-gpio_t& gpio(std::uint8_t p_port);
+gpio_t& gpio_reg(u8 p_port);
+
+constexpr auto gpio_peripheral_offset(peripheral p_peripheral)
+{
+  // The numeric value of `peripheral::gpio_a` to ``peripheral::gpio_g` are
+  // contiguous in numeric value thus we can map letters 'A' to 'G' by doing
+  // this math here.
+  return value(p_peripheral) - value(peripheral::gpio_a);
+}
 
 inline auto* alternative_function_io =
   reinterpret_cast<alternative_function_io_t*>(0x4001'0000);
-inline auto* gpio_a_reg = reinterpret_cast<gpio_t*>(0x4001'0800);
-inline auto* gpio_b_reg = reinterpret_cast<gpio_t*>(0x4001'0c00);
-inline auto* gpio_c_reg = reinterpret_cast<gpio_t*>(0x4001'1000);
-inline auto* gpio_d_reg = reinterpret_cast<gpio_t*>(0x4001'1400);
-inline auto* gpio_e_reg = reinterpret_cast<gpio_t*>(0x4001'1800);
-inline auto* gpio_f_reg = reinterpret_cast<gpio_t*>(0x4001'1c00);
-inline auto* gpio_g_reg = reinterpret_cast<gpio_t*>(0x4001'2000);
 
 struct pin_remap
 {

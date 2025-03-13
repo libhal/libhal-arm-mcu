@@ -34,27 +34,31 @@ output_pin::output_pin(std::uint8_t p_port,  // NOLINT
 
 void output_pin::driver_configure(settings const& p_settings)
 {
-  if (!p_settings.open_drain) {
-    configure_pin({ .port = m_port, .pin = m_pin }, push_pull_gpio_output);
-  } else if (p_settings.open_drain) {
-    configure_pin({ .port = m_port, .pin = m_pin }, open_drain_gpio_output);
+  pin_select const pin = { .port = m_port, .pin = m_pin };
+  reset_pin(pin);
+  if (p_settings.open_drain) {
+    configure_pin(pin, open_drain_gpio_output);
+  } else {
+    configure_pin(pin, push_pull_gpio_output);
   }
+  // NOTE: The `resistor` field is ignored in this function
 }
 
 void output_pin::driver_level(bool p_high)
 {
   if (p_high) {
     // The first 16 bits of the register set the output state
-    gpio(m_port).bsrr = 1 << m_pin;
+    gpio_reg(m_port).bsrr = 1 << m_pin;
   } else {
     // The last 16 bits of the register reset the output state
-    gpio(m_port).bsrr = 1 << (16 + m_pin);
+    gpio_reg(m_port).bsrr = 1 << (16 + m_pin);
   }
 }
 
 bool output_pin::driver_level()
 {
-  auto pin_value = bit_extract(bit_mask::from(m_pin), gpio(m_port).idr);
+  auto const pin_value =
+    bit_extract(bit_mask::from(m_pin), gpio_reg(m_port).idr);
 
   return static_cast<bool>(pin_value);
 }

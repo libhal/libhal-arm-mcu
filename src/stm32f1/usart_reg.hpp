@@ -1,6 +1,11 @@
 #pragma once
 
+#include <libhal-arm-mcu/stm32f1/constants.hpp>
 #include <libhal-util/bit.hpp>
+#include <libhal/serial.hpp>
+#include <libhal/units.hpp>
+
+#include "dma.hpp"
 
 namespace hal::stm32f1 {
 
@@ -57,19 +62,57 @@ struct baud_rate_reg  // NOLINT
 
 struct usart_t
 {
-  std::uint32_t volatile status;
-  std::uint32_t volatile data;
-  std::uint32_t volatile baud_rate;
-  std::uint32_t volatile control1;
-  std::uint32_t volatile control2;
-  std::uint32_t volatile control3;
-  std::uint32_t volatile guard_time_and_prescale;
+  u32 volatile status;
+  u32 volatile data;
+  u32 volatile baud_rate;
+  u32 volatile control1;
+  u32 volatile control2;
+  u32 volatile control3;
+  u32 volatile guard_time_and_prescale;
 };
 
-inline auto* usart1 = reinterpret_cast<usart_t*>(0x4001'3800);
-inline auto* usart2 = reinterpret_cast<usart_t*>(0x4000'4400);
-inline auto* usart3 = reinterpret_cast<usart_t*>(0x4000'4800);
-inline auto* uart4 = reinterpret_cast<usart_t*>(0x4000'4C00);
-inline auto* uart5 = reinterpret_cast<usart_t*>(0x4000'5000);
+inline hal::uptr peripheral_to_register(peripheral p_select)
+{
+  // See Chapter 3.3 "Memory" page 50 in RM0008 for these magic numbers
+  switch (p_select) {
+    case peripheral::usart1:
+      return 0x4001'3800;
+    case peripheral::usart2:
+      return 0x4000'4400;
+    case peripheral::usart3:
+      return 0x4000'4800;
+    case peripheral::uart4:
+      return 0x4000'4C00;
+    case peripheral::uart5:
+      return 0x4000'5000;
+    default:
+      hal::safe_throw(hal::argument_out_of_domain(nullptr));
+  }
+}
 
+static constexpr auto uart_dma_settings1 =
+  hal::bit_value()
+    .clear<dma::transfer_complete_interrupt_enable>()
+    .clear<dma::half_transfer_interrupt_enable>()
+    .clear<dma::transfer_error_interrupt_enable>()
+    .clear<dma::data_transfer_direction>()  // Read from peripheral
+    .set<dma::circular_mode>()
+    .clear<dma::peripheral_increment_enable>()
+    .set<dma::memory_increment_enable>()
+    .clear<dma::memory_to_memory>()
+    .set<dma::enable>()
+    .insert<dma::peripheral_size, 0b00U>()   // size = 8 bits
+    .insert<dma::memory_size, 0b00U>()       // size = 8 bits
+    .insert<dma::channel_priority, 0b10U>()  // Low Medium [High] Very_High
+    .to<std::uint32_t>();
+
+inline usart_t* to_usart(void* p_uart)
+{
+  return reinterpret_cast<usart_t*>(p_uart);
+}
+inline usart_t* to_usart(uptr p_uart)
+{
+  // NOLINTNEXTLINE(performance-no-int-to-ptr)
+  return reinterpret_cast<usart_t*>(p_uart);
+}
 }  // namespace hal::stm32f1

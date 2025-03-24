@@ -120,7 +120,7 @@ public:
   /**
    * @brief Constructs a channel object.
    *
-   * @param p_manager - The adc peripheral manager that this channel belongs to.
+   * @param p_adc - The adc peripheral manager that this channel belongs to.
    * @param p_pin - The pin that will be used for this channels analog input.
    */
   template<peripheral id>

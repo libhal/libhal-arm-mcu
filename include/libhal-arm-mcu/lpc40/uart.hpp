@@ -15,6 +15,7 @@
 #pragma once
 
 #include <libhal/serial.hpp>
+#include <libhal/zero_copy_serial.hpp>
 #include <nonstd/ring_span.hpp>
 
 #include "constants.hpp"
@@ -24,6 +25,7 @@ namespace hal::lpc40 {
 /**
  * @brief Implementation of the UART peripheral for the LPC40xx family of
  * microcontrollers.
+ * @deprecated Use `hal::uart_manager` instead
  *
  * @note that the baud rates less than or equal to the peripheral clock
  * frequency / 48. Otherwise this peripheral cannot guarantee proper
@@ -88,5 +90,60 @@ private:
 
   port m_port;
   nonstd::ring_span<hal::byte> m_receive_buffer;
+};
+
+class uart_manager_impl
+{
+public:
+  class serial;
+  class zero_copy_serial;
+
+protected:
+  uart_manager_impl(peripheral p_id);
+
+  peripheral p_id;
+};
+
+template<peripheral id>
+class uart_manager : public uart_manager_impl
+{
+  uart_manager()
+    : uart_manager_impl(id)
+  {
+  }
+};
+
+class uart_manager_impl::serial : public hal::serial
+{
+public:
+  serial(serial const& p_other) = delete;
+  serial& operator=(serial const& p_other) = delete;
+  serial(serial&& p_other) noexcept = default;
+  serial& operator=(serial&& p_other) noexcept = default;
+
+private:
+  serial();
+  ~serial() override = default;
+  void driver_configure(settings const& p_settings) override;
+  write_t driver_write(std::span<byte const> p_data) override;
+  read_t driver_read(std::span<byte> p_data) override;
+  void driver_flush() override;
+};
+
+class uart_manager_impl::zero_copy_serial : public hal::zero_copy_serial
+{
+public:
+  zero_copy_serial(zero_copy_serial const& p_other) = delete;
+  zero_copy_serial& operator=(zero_copy_serial const& p_other) = delete;
+  zero_copy_serial(zero_copy_serial&& p_other) noexcept = default;
+  zero_copy_serial& operator=(zero_copy_serial&& p_other) noexcept = default;
+
+private:
+  zero_copy_serial();
+  ~zero_copy_serial() override = default;
+  void driver_configure(hal::serial::settings const& p_settings) override;
+  void driver_write(std::span<hal::byte const> p_data) override;
+  std::span<hal::byte const> driver_receive_buffer() override;
+  std::size_t driver_cursor() override;
 };
 }  // namespace hal::lpc40

@@ -78,7 +78,7 @@ protected:
   /**
    * @brief Construct a new adc peripheral manager object.
    *
-   * @param p_adc_selection - The specified adc peripheral to use.
+   * @param p_id - The specified adc peripheral ID to manage and use.
    * @param p_lock - An externally declared lock to use for thread safety when
    * trying to read from the adc's. This can be a basic_lock or any type that
    * derives from it.
@@ -108,9 +108,10 @@ public:
 };
 
 /**
- * @brief This class implements the `hal::adc` abstract base class. It creates
- * channels to be used by the adc peripheral manager to read certain pins'
- * analog input.
+ * @brief This class implements the `hal::adc` interface.
+ *
+ * Creates channels to be used by the adc peripheral manager to read certain
+ * pins' analog input.
  *
  */
 class adc_manager::channel : public hal::adc

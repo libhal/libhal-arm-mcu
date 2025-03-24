@@ -14,13 +14,14 @@
 
 #pragma once
 
-#include <cstdint>
-
 #include <libhal/input_pin.hpp>
+#include <libhal/units.hpp>
 
 namespace hal::stm32f1 {
 /**
  * @brief Input pin implementation for the stm32f10x
+ * @deprecated Use the `hal::gpio<peripheral>` class instead. This will be
+ * removed in the next later stage.
  *
  * Input pin only seems to support floating pins, does not support pull up or
  * pull down
@@ -36,14 +37,14 @@ public:
    * @param p_pin - selects which pin within the port to use
    * @throws hal::argument_out_of_domain - if the port and pin are not valid
    */
-  input_pin(std::uint8_t p_port,  // NOLINT
-            std::uint8_t p_pin);  // NOLINT
+  input_pin(u8 p_port,  // NOLINT
+            u8 p_pin);  // NOLINT
 
 private:
-  void driver_configure([[maybe_unused]] settings const& p_settings) override;
+  void driver_configure(settings const& p_settings) override;
   bool driver_level() override;
 
-  std::uint8_t m_port{};
-  std::uint8_t m_pin{};
+  u8 m_port{};
+  u8 m_pin{};
 };
 }  // namespace hal::stm32f1

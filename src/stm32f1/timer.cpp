@@ -1,3 +1,17 @@
+// Copyright 2024 Khalil Estell
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 #include <libhal-arm-mcu/stm32_generic/pwm.hpp>
 #include <libhal-arm-mcu/stm32f1/constants.hpp>
 #include <libhal-arm-mcu/stm32f1/pwm.hpp>
@@ -28,11 +42,10 @@ inline void* timer13 = reinterpret_cast<void*>(0x4000'1C00);
 inline void* timer14 = reinterpret_cast<void*>(0x4000'2000);
 
 namespace {
-template<peripheral select>
-void* peripheral_to_advanced_register()
+void* peripheral_to_advanced_register(peripheral p_id)
 {
   void* reg;
-  if constexpr (select == peripheral::timer1) {
+  if (p_id == peripheral::timer1) {
     reg = timer1;
   } else {
     reg = timer8;
@@ -69,10 +82,15 @@ void* peripheral_to_general_register()
 }
 }  // namespace
 
-template<peripheral select>
-advanced_timer<select>::advanced_timer()
+advanced_timer_manager::advanced_timer_manager(peripheral p_id)
+  : m_id(p_id)
 {
-  power_on(select);
+  power_on(m_id);
+}
+
+advanced_timer_manager::~advanced_timer_manager()
+{
+  power_off(m_id);
 }
 
 template<peripheral select>
@@ -80,14 +98,15 @@ general_purpose_timer<select>::general_purpose_timer()
 {
   power_on(select);
 }
-
 template<peripheral select>
-hal::stm32f1::pwm advanced_timer<select>::acquire_pwm(pin_type p_pin)
+general_purpose_timer<select>::~general_purpose_timer()
 {
-  return { peripheral_to_advanced_register<select>(),
-           select,
-           true,
-           static_cast<pins>(p_pin) };
+  power_off(select);
+}
+
+hal::stm32f1::pwm advanced_timer_manager::acquire_pwm(timer_pins p_pin)
+{
+  return { peripheral_to_advanced_register(m_id), m_id, true, p_pin };
 }
 
 template<peripheral select>
@@ -97,17 +116,13 @@ hal::stm32f1::pwm general_purpose_timer<select>::acquire_pwm(pin_type p_pin)
   return { peripheral_to_general_register<select>(),
            select,
            false,
-           static_cast<pins>(p_pin) };
+           static_cast<timer_pins>(p_pin) };
 }
 
-template<peripheral select>
-hal::stm32f1::pwm16_channel advanced_timer<select>::acquire_pwm16_channel(
-  pin_type p_pin)
+hal::stm32f1::pwm16_channel advanced_timer_manager::acquire_pwm16_channel(
+  timer_pins p_pin)
 {
-  return { peripheral_to_advanced_register<select>(),
-           select,
-           true,
-           static_cast<pins>(p_pin) };
+  return { peripheral_to_advanced_register(m_id), m_id, true, p_pin };
 }
 
 template<peripheral select>
@@ -117,14 +132,13 @@ general_purpose_timer<select>::acquire_pwm16_channel(pin_type p_pin)
   return { peripheral_to_general_register<select>(),
            select,
            false,
-           static_cast<pins>(p_pin) };
+           static_cast<timer_pins>(p_pin) };
 }
 
-template<peripheral select>
 hal::stm32f1::pwm_group_frequency
-advanced_timer<select>::acquire_pwm_group_frequency()
+advanced_timer_manager::acquire_pwm_group_frequency()
 {
-  return { peripheral_to_advanced_register<select>(), select };
+  return { peripheral_to_advanced_register(m_id), m_id };
 }
 
 template<peripheral select>

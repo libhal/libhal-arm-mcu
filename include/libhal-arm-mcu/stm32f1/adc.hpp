@@ -22,63 +22,42 @@
 namespace hal::stm32f1 {
 
 /**
+ * @brief Defines the pins which can be used for analog input for adc1 and
+ * adc2.
+ */
+enum class adc_pins : hal::u8
+{
+  pa0 = 0,
+  pa1 = 1,
+  pa2 = 2,
+  pa3 = 3,
+  pa4 = 4,
+  pa5 = 5,
+  pa6 = 6,
+  pa7 = 7,
+  pb0 = 8,
+  pb1 = 9,
+  pc0 = 10,
+  pc1 = 11,
+  pc2 = 12,
+  pc3 = 13,
+  pc4 = 14,
+  pc5 = 15,
+};
+
+/**
  * @brief Manager for the stm32f1 series' onboard adc peripheral. Used to
  * construct and manage channel objects that are tied to an adc. This also
  * applies to the MCU variants that have more than one adc available.
  *
  */
-class adc_peripheral_manager final
+class adc_manager
 {
 public:
-  // Forward declaration.
+  template<peripheral select>
+  friend class adc;
+
   class channel;
-  /**
-   * @brief Defines the pins which can be used for analog input for adc1 and
-   * adc2.
-   */
-  enum class pins : hal::u8
-  {
-    pa0 = 0,
-    pa1 = 1,
-    pa2 = 2,
-    pa3 = 3,
-    pa4 = 4,
-    pa5 = 5,
-    pa6 = 6,
-    pa7 = 7,
-    pb0 = 8,
-    pb1 = 9,
-    pc0 = 10,
-    pc1 = 11,
-    pc2 = 12,
-    pc3 = 13,
-    pc4 = 14,
-    pc5 = 15,
-  };
-
-  /**
-   * @brief Defines the available adc peripherals that CAN be onboard the MCU.
-   * Having two adc's provides the capability to do dual-channel conversions, as
-   * well as do simultaneous sampling through dual-mode (not currently
-   * supported). Note that the XL-density stm32f1 MCU's only have adc1.
-   *
-   */
-  enum class adc_selection : hal::u8
-  {
-    adc1 = 0,
-    adc2 = 1,
-  };
-
-  /**
-   * @brief Construct a new adc peripheral manager object.
-   *
-   * @param p_adc_selection - The specified adc peripheral to use.
-   * @param p_lock - An externally declared lock to use for thread safety when
-   * trying to read from the adc's. This can be a basic_lock or any type that
-   * derives from it.
-   */
-  adc_peripheral_manager(adc_selection p_adc_selection,
-                         hal::basic_lock& p_lock);
 
   /**
    * @brief Creates and configures an adc channel under the calling adc
@@ -88,41 +67,75 @@ public:
    * @return channel - is an implementation of the `hal::adc` interface that
    * represents a channel on the ADC peripheral.
    */
-  channel acquire_channel(pins p_pin);
+  channel acquire_channel(adc_pins p_pin);
 
-  adc_peripheral_manager(adc_peripheral_manager const& p_other) = delete;
-  adc_peripheral_manager& operator=(adc_peripheral_manager const& p_other) =
-    delete;
-  adc_peripheral_manager(adc_peripheral_manager&& p_other) noexcept = delete;
-  adc_peripheral_manager& operator=(adc_peripheral_manager&& p_other) noexcept =
-    delete;
+  adc_manager(adc_manager const& p_other) = delete;
+  adc_manager& operator=(adc_manager const& p_other) = delete;
+  adc_manager(adc_manager&& p_other) noexcept = delete;
+  adc_manager& operator=(adc_manager&& p_other) noexcept = delete;
 
-private:
-  float read_channel(pins p_pin);
+protected:
+  /**
+   * @brief Construct a new adc peripheral manager object.
+   *
+   * @param p_id - The specified adc peripheral ID to manage and use.
+   * @param p_lock - An externally declared lock to use for thread safety when
+   * trying to read from the adc's. This can be a basic_lock or any type that
+   * derives from it.
+   */
+  adc_manager(peripheral p_id, hal::basic_lock& p_lock);
+
+  float read_channel(adc_pins p_pin);
+  void setup();
 
   /// The lock to be used for thread safety with adc reads.
   hal::basic_lock* m_lock;
   /// A pointer to track the location of the registers for the specified adc
   /// peripheral.
-  void* adc_reg_location;
+  void* m_reg;
+  /// Peripheral ID used off the peripheral on object destruction
+  peripheral m_id;
+};
+
+template<peripheral select>
+class adc final : public adc_manager
+{
+public:
+  adc(hal::basic_lock& p_lock)
+    : adc_manager(select, p_lock)
+  {
+  }
 };
 
 /**
- * @brief This class implements the `hal::adc` abstract base class. It creates
- * channels to be used by the adc peripheral manager to read certain pins'
- * analog input.
+ * @brief This class implements the `hal::adc` interface.
+ *
+ * Creates channels to be used by the adc peripheral manager to read certain
+ * pins' analog input.
  *
  */
-class adc_peripheral_manager::channel : public hal::adc
+class adc_manager::channel : public hal::adc
 {
 public:
+  /**
+   * @brief Constructs a channel object.
+   *
+   * @param p_adc - The adc peripheral manager that this channel belongs to.
+   * @param p_pin - The pin that will be used for this channels analog input.
+   */
+  template<peripheral id>
+  channel(stm32f1::adc<id>& p_adc, adc_pins p_pin)
+    : channel(p_adc, p_pin)
+  {
+  }
   channel(channel const& p_other) = delete;
   channel& operator=(channel const& p_other) = delete;
   channel(channel&& p_other) noexcept = delete;
   channel& operator=(channel&& p_other) noexcept = delete;
+  ~channel() override;
 
 private:
-  friend class adc_peripheral_manager;
+  friend class adc_manager;
 
   /**
    * @brief Constructs a channel object.
@@ -130,15 +143,13 @@ private:
    * @param p_manager - The adc peripheral manager that this channel belongs to.
    * @param p_pin - The pin that will be used for this channels analog input.
    */
-  channel(adc_peripheral_manager& p_manager,
-          adc_peripheral_manager::pins p_pin);
+  channel(adc_manager& p_manager, adc_pins p_pin);
 
   float driver_read() override;
 
   /// The adc peripheral manager that manages this channel.
-  adc_peripheral_manager* m_manager;
+  adc_manager* m_manager;
   /// The pin that is used for this channel.
-  adc_peripheral_manager::pins m_pin;
+  adc_pins m_pin;
 };
-
 }  // namespace hal::stm32f1

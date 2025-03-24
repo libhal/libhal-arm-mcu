@@ -12,28 +12,29 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <libhal-arm-mcu/stm32f1/usart.hpp>
+
 #include <cmath>
 
+#include <libhal-arm-mcu/stm32f1/clock.hpp>
 #include <libhal-arm-mcu/stm32f1/constants.hpp>
-#include <libhal-stm32f1/clock.hpp>
-#include <libhal-stm32f1/constants.hpp>
-#include <libhal-stm32f1/uart.hpp>
+#include <libhal-arm-mcu/stm32f1/pin.hpp>
+#include <libhal-arm-mcu/stm32f1/uart.hpp>
 #include <libhal-util/bit.hpp>
 #include <libhal/error.hpp>
 
-#include "dma.hpp"
 #include "pin.hpp"
 #include "power.hpp"
 #include "usart_reg.hpp"
 
 namespace hal::stm32f1 {
 namespace {
-void configure_baud_rate(usart_t& p_usart,
-                         peripheral p_peripheral,
-                         serial::settings const& p_settings)
+inline void configure_baud_rate(usart_t& p_usart,
+                                u32 p_frequency,
+                                serial::settings const& p_settings)
 {
-  auto const clock_frequency = frequency(p_peripheral);
-  float usart_divider = clock_frequency / (16.0f * p_settings.baud_rate);
+  float const usart_divider =
+    static_cast<float>(p_frequency) / (16.0f * p_settings.baud_rate);
 
   // Truncate off the decimal values
   auto mantissa = static_cast<uint16_t>(usart_divider);
@@ -52,7 +53,8 @@ void configure_baud_rate(usart_t& p_usart,
                         .to<std::uint16_t>();
 }
 
-void configure_format(usart_t& p_usart, serial::settings const& p_settings)
+inline void configure_format(usart_t& p_usart,
+                             serial::settings const& p_settings)
 {
   constexpr auto parity_selection = bit_mask::from<9>();
   constexpr auto parity_control = bit_mask::from<10>();
@@ -77,65 +79,56 @@ void configure_format(usart_t& p_usart, serial::settings const& p_settings)
 }
 }  // namespace
 
-uart::uart(hal::runtime,
-           std::uint8_t p_port,
-           std::span<hal::byte> p_buffer,
-           serial::settings const& p_settings)
-  : uart(p_port, p_buffer, p_settings)
+usart_manager::usart_manager(peripheral p_select)
+  : m_reg(peripheral_to_register(p_select))
+  , m_id(p_select)
 {
+  power_on(m_id);
 }
 
-uart::uart(std::uint8_t p_port,
-           std::span<hal::byte> p_buffer,
-           serial::settings const& p_settings)
-  : m_uart(nullptr)
-  , m_receive_buffer(p_buffer)
-  , m_read_index(0)
-  , m_dma(0)
-  , m_id{}
+usart_manager::~usart_manager()
 {
+  power_off(m_id);
+}
+
+usart_manager::serial usart_manager::acquire_serial(
+  std::span<byte> p_buffer,
+  hal::serial::settings const& p_settings)
+{
+  return { *this, p_buffer, p_settings };
+}
+
+usart_manager::serial::serial(usart_manager& p_usart_manager,
+                              std::span<byte> p_buffer,
+                              hal::serial::settings const& p_settings)
+  : m_usart_manager(&p_usart_manager)
+  , m_buffer(p_buffer)
+  , m_dma_channel(0)
+{
+
   if (p_buffer.size() > max_dma_length) {
     hal::safe_throw(hal::operation_not_supported(this));
   }
 
-  m_port_tx = 'A';
-  m_pin_tx = 9;
-  m_port_rx = 'A';
-  m_pin_rx = 10;
-
-  switch (p_port) {
-    case 1:
-      m_port_tx = 'A';
-      m_pin_tx = 2;
-      m_port_rx = 'A';
-      m_pin_rx = 3;
-      m_id = peripheral::usart1;
-      m_dma = 5;
+  switch (m_usart_manager->m_id) {
+    case peripheral::usart1:
+      m_tx = { .port = 'A', .pin = 9 };
+      m_rx = { .port = 'A', .pin = 10 };
+      m_dma_channel = 5;
       break;
-    case 2:
-      m_port_tx = 'A';
-      m_pin_tx = 2;
-      m_port_rx = 'A';
-      m_pin_rx = 3;
-      m_dma = 6;
-      m_id = peripheral::usart2;
+    case peripheral::usart2:
+      m_tx = { .port = 'A', .pin = 2 };
+      m_rx = { .port = 'A', .pin = 3 };
+      m_dma_channel = 6;
       break;
-    case 3:
-      m_port_tx = 'B';
-      m_pin_tx = 10;
-      m_port_rx = 'B';
-      m_pin_rx = 11;
-      m_dma = 3;
-      m_id = peripheral::usart3;
+    case peripheral::usart3:
+      m_tx = { .port = 'B', .pin = 10 };
+      m_rx = { .port = 'B', .pin = 11 };
+      m_dma_channel = 3;
       break;
     default:
       hal::safe_throw(hal::operation_not_supported(this));
   }
-
-  m_uart = reinterpret_cast<void*>(peripheral_to_register(m_id));  // NOLINT
-
-  // Power on the usart/uart id
-  power_on(m_id);
 
   // Power on dma1 which has the usart channels
   // TODO(): DMA1 is shared across multiple peripherals
@@ -143,18 +136,18 @@ uart::uart(std::uint8_t p_port,
     power_on(peripheral::dma1);
   }
 
-  auto& uart_reg = *to_usart(m_uart);
+  auto& uart_reg = *to_usart(m_usart_manager->m_reg);
 
   // Setup RX DMA channel
-  auto const data_address = reinterpret_cast<iptr>(&uart_reg.data);
-  auto const queue_address = reinterpret_cast<iptr>(p_buffer.data());
-  auto const data_address_int = static_cast<u32>(data_address);
-  auto const queue_address_int = static_cast<u32>(queue_address);
+  auto const data_address = reinterpret_cast<intptr_t>(&uart_reg.data);
+  auto const queue_address = reinterpret_cast<intptr_t>(p_buffer.data());
+  auto const data_address_int = static_cast<std::uint32_t>(data_address);
+  auto const queue_address_int = static_cast<std::uint32_t>(queue_address);
 
-  dma::dma1->channel[m_dma - 1].transfer_amount = p_buffer.size();
-  dma::dma1->channel[m_dma - 1].peripheral_address = data_address_int;
-  dma::dma1->channel[m_dma - 1].memory_address = queue_address_int;
-  dma::dma1->channel[m_dma - 1].configuration = uart_dma_settings1;
+  dma::dma1->channel[m_dma_channel - 1].transfer_amount = p_buffer.size();
+  dma::dma1->channel[m_dma_channel - 1].peripheral_address = data_address_int;
+  dma::dma1->channel[m_dma_channel - 1].memory_address = queue_address_int;
+  dma::dma1->channel[m_dma_channel - 1].configuration = uart_dma_settings1;
 
   // Setup UART Control Settings 1
   uart_reg.control1 = control_reg::control_settings1;
@@ -166,36 +159,24 @@ uart::uart(std::uint8_t p_port,
   // Setup UART Control Settings 3
   uart_reg.control3 = control_reg::control_settings3;
 
-  uart::driver_configure(p_settings);
+  serial::driver_configure(p_settings);
 
-  configure_pin({ .port = m_port_tx, .pin = m_pin_tx },
-                push_pull_alternative_output);
-  configure_pin({ .port = m_port_rx, .pin = m_pin_rx }, input_pull_up);
+  configure_pin(m_tx, push_pull_alternative_output);
+  configure_pin(m_rx, input_pull_up);
 }
 
-uart::~uart()
+void usart_manager::serial::driver_configure(
+  hal::serial::settings const& p_settings)
 {
-  reset_pin({ .port = m_port_tx, .pin = m_pin_tx });
-  reset_pin({ .port = m_port_rx, .pin = m_pin_rx });
-}
-
-u32 uart::dma_cursor_position()
-{
-  u32 receive_amount = dma::dma1->channel[m_dma - 1].transfer_amount;
-  u32 write_position = m_receive_buffer.size() - receive_amount;
-  return write_position % m_receive_buffer.size();
-}
-
-void uart::driver_configure(serial::settings const& p_settings)
-{
-  auto& uart_reg = *to_usart(m_uart);
-  configure_baud_rate(uart_reg, m_id, p_settings);
+  auto& uart_reg = *to_usart(m_usart_manager->m_reg);
+  auto const uart_freq = static_cast<u32>(frequency(m_usart_manager->m_id));
+  configure_baud_rate(uart_reg, uart_freq, p_settings);
   configure_format(uart_reg, p_settings);
 }
 
-serial::write_t uart::driver_write(std::span<hal::byte const> p_data)
+void usart_manager::serial::driver_write(std::span<hal::byte const> p_data)
 {
-  auto& uart_reg = *to_usart(m_uart);
+  auto& uart_reg = *to_usart(m_usart_manager->m_reg);
 
   for (auto const& byte : p_data) {
     while (not bit_extract<status_reg::transit_empty>(uart_reg.status)) {
@@ -204,34 +185,22 @@ serial::write_t uart::driver_write(std::span<hal::byte const> p_data)
     // Load the next byte into the data register
     uart_reg.data = byte;
   }
-
-  return {
-    .data = p_data,
-  };
 }
 
-serial::read_t uart::driver_read(std::span<hal::byte> p_data)
+std::span<hal::byte const> usart_manager::serial::driver_receive_buffer()
 {
-  size_t count = 0;
-
-  for (auto& byte : p_data) {
-    if (m_read_index == dma_cursor_position()) {
-      break;
-    }
-    byte = m_receive_buffer[m_read_index++];
-    m_read_index = m_read_index % m_receive_buffer.size();
-    count++;
-  }
-
-  return {
-    .data = p_data.first(count),
-    .available = 1,
-    .capacity = m_receive_buffer.size(),
-  };
+  return m_buffer;
 }
 
-void uart::driver_flush()
+std::size_t usart_manager::serial::driver_cursor()
 {
-  m_read_index = dma_cursor_position();
+  return m_buffer.size() -
+         dma::dma1->channel[m_dma_channel - 1].transfer_amount;
+}
+
+usart_manager::serial::~serial()
+{
+  reset_pin(m_tx);
+  reset_pin(m_rx);
 }
 }  // namespace hal::stm32f1

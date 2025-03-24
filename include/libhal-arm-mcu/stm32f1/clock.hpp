@@ -14,10 +14,10 @@
 
 #pragma once
 
-#include "constants.hpp"
-
 #include <libhal/error.hpp>
 #include <libhal/units.hpp>
+
+#include "constants.hpp"
 
 namespace hal::stm32f1 {
 

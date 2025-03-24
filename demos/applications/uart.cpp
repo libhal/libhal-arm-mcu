@@ -25,7 +25,7 @@ void application(resource_list& p_map)
   using namespace hal::literals;
 
   auto& clock = *p_map.clock.value();
-  auto& console = *p_map.old_uart.value();
+  auto& console = *p_map.console.value();
 
   while (true) {
     using namespace std::chrono_literals;

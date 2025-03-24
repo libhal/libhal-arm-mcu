@@ -32,7 +32,6 @@ libhal_build_demos(
   pwm16
   spi
   blank
-  zero_copy_serial
   # stream_dac
 
   PACKAGES

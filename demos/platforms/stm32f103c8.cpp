@@ -18,12 +18,12 @@
 #include <libhal-arm-mcu/stm32f1/can.hpp>
 #include <libhal-arm-mcu/stm32f1/clock.hpp>
 #include <libhal-arm-mcu/stm32f1/constants.hpp>
-#include <libhal-arm-mcu/stm32f1/gpio.hpp>
+#include <libhal-arm-mcu/stm32f1/input_pin.hpp>
+#include <libhal-arm-mcu/stm32f1/output_pin.hpp>
 #include <libhal-arm-mcu/stm32f1/spi.hpp>
 #include <libhal-arm-mcu/stm32f1/timer.hpp>
-#include <libhal-arm-mcu/stm32f1/usart.hpp>
+#include <libhal-arm-mcu/stm32f1/uart.hpp>
 #include <libhal-arm-mcu/system_control.hpp>
-#include <libhal-util/as_bytes.hpp>
 #include <libhal-util/atomic_spin_lock.hpp>
 #include <libhal-util/bit_bang_i2c.hpp>
 #include <libhal-util/bit_bang_spi.hpp>
@@ -33,127 +33,100 @@
 #include <libhal/pwm.hpp>
 #include <libhal/units.hpp>
 
-#include <libhal/zero_copy_serial.hpp>
 #include <resource_list.hpp>
 
 constexpr bool use_bit_bang_spi = false;
+constexpr bool use_libhal_4_pwm = false;
 
 void initialize_platform(resource_list& p_resources)
 {
   using namespace hal::literals;
-  using st_peripheral = hal::stm32f1::peripheral;
-
-  // ===========================================================================
-  // Setup Reset
-  // ===========================================================================
-
   p_resources.reset = []() { hal::cortex_m::reset(); };
 
-  // ===========================================================================
-  // Initialize platform
-  // ===========================================================================
-
+  // Set the MCU to the maximum clock speed
   hal::stm32f1::maximum_speed_using_internal_oscillator();
   hal::stm32f1::release_jtag_pins();
 
-  // ===========================================================================
-  // Setup clock
-  // ===========================================================================
-
-  auto cpu_frequency = hal::stm32f1::frequency(st_peripheral::cpu);
+  auto cpu_frequency = hal::stm32f1::frequency(hal::stm32f1::peripheral::cpu);
   static hal::cortex_m::dwt_counter steady_clock(cpu_frequency);
   p_resources.clock = &steady_clock;
 
-  // ===========================================================================
-  // Setup Console
-  // ===========================================================================
+  static hal::stm32f1::uart uart1(hal::port<1>, hal::buffer<128>);
+  p_resources.console = &uart1;
 
-  static hal::stm32f1::usart<st_peripheral::usart1> usart1;
-  static auto console_serial = usart1.acquire_serial(hal::buffer<128>);
-  p_resources.console = &console_serial;
-
-  // ===========================================================================
-  // Setup GPIO
-  // ===========================================================================
-
-  static hal::stm32f1::gpio<st_peripheral::gpio_a> gpio_a;
-  static hal::stm32f1::gpio<st_peripheral::gpio_b> gpio_b;
-  static hal::stm32f1::gpio<st_peripheral::gpio_c> gpio_c;
-  static auto led = gpio_c.acquire_output_pin(13);
+  static hal::stm32f1::output_pin led('C', 13);
   p_resources.status_led = &led;
 
-  static auto input_pin = gpio_b.acquire_input_pin(4);
+  static hal::stm32f1::input_pin input_pin('B', 4);
   p_resources.input_pin = &input_pin;
 
-  // ===========================================================================
-  // Setup ADC
-  // ===========================================================================
-
   static hal::atomic_spin_lock adc_lock;
-  static hal::stm32f1::adc<st_peripheral::adc1> adc(adc_lock);
-  static auto pb0 = adc.acquire_channel(hal::stm32f1::adc_pins::pb0);
+  static hal::stm32f1::adc_peripheral_manager adc(
+    hal::stm32f1::adc_peripheral_manager::adc_selection::adc1, adc_lock);
+  static auto pb0 =
+    adc.acquire_channel(hal::stm32f1::adc_peripheral_manager::pins::pb0);
   p_resources.adc = &pb0;
 
-  // ===========================================================================
-  // Setup I2C
-  // ===========================================================================
-
-  static auto sda_pin = gpio_b.acquire_output_pin(7);
-  static auto scl_pin = gpio_b.acquire_output_pin(6);
+  static hal::stm32f1::output_pin sda_output_pin('B', 7);
+  static hal::stm32f1::output_pin scl_output_pin('B', 6);
   static hal::bit_bang_i2c bit_bang_i2c(
     hal::bit_bang_i2c::pins{
-      .sda = &sda_pin,
-      .scl = &scl_pin,
+      .sda = &sda_output_pin,
+      .scl = &scl_output_pin,
     },
     steady_clock);
   p_resources.i2c = &bit_bang_i2c;
 
-  // ===========================================================================
-  // Setup SPI
-  // ===========================================================================
-
-  static auto spi_chip_select = gpio_a.acquire_output_pin(4);
+  static hal::stm32f1::output_pin spi_chip_select('A', 4);
   p_resources.spi_chip_select = &spi_chip_select;
+  static hal::stm32f1::output_pin sck('A', 5);
+  static hal::stm32f1::output_pin copi('A', 6);
+  static hal::stm32f1::input_pin cipo('A', 7);
 
-  constexpr hal::spi::settings spi_settings{
+  static hal::bit_bang_spi::pins bit_bang_spi_pins{ .sck = &sck,
+                                                    .copi = &copi,
+                                                    .cipo = &cipo };
+
+  static hal::spi::settings bit_bang_spi_settings{
     .clock_rate = 250.0_kHz,
     .clock_polarity = false,
     .clock_phase = false,
   };
+
   hal::spi* spi = nullptr;
+
   if constexpr (use_bit_bang_spi) {
-    static auto sck = gpio_a.acquire_output_pin(5);
-    static auto copi = gpio_a.acquire_output_pin(6);
-    static auto cipo = gpio_a.acquire_input_pin(7);
     static hal::bit_bang_spi bit_bang_spi(
-      hal::bit_bang_spi::pins{
-        .sck = &sck,
-        .copi = &copi,
-        .cipo = &cipo,
-      },
-      steady_clock,
-      spi_settings);
+      bit_bang_spi_pins, steady_clock, bit_bang_spi_settings);
     spi = &bit_bang_spi;
   } else {
-    static hal::stm32f1::spi spi1(hal::bus<1>, spi_settings);
+    static hal::stm32f1::spi spi1(hal::bus<1>,
+                                  {
+                                    .clock_rate = 250.0_kHz,
+                                    .clock_polarity = false,
+                                    .clock_phase = false,
+                                  });
     spi = &spi1;
   }
   p_resources.spi = spi;
 
-  // ===========================================================================
-  // Setup PWM
-  // ===========================================================================
+  hal::pwm16_channel* pwm_channel = nullptr;
+  hal::pwm_group_manager* pwm_frequency = nullptr;
 
-  static hal::stm32f1::general_purpose_timer<st_peripheral::timer2> timer2;
-  static auto timer_pwm_channel =
-    timer2.acquire_pwm16_channel(hal::stm32f1::timer2_pin::pa1);
-  p_resources.pwm_channel = &timer_pwm_channel;
-  static auto timer1_pwm_frequency = timer2.acquire_pwm_group_frequency();
-  p_resources.pwm_frequency = &timer1_pwm_frequency;
+  if constexpr (use_libhal_4_pwm) {
+    // Use old PWM
+  } else {
+    static hal::stm32f1::general_purpose_timer<hal::stm32f1::peripheral::timer2>
+      timer;
+    static auto timer_pwm_channel =
+      timer.acquire_pwm16_channel(hal::stm32f1::timer2_pin::pa1);
+    pwm_channel = &timer_pwm_channel;
+    static auto timer1_pwm_frequency = timer.acquire_pwm_group_frequency();
+    pwm_frequency = &timer1_pwm_frequency;
+  }
 
-  // ===========================================================================
-  // Setup CAN
-  // ===========================================================================
+  p_resources.pwm_channel = pwm_channel;
+  p_resources.pwm_frequency = pwm_frequency;
 
   try {
     using namespace std::chrono_literals;
@@ -181,7 +154,7 @@ void initialize_platform(resource_list& p_resources)
     mask_id_filters_x2.filter[0].allow({ { .id = 0, .mask = 0 } });
   } catch (hal::timed_out&) {
     hal::print(
-      console_serial,
+      uart1,
       "⚠️ CAN peripheral timeout error!\n"
       "- CAN disabled - check CANRX/CANTX connections to transceiver.\n"
       "- System will operate normally if CAN is NOT required.\n\n");

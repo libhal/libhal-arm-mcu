@@ -16,7 +16,6 @@
 
 #include <optional>
 
-#include <libhal-util/as_bytes.hpp>
 #include <libhal/adc.hpp>
 #include <libhal/can.hpp>
 #include <libhal/dac.hpp>
@@ -30,7 +29,6 @@
 #include <libhal/spi.hpp>
 #include <libhal/steady_clock.hpp>
 #include <libhal/stream_dac.hpp>
-#include <libhal/zero_copy_serial.hpp>
 
 struct resource_list
 {
@@ -41,8 +39,7 @@ struct resource_list
   // if the value, is not present. That exception will be caught in main and a
   // message will be printed if the `console` field has been set, then call
   // std::terminate.
-  std::optional<hal::zero_copy_serial*> console;
-  std::optional<hal::serial*> old_uart;
+  std::optional<hal::serial*> console;
   std::optional<hal::output_pin*> status_led;
   std::optional<hal::steady_clock*> clock;
   std::optional<hal::can_transceiver*> can_transceiver;
@@ -66,92 +63,3 @@ void application(resource_list& p_map);
 
 // Each platform file should have this function implemented
 void initialize_platform(resource_list& p_resources);
-
-namespace hal {
-
-/**
- * @ingroup Serial
- * @brief Write std::span of const char to a serial port
- *
- * @param p_serial - the serial port that will be written to
- * @param p_data_out - chars to be written out the port
- * @param p_timeout - timeout callable that throws a std::errc::timed_out
- * exception when the timeout expires.
- * @throws std::errc::timed_out - if p_timeout expires
- */
-inline void write(zero_copy_serial& p_serial, std::span<byte> p_data_out)
-{
-  p_serial.write(p_data_out);
-}
-
-/**
- * @ingroup Serial
- * @brief Write std::span of const char to a serial port
- *
- * @param p_serial - the serial port that will be written to
- * @param p_data_out - chars to be written out the port
- * @param p_timeout - timeout callable that throws a std::errc::timed_out
- * exception when the timeout expires.
- * @throws std::errc::timed_out - if p_timeout expires
- */
-inline void write(zero_copy_serial& p_serial, std::string_view p_data_out)
-{
-  p_serial.write(as_bytes(p_data_out));
-}
-
-/**
- * @ingroup Serial
- * @brief Write data to serial buffer and drop return value
- *
- * Only use this with serial ports with infallible write operations, meaning
- * they will never return an error result.
- *
- * @tparam byte_array_t - data array type
- * @param p_serial - serial port to write data to
- * @param p_data - data to be sent over the serial port
- */
-template<typename byte_array_t>
-void print(zero_copy_serial& p_serial, byte_array_t&& p_data)
-{
-  write(p_serial, p_data);
-}
-
-/**
- * @ingroup Serial
- * @brief Write formatted string data to serial buffer and drop return value
- *
- * Uses snprintf internally and writes to a local statically allocated an array.
- * This function will never dynamically allocate like how standard std::printf
- * does.
- *
- * This function does NOT include the NULL character when transmitting the data
- * over the serial port.
- *
- * @tparam buffer_size - Size of the buffer to allocate on the stack to store
- * the formatted message.
- * @tparam Parameters - printf arguments
- * @param p_serial - serial port to write data to
- * @param p_format - printf style null terminated format string
- * @param p_parameters - printf arguments
- */
-template<size_t buffer_size, typename... Parameters>
-void print(zero_copy_serial& p_serial,
-           char const* p_format,
-           Parameters... p_parameters)
-{
-  static_assert(buffer_size > 2);
-  constexpr int unterminated_max_string_size =
-    static_cast<int>(buffer_size) - 1;
-
-  std::array<char, buffer_size> buffer{};
-  int length =
-    std::snprintf(buffer.data(), buffer.size(), p_format, p_parameters...);
-
-  if (length > unterminated_max_string_size) {
-    // Print out what was able to be written to the buffer
-    length = unterminated_max_string_size;
-  }
-
-  write(p_serial, std::string_view(buffer.data(), length));
-}
-}  // namespace hal

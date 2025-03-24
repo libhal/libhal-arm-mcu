@@ -14,9 +14,8 @@
 
 #pragma once
 
-#include <cstdint>
-
-#include <libhal-stm32f1/constants.hpp>
+#include <libhal-arm-mcu/stm32f1/constants.hpp>
+#include <libhal/units.hpp>
 
 namespace hal::stm32f1 {
 /**

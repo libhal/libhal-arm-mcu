@@ -12,11 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "libhal-arm-mcu/stm32f1/input_pin.hpp"
 #include <libhal-stm32f1/input_pin.hpp>
 
-#include <cstdint>
-
+#include <libhal-arm-mcu/stm32f1/input_pin.hpp>
 #include <libhal-util/bit.hpp>
 #include <libhal/error.hpp>
 #include <libhal/units.hpp>
@@ -24,8 +22,8 @@
 #include "pin.hpp"
 
 namespace hal::stm32f1 {
-input_pin::input_pin(std::uint8_t p_port,  // NOLINT
-                     std::uint8_t p_pin)   // NOLINT
+input_pin::input_pin(u8 p_port,  // NOLINT
+                     u8 p_pin)   // NOLINT
 
   : m_port(p_port)
   , m_pin(p_pin)

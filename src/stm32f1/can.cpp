@@ -14,8 +14,6 @@
 
 #include <bitset>
 #include <cstdint>
-#include <libhal/steady_clock.hpp>
-#include <libhal/units.hpp>
 #include <optional>
 
 #include <libhal-arm-mcu/interrupt.hpp>
@@ -32,6 +30,8 @@
 #include <libhal-util/steady_clock.hpp>
 #include <libhal/can.hpp>
 #include <libhal/error.hpp>
+#include <libhal/steady_clock.hpp>
+#include <libhal/units.hpp>
 #include <nonstd/scope.hpp>
 
 #include "can_reg.hpp"

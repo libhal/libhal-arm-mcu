@@ -14,33 +14,34 @@
 
 #pragma once
 
-#include <cstdint>
-
 #include <libhal-util/bit.hpp>
+#include <libhal/units.hpp>
 
 namespace hal::stm32f1 {
 struct reset_and_clock_control_t
 {
-  std::uint32_t volatile cr;
-  std::uint32_t volatile cfgr;
-  std::uint32_t volatile cir;
-  std::uint32_t volatile apb2rstr;
-  std::uint32_t volatile apb1rstr;
-  std::uint32_t volatile ahbenr;
-  std::uint32_t volatile apb2enr;
-  std::uint32_t volatile apb1enr;
-  std::uint32_t volatile bdcr;
-  std::uint32_t volatile csr;
-  std::uint32_t volatile ahbrstr;
-  std::uint32_t volatile cfgr2;
+  u32 volatile cr;
+  u32 volatile cfgr;
+  u32 volatile cir;
+  u32 volatile apb2rstr;
+  u32 volatile apb1rstr;
+  u32 volatile ahbenr;
+  u32 volatile apb2enr;
+  u32 volatile apb1enr;
+  u32 volatile bdcr;
+  u32 volatile csr;
+  u32 volatile ahbrstr;
+  u32 volatile cfgr2;
 };
+
+constexpr uptr rcc_address = 0x40000000 + 0x20000 + 0x1000;
 
 /**
  * @return reset_and_clock_control_t& - return reset_and_clock_control_t
  * register.
  */
-inline reset_and_clock_control_t* rcc =
-  reinterpret_cast<reset_and_clock_control_t*>(0x40000000 + 0x20000 + 0x1000);
+// NOLINTNEXTLINE(performance-no-int-to-ptr)
+inline auto* rcc = reinterpret_cast<reset_and_clock_control_t*>(rcc_address);
 
 /// Bit masks for the CFGR register
 struct clock_configuration

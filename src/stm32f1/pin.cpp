@@ -12,13 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include <libhal-stm32f1/pin.hpp>
-
-#include <cstdint>
-
+#include <libhal-arm-mcu/stm32f1/pin.hpp>
 #include <libhal-util/bit.hpp>
 #include <libhal-util/enum.hpp>
 #include <libhal/error.hpp>
+#include <libhal/units.hpp>
 
 #include "pin.hpp"
 #include "power.hpp"
@@ -123,7 +121,7 @@ void configure_pin(pin_select p_pin_select, pin_config_t p_config)
   safely_power_on(p_pin_select);
   throw_if_pin_is_unavailable(p_pin_select);
 
-  auto const config = bit_value<std::uint32_t>(0)
+  auto const config = bit_value<u32>(0)
                         .insert<cnf1>(p_config.CNF1)
                         .insert<cnf0>(p_config.CNF0)
                         .insert<mode>(p_config.MODE)
@@ -137,7 +135,7 @@ void reset_pin(pin_select p_pin_select)
   auto& config_reg = config_register(p_pin_select);
   config_reg = bit_modify(config_reg)
                  .insert(mask(p_pin_select.pin), reset_pin_config)
-                 .to<std::uint32_t>();
+                 .to<u32>();
 }
 
 void release_jtag_pins()

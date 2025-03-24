@@ -14,9 +14,8 @@
 
 #pragma once
 
-#include <cstdint>
-
 #include <libhal/output_pin.hpp>
+#include <libhal/units.hpp>
 
 namespace hal::stm32f1 {
 /**
@@ -36,8 +35,8 @@ public:
    * @param p_settings - initial pin settings
    * @throws hal::argument_out_of_domain - if the port and pin are not valid
    */
-  output_pin(std::uint8_t p_port,  // NOLINT
-             std::uint8_t p_pin,   // NOLINT
+  output_pin(u8 p_port,  // NOLINT
+             u8 p_pin,   // NOLINT
              output_pin::settings p_settings = {});
 
 private:
@@ -45,7 +44,7 @@ private:
   void driver_level(bool p_high) override;
   bool driver_level() override;
 
-  std::uint8_t m_port{};
-  std::uint8_t m_pin{};
+  u8 m_port{};
+  u8 m_pin{};
 };
 }  // namespace hal::stm32f1

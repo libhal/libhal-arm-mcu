@@ -14,10 +14,9 @@
 
 #pragma once
 
-#include <cstdint>
-
 #include <libhal/initializers.hpp>
 #include <libhal/serial.hpp>
+#include <libhal/units.hpp>
 
 #include "constants.hpp"
 #include "dma.hpp"
@@ -70,7 +69,7 @@ private:
   read_t driver_read(std::span<hal::byte> p_data) override;
   void driver_flush() override;
 
-  std::uint32_t dma_cursor_position();
+  u32 dma_cursor_position();
 
   void* m_uart;
   std::span<hal::byte> m_receive_buffer;

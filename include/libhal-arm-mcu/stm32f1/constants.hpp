@@ -14,9 +14,8 @@
 
 #pragma once
 
-#include <cstdint>
-
 #include <libhal-armcortex/interrupt.hpp>
+#include <libhal/units.hpp>
 
 namespace hal::stm32f1 {
 

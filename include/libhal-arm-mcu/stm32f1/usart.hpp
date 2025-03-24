@@ -16,12 +16,12 @@
 
 #include <span>
 
+#include <libhal-arm-mcu/stm32f1/pin.hpp>
 #include <libhal/initializers.hpp>
 #include <libhal/units.hpp>
 #include <libhal/zero_copy_serial.hpp>
 
 #include "constants.hpp"
-#include "libhal-arm-mcu/stm32f1/pin.hpp"
 
 namespace hal::stm32f1 {
 

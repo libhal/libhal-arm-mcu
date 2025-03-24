@@ -13,7 +13,6 @@
 // limitations under the License.
 
 #include <libhal-stm32f1/clock.hpp>
-
 #include <libhal-stm32f1/constants.hpp>
 #include <libhal-util/bit.hpp>
 #include <libhal-util/enum.hpp>

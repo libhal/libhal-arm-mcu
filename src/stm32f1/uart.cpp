@@ -1,3 +1,17 @@
+// Copyright 2024 Khalil Estell
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 #include <cmath>
 
 #include <libhal-arm-mcu/stm32f1/constants.hpp>
@@ -132,10 +146,10 @@ uart::uart(std::uint8_t p_port,
   auto& uart_reg = *to_usart(m_uart);
 
   // Setup RX DMA channel
-  auto const data_address = reinterpret_cast<intptr_t>(&uart_reg.data);
-  auto const queue_address = reinterpret_cast<intptr_t>(p_buffer.data());
-  auto const data_address_int = static_cast<std::uint32_t>(data_address);
-  auto const queue_address_int = static_cast<std::uint32_t>(queue_address);
+  auto const data_address = reinterpret_cast<iptr>(&uart_reg.data);
+  auto const queue_address = reinterpret_cast<iptr>(p_buffer.data());
+  auto const data_address_int = static_cast<u32>(data_address);
+  auto const queue_address_int = static_cast<u32>(queue_address);
 
   dma::dma1->channel[m_dma - 1].transfer_amount = p_buffer.size();
   dma::dma1->channel[m_dma - 1].peripheral_address = data_address_int;
@@ -165,10 +179,10 @@ uart::~uart()
   reset_pin({ .port = m_port_rx, .pin = m_pin_rx });
 }
 
-std::uint32_t uart::dma_cursor_position()
+u32 uart::dma_cursor_position()
 {
-  std::uint32_t receive_amount = dma::dma1->channel[m_dma - 1].transfer_amount;
-  std::uint32_t write_position = m_receive_buffer.size() - receive_amount;
+  u32 receive_amount = dma::dma1->channel[m_dma - 1].transfer_amount;
+  u32 write_position = m_receive_buffer.size() - receive_amount;
   return write_position % m_receive_buffer.size();
 }
 

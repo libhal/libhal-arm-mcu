@@ -18,6 +18,7 @@
 #include <libhal-arm-mcu/stm32f1/adc.hpp>
 #include <libhal-arm-mcu/stm32f1/clock.hpp>
 #include <libhal-arm-mcu/stm32f1/constants.hpp>
+#include <libhal-arm-mcu/stm32f1/pin.hpp>
 #include <libhal-util/bit.hpp>
 #include <libhal-util/bit_limits.hpp>
 #include <libhal-util/enum.hpp>
@@ -25,7 +26,6 @@
 #include <libhal/lock.hpp>
 #include <libhal/units.hpp>
 
-#include "libhal-arm-mcu/stm32f1/pin.hpp"
 #include "pin.hpp"
 #include "power.hpp"
 

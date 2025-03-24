@@ -14,16 +14,14 @@
 
 #include <libhal-stm32f1/output_pin.hpp>
 
-#include <cstdint>
-
 #include <libhal-util/bit.hpp>
 #include <libhal/error.hpp>
 
 #include "pin.hpp"
 
 namespace hal::stm32f1 {
-output_pin::output_pin(std::uint8_t p_port,  // NOLINT
-                       std::uint8_t p_pin,   // NOLINT
+output_pin::output_pin(u8 p_port,  // NOLINT
+                       u8 p_pin,   // NOLINT
                        output_pin::settings p_settings)
   : m_port(p_port)
   , m_pin(p_pin)

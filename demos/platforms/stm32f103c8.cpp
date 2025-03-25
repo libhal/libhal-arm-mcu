@@ -51,7 +51,7 @@ void initialize_platform(resource_list& p_resources)
 
   using st_peripheral = hal::stm32f1::peripheral;
 
-  auto cpu_frequency = hal::stm32f1::frequency(hal::stm32f1::peripheral::cpu);
+  auto cpu_frequency = hal::stm32f1::frequency(st_peripheral::cpu);
   static hal::cortex_m::dwt_counter steady_clock(cpu_frequency);
   p_resources.clock = &steady_clock;
 
@@ -61,9 +61,6 @@ void initialize_platform(resource_list& p_resources)
   static hal::stm32f1::usart<st_peripheral::usart2> usart2;
   static auto usart2_serial = usart2.acquire_serial(hal::buffer<128>);
   p_resources.zero_copy_serial = &usart2_serial;
-
-  static hal::stm32f1::uart usart1(hal::port<1>, hal::buffer<128>);
-  p_resources.console = &usart1;
 
   // ===========================================================================
   // Setup GPIO
@@ -95,13 +92,6 @@ void initialize_platform(resource_list& p_resources)
 
   static hal::stm32f1::output_pin spi_chip_select('A', 4);
   p_resources.spi_chip_select = &spi_chip_select;
-  static hal::stm32f1::output_pin sck('A', 5);
-  static hal::stm32f1::output_pin copi('A', 6);
-  static hal::stm32f1::input_pin cipo('A', 7);
-
-  static hal::bit_bang_spi::pins bit_bang_spi_pins{ .sck = &sck,
-                                                    .copi = &copi,
-                                                    .cipo = &cipo };
 
   static hal::spi::settings bit_bang_spi_settings{
     .clock_rate = 250.0_kHz,
@@ -112,8 +102,13 @@ void initialize_platform(resource_list& p_resources)
   hal::spi* spi = nullptr;
 
   if constexpr (use_bit_bang_spi) {
+    static hal::stm32f1::output_pin sck('A', 5);
+    static hal::stm32f1::output_pin copi('A', 6);
+    static hal::stm32f1::input_pin cipo('A', 7);
     static hal::bit_bang_spi bit_bang_spi(
-      bit_bang_spi_pins, steady_clock, bit_bang_spi_settings);
+      hal::bit_bang_spi::pins{ .sck = &sck, .copi = &copi, .cipo = &cipo },
+      steady_clock,
+      bit_bang_spi_settings);
     spi = &bit_bang_spi;
   } else {
     static hal::stm32f1::spi spi1(hal::bus<1>,
@@ -132,8 +127,7 @@ void initialize_platform(resource_list& p_resources)
   if constexpr (use_libhal_4_pwm) {
     // Use old PWM
   } else {
-    static hal::stm32f1::general_purpose_timer<hal::stm32f1::peripheral::timer2>
-      timer;
+    static hal::stm32f1::general_purpose_timer<st_peripheral::timer2> timer;
     static auto timer_pwm_channel =
       timer.acquire_pwm16_channel(hal::stm32f1::timer2_pin::pa1);
     pwm_channel = &timer_pwm_channel;

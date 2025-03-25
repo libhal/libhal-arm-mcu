@@ -15,10 +15,10 @@
 #pragma once
 
 #include <cstdint>
-#include <libhal/io_waiter.hpp>
 #include <span>
 
 #include <libhal/i2c.hpp>
+#include <libhal/initializers.hpp>
 #include <libhal/io_waiter.hpp>
 
 #include "constants.hpp"

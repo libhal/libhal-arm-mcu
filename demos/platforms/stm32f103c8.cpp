@@ -18,11 +18,13 @@
 #include <libhal-arm-mcu/stm32f1/can.hpp>
 #include <libhal-arm-mcu/stm32f1/clock.hpp>
 #include <libhal-arm-mcu/stm32f1/constants.hpp>
+#include <libhal-arm-mcu/stm32f1/gpio.hpp>
 #include <libhal-arm-mcu/stm32f1/input_pin.hpp>
 #include <libhal-arm-mcu/stm32f1/output_pin.hpp>
 #include <libhal-arm-mcu/stm32f1/spi.hpp>
 #include <libhal-arm-mcu/stm32f1/timer.hpp>
 #include <libhal-arm-mcu/stm32f1/uart.hpp>
+#include <libhal-arm-mcu/stm32f1/usart.hpp>
 #include <libhal-arm-mcu/system_control.hpp>
 #include <libhal-util/atomic_spin_lock.hpp>
 #include <libhal-util/bit_bang_i2c.hpp>
@@ -47,6 +49,8 @@ void initialize_platform(resource_list& p_resources)
   hal::stm32f1::maximum_speed_using_internal_oscillator();
   hal::stm32f1::release_jtag_pins();
 
+  using st_peripheral = hal::stm32f1::peripheral;
+
   auto cpu_frequency = hal::stm32f1::frequency(hal::stm32f1::peripheral::cpu);
   static hal::cortex_m::dwt_counter steady_clock(cpu_frequency);
   p_resources.clock = &steady_clock;
@@ -54,17 +58,29 @@ void initialize_platform(resource_list& p_resources)
   static hal::stm32f1::uart uart1(hal::port<1>, hal::buffer<128>);
   p_resources.console = &uart1;
 
-  static hal::stm32f1::output_pin led('C', 13);
+  static hal::stm32f1::usart<st_peripheral::usart2> usart2;
+  static auto usart2_serial = usart2.acquire_serial(hal::buffer<128>);
+  p_resources.zero_copy_serial = &usart2_serial;
+
+  static hal::stm32f1::uart usart1(hal::port<1>, hal::buffer<128>);
+  p_resources.console = &usart1;
+
+  // ===========================================================================
+  // Setup GPIO
+  // ===========================================================================
+
+  static hal::stm32f1::gpio<st_peripheral::gpio_a> gpio_a;
+  static hal::stm32f1::gpio<st_peripheral::gpio_b> gpio_b;
+  static hal::stm32f1::gpio<st_peripheral::gpio_c> gpio_c;
+  static auto led = gpio_c.acquire_output_pin(13);
   p_resources.status_led = &led;
 
   static hal::stm32f1::input_pin input_pin('B', 4);
   p_resources.input_pin = &input_pin;
 
   static hal::atomic_spin_lock adc_lock;
-  static hal::stm32f1::adc_peripheral_manager adc(
-    hal::stm32f1::adc_peripheral_manager::adc_selection::adc1, adc_lock);
-  static auto pb0 =
-    adc.acquire_channel(hal::stm32f1::adc_peripheral_manager::pins::pb0);
+  static hal::stm32f1::adc<st_peripheral::adc1> adc(adc_lock);
+  static auto pb0 = adc.acquire_channel(hal::stm32f1::adc_pins::pb0);
   p_resources.adc = &pb0;
 
   static hal::stm32f1::output_pin sda_output_pin('B', 7);

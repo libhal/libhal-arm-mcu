@@ -25,7 +25,7 @@ void application(resource_list& p_map)
   using namespace hal::literals;
 
   auto& clock = *p_map.clock.value();
-  auto& console = *p_map.console.value();
+  auto& console = *p_map.zero_copy_serial.value();
 
   auto previous_cursor = console.receive_cursor();
 

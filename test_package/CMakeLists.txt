@@ -18,4 +18,5 @@ project(test_package LANGUAGES CXX)
 find_package(libhal-arm-mcu CONFIG REQUIRED)
 
 add_executable(test_package main.cpp)
+target_compile_options(test_package PRIVATE -flto)
 target_link_libraries(test_package PRIVATE libhal::arm-mcu)

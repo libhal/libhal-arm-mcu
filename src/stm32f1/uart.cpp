@@ -98,17 +98,12 @@ uart::uart(std::uint8_t p_port,
     hal::safe_throw(hal::operation_not_supported(this));
   }
 
-  m_port_tx = 'A';
-  m_pin_tx = 9;
-  m_port_rx = 'A';
-  m_pin_rx = 10;
-
   switch (p_port) {
     case 1:
       m_port_tx = 'A';
-      m_pin_tx = 2;
+      m_pin_tx = 9;
       m_port_rx = 'A';
-      m_pin_rx = 3;
+      m_pin_rx = 10;
       m_id = peripheral::usart1;
       m_dma = 5;
       break;

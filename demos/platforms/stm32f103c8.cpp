@@ -58,12 +58,10 @@ void initialize_platform(resource_list& p_resources)
   static hal::stm32f1::uart uart1(hal::port<1>, hal::buffer<128>);
   p_resources.console = &uart1;
 
-// TODO(#117): Fix and re-enable usart
-#if 0
   static hal::stm32f1::usart<st_peripheral::usart2> usart2;
   static auto usart2_serial = usart2.acquire_serial(hal::buffer<128>);
   p_resources.zero_copy_serial = &usart2_serial;
-#endif
+
   // ===========================================================================
   // Setup GPIO
   // ===========================================================================

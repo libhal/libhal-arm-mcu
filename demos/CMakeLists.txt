@@ -33,6 +33,7 @@ libhal_build_demos(
   spi
   blank
   # stream_dac
+  test
 
   PACKAGES
   minimp3

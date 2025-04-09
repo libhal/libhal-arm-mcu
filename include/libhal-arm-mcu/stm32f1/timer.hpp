@@ -14,14 +14,18 @@
 
 #pragma once
 
+#include <optional>
 #include <type_traits>
 
+#include <libhal-arm-mcu/interrupt.hpp>
 #include <libhal-arm-mcu/stm32_generic/pwm.hpp>
+#include <libhal-arm-mcu/stm32_generic/timer.hpp>
 #include <libhal-arm-mcu/stm32f1/clock.hpp>
 #include <libhal-arm-mcu/stm32f1/constants.hpp>
 #include <libhal-util/bit.hpp>
 #include <libhal-util/enum.hpp>
 #include <libhal/pwm.hpp>
+#include <libhal/timer.hpp>
 #include <libhal/units.hpp>
 
 namespace hal::stm32f1 {
@@ -210,8 +214,44 @@ consteval auto get_pwm_timer_type()
 
 class advanced_timer_manager;
 
-template<hal::stm32f1::peripheral select>
-class general_purpose_timer;
+class general_purpose_timer_manager;
+
+class timer final : public hal::timer
+{
+public:
+  friend class hal::stm32f1::advanced_timer_manager;
+  friend class hal::stm32f1::general_purpose_timer_manager;
+  // friend class hal::stm32f1::basic_timer;
+
+  timer(timer const& p_other) = delete;
+  timer& operator=(timer const& p_other) = delete;
+  timer(timer&& p_other) noexcept = delete;
+  timer& operator=(timer&& p_other) noexcept = delete;
+
+  //~timer() override;
+
+private:
+  struct interrupt_params
+  {
+    cortex_m::irq_t irq;
+    cortex_m::interrupt_pointer handler;
+  };
+
+  timer(void* p_reg, stm32f1::peripheral p_select);
+
+  bool driver_is_running() override;
+  void driver_cancel() override;
+  void driver_schedule(hal::callback<void(void)> p_callback,
+                       hal::time_duration p_delay) override;
+
+  interrupt_params setup_interrupt();
+  void handle_interrupt();
+  void interrupt();
+
+  hal::stm32_generic::timer m_timer;
+  peripheral m_select;
+  std::optional<hal::callback<void(void)>> m_callback;
+};
 
 /**
  * @brief This class is a wrapper for the pwm class.
@@ -225,9 +265,7 @@ class pwm16_channel : public hal::pwm16_channel
 {
 public:
   friend class hal::stm32f1::advanced_timer_manager;
-
-  template<hal::stm32f1::peripheral select>
-  friend class hal::stm32f1::general_purpose_timer;
+  friend class hal::stm32f1::general_purpose_timer_manager;
 
   pwm16_channel(pwm16_channel const& p_other) = delete;
   pwm16_channel& operator=(pwm16_channel const& p_other) = delete;
@@ -279,9 +317,7 @@ class pwm_group_frequency : public hal::pwm_group_manager
 {
 public:
   friend class hal::stm32f1::advanced_timer_manager;
-
-  template<hal::stm32f1::peripheral select>
-  friend class hal::stm32f1::general_purpose_timer;
+  friend class hal::stm32f1::general_purpose_timer_manager;
 
   pwm_group_frequency(pwm_group_frequency const& p_other) = delete;
   pwm_group_frequency& operator=(pwm_group_frequency const& p_other) = delete;
@@ -331,9 +367,7 @@ class pwm : public hal::pwm
 {
 public:
   friend class hal::stm32f1::advanced_timer_manager;
-
-  template<hal::stm32f1::peripheral select>
-  friend class hal::stm32f1::general_purpose_timer;
+  friend class hal::stm32f1::general_purpose_timer_manager;
 
   pwm(pwm const& p_other) = delete;
   pwm& operator=(pwm const& p_other) = delete;
@@ -400,12 +434,23 @@ public:
 protected:
   advanced_timer_manager(peripheral p_id);
 
+  [[nodiscard]] hal::stm32f1::timer acquire_timer();
   [[nodiscard]] hal::stm32f1::pwm acquire_pwm(timer_pins p_pin);
   [[nodiscard]] hal::stm32f1::pwm16_channel acquire_pwm16_channel(
     timer_pins p_pin);
   [[nodiscard]] hal::stm32f1::pwm_group_frequency acquire_pwm_group_frequency();
 
   peripheral m_id;
+
+private:
+  enum class timer_usage
+  {
+    uninitialized,
+    pwm_generator,
+    callback_timer
+  };
+
+  timer_usage m_timer_usage = timer_usage::uninitialized;
 };
 
 template<peripheral select>
@@ -419,6 +464,11 @@ class advanced_timer final : public advanced_timer_manager
   advanced_timer()
     : advanced_timer_manager(select)
   {
+  }
+
+  [[nodiscard]] hal::stm32f1::timer acquire_timer()
+  {
+    return advanced_timer_manager::acquire_timer();
   }
 
   /**
@@ -457,6 +507,11 @@ class advanced_timer final : public advanced_timer_manager
     return advanced_timer_manager::acquire_pwm16_channel(
       static_cast<timer_pins>(p_pin));
   }
+
+  [[nodiscard]] hal::stm32f1::pwm_group_frequency acquire_pwm_group_frequency()
+  {
+    return advanced_timer_manager::acquire_pwm_group_frequency();
+  }
 };
 
 /**
@@ -466,9 +521,48 @@ class advanced_timer final : public advanced_timer_manager
  * The peripheral ID is the template argument, in order to ensure that the pins
  * used correspond to the correct timer instantiation as well as the correct
  * corresponding pins at compile time.
+ *
+ * These timers can be used to do PWM generation, as well as other general
+ * timer tasks
  */
+class general_purpose_timer_manager
+{
+public:
+  general_purpose_timer_manager(general_purpose_timer_manager const& p_other) =
+    delete;
+  general_purpose_timer_manager& operator=(
+    general_purpose_timer_manager const& p_other) = delete;
+  general_purpose_timer_manager(
+    general_purpose_timer_manager&& p_other) noexcept = delete;
+  general_purpose_timer_manager& operator=(
+    general_purpose_timer_manager&& p_other) noexcept = delete;
+
+  ~general_purpose_timer_manager();
+
+protected:
+  general_purpose_timer_manager(peripheral p_id);
+
+  [[nodiscard]] hal::stm32f1::timer acquire_timer();
+  [[nodiscard]] hal::stm32f1::pwm acquire_pwm(timer_pins p_pin);
+  [[nodiscard]] hal::stm32f1::pwm16_channel acquire_pwm16_channel(
+    timer_pins p_pin);
+  [[nodiscard]] hal::stm32f1::pwm_group_frequency acquire_pwm_group_frequency();
+
+  peripheral m_id;
+
+private:
+  enum class timer_usage
+  {
+    uninitialized,
+    pwm_generator,
+    callback_timer
+  };
+
+  timer_usage m_timer_usage = timer_usage::uninitialized;
+};
+
 template<peripheral select>
-class general_purpose_timer
+class general_purpose_timer : public general_purpose_timer_manager
 {
 public:
   static_assert(
@@ -477,18 +571,19 @@ public:
       select == peripheral::timer9 or select == peripheral::timer10 or
       select == peripheral::timer11 or select == peripheral::timer12 or
       select == peripheral::timer13 or select == peripheral::timer14,
-    "Only timers 2, 3, 4, 6, 9, 10, 11, 12, 13, and 14 are allowed as general "
+    "Only timers 2, 3, 4, 5, 9, 10, 11, 12, 13, and 14 are allowed as general "
     "purpose timers for this driver.");
   using pin_type = decltype(get_pwm_timer_type<select>())::type;
 
-  general_purpose_timer(general_purpose_timer const& p_other) = delete;
-  general_purpose_timer& operator=(general_purpose_timer const& p_other) =
-    delete;
-  general_purpose_timer(general_purpose_timer&& p_other) noexcept = delete;
-  general_purpose_timer& operator=(general_purpose_timer&& p_other) noexcept =
-    delete;
-  general_purpose_timer();
-  ~general_purpose_timer();
+  general_purpose_timer()
+    : general_purpose_timer_manager(select)
+  {
+  }
+
+  [[nodiscard]] hal::stm32f1::timer acquire_timer()
+  {
+    return general_purpose_timer_manager::acquire_timer();
+  }
 
   /**
    * @brief Acquire a PWM channel from this timer
@@ -504,7 +599,11 @@ public:
    * acquire a pwm channel while a pwm channel bound to this timer already
    * exists.
    */
-  [[nodiscard]] hal::stm32f1::pwm acquire_pwm(pin_type p_pin);
+  [[nodiscard]] hal::stm32f1::pwm acquire_pwm(pin_type p_pin)
+  {
+    return general_purpose_timer_manager::acquire_pwm(
+      static_cast<timer_pins>(p_pin));
+  }
 
   /**
    * @brief Acquire a PWM channel from this timer
@@ -518,20 +617,16 @@ public:
    * exists.
    */
   [[nodiscard]] hal::stm32f1::pwm16_channel acquire_pwm16_channel(
-    pin_type p_pin);
+    pin_type p_pin)
+  {
+    return general_purpose_timer_manager::acquire_pwm16_channel(
+      static_cast<timer_pins>(p_pin));
+  }
 
-  /**
-   * @brief Acquire a PWM channel from this timer
-   *
-   * Only one PWM channel is allowed to exist per timer.
-   * If a PWM channel object is destroyed, then another PWM channel can be
-   * acquired from this timer.
-   *
-   * @throws hal::device_or_resource_busy - If the application attempts to
-   * acquire a pwm channel while a pwm channel bound to this timer already
-   * exists.
-   */
-  [[nodiscard]] hal::stm32f1::pwm_group_frequency acquire_pwm_group_frequency();
+  [[nodiscard]] hal::stm32f1::pwm_group_frequency acquire_pwm_group_frequency()
+  {
+    return general_purpose_timer_manager::acquire_pwm_group_frequency();
+  }
 };
 
 }  // namespace hal::stm32f1

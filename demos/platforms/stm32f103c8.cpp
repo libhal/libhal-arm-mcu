@@ -126,6 +126,13 @@ void initialize_platform(resource_list& p_resources)
   }
   p_resources.spi = spi;
 
+  hal::timer* callback_timer = nullptr;
+  static hal::stm32f1::general_purpose_timer<hal::stm32f1::peripheral::timer3>
+    timer3;
+  static auto timer_callback_timer = timer3.acquire_timer();
+  callback_timer = &timer_callback_timer;
+  p_resources.callback_timer = callback_timer;
+
   hal::pwm16_channel* pwm_channel = nullptr;
   hal::pwm_group_manager* pwm_frequency = nullptr;
 

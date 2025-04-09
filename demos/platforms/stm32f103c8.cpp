@@ -58,13 +58,12 @@ void initialize_platform(resource_list& p_resources)
   static hal::stm32f1::uart uart1(hal::port<1>, hal::buffer<128>);
   p_resources.console = &uart1;
 
+// TODO(#117): Fix and re-enable usart
+#if 0
   static hal::stm32f1::usart<st_peripheral::usart2> usart2;
   static auto usart2_serial = usart2.acquire_serial(hal::buffer<128>);
   p_resources.zero_copy_serial = &usart2_serial;
-
-  static hal::stm32f1::uart usart1(hal::port<1>, hal::buffer<128>);
-  p_resources.console = &usart1;
-
+#endif
   // ===========================================================================
   // Setup GPIO
   // ===========================================================================
@@ -95,13 +94,6 @@ void initialize_platform(resource_list& p_resources)
 
   static hal::stm32f1::output_pin spi_chip_select('A', 4);
   p_resources.spi_chip_select = &spi_chip_select;
-  static hal::stm32f1::output_pin sck('A', 5);
-  static hal::stm32f1::output_pin copi('A', 6);
-  static hal::stm32f1::input_pin cipo('A', 7);
-
-  static hal::bit_bang_spi::pins bit_bang_spi_pins{ .sck = &sck,
-                                                    .copi = &copi,
-                                                    .cipo = &cipo };
 
   static hal::spi::settings bit_bang_spi_settings{
     .clock_rate = 250.0_kHz,
@@ -112,8 +104,18 @@ void initialize_platform(resource_list& p_resources)
   hal::spi* spi = nullptr;
 
   if constexpr (use_bit_bang_spi) {
+    static hal::stm32f1::output_pin sck('A', 5);
+    static hal::stm32f1::output_pin copi('A', 6);
+    static hal::stm32f1::input_pin cipo('A', 7);
+
     static hal::bit_bang_spi bit_bang_spi(
-      bit_bang_spi_pins, steady_clock, bit_bang_spi_settings);
+      hal::bit_bang_spi::pins{
+        .sck = &sck,
+        .copi = &copi,
+        .cipo = &cipo,
+      },
+      steady_clock,
+      bit_bang_spi_settings);
     spi = &bit_bang_spi;
   } else {
     static hal::stm32f1::spi spi1(hal::bus<1>,

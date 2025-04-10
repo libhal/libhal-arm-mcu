@@ -99,14 +99,15 @@ inline constexpr unsigned core_trace_enable = 1 << 24U;
 inline constexpr unsigned enable_cycle_count = 1 << 0;
 
 /// Address of the hardware DWT registers
-inline constexpr intptr_t dwt_address = 0xE0001000UL;
+inline constexpr auto dwt_address = static_cast<uptr>(0xE0001000UL);
 
 /// Address of the Cortex M CoreDebug module
-inline constexpr intptr_t core_debug_address = 0xE000EDF0UL;
+inline constexpr auto core_debug_address = static_cast<uptr>(0xE000EDF0UL);
 
+// NOLINTNEXTLINE(performance-no-int-to-ptr)
 inline auto* dwt = reinterpret_cast<dwt_register_t*>(dwt_address);
 
 inline auto* core =
+  // NOLINTNEXTLINE(performance-no-int-to-ptr)
   reinterpret_cast<core_debug_registers_t*>(core_debug_address);
-
 }  // namespace hal::cortex_m

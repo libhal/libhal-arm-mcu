@@ -1,4 +1,4 @@
-// Copyright 2024 Khalil Estell
+// Copyright 2024 - 2025 Khalil Estelland the libhal contributors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -23,85 +23,91 @@
 #include <libhal-arm-mcu/stm32f411/output_pin.hpp>
 #include <libhal-arm-mcu/stm32f411/pin.hpp>
 #include <libhal-util/static_callable.hpp>
+#include <libhal/i2c.hpp>
 #include <libhal/units.hpp>
 
 #include "libhal-arm-mcu/interrupt.hpp"
 #include "power.hpp"
 
 namespace hal::stm32f411 {
-i2c::i2c(std::uint8_t p_bus_number,
-         i2c::settings const& p_settings,
-         hal::io_waiter& p_waiter)
+i2c_manager_impl::i2c_manager_impl(peripheral select)
+{
+  m_port = select;
+  power(m_port).on();
+}
+
+i2c_manager_impl::~i2c_manager_impl()
+{
+  power(m_port).off();
+}
+i2c_manager_impl::i2c i2c_manager_impl::acquire_i2c(
+  hal::i2c::settings const& p_settings,
+  hal::io_waiter& p_waiter)
+{
+  return { *this, p_settings, p_waiter };
+}
+
+i2c_manager_impl::i2c::i2c(i2c_manager_impl& p_manager,
+                           i2c::settings const& p_settings,
+                           hal::io_waiter& p_waiter)
 {
   auto const i2c1 = reinterpret_cast<void*>(0x4000'5400);
   auto const i2c2 = reinterpret_cast<void*>(0x4000'5800);
   auto const i2c3 = reinterpret_cast<void*>(0x4000'5C00);
-  switch (p_bus_number) {
-    case 1:
-      m_id = peripheral::i2c1;
+  m_manager = &p_manager;
+  switch (p_manager.m_port) {
+    case peripheral::i2c1: {
       m_i2c = stm32_generic::i2c(i2c1, p_waiter);
-      {
-        // output_pin scl_err(peripheral::gpio_b, 6);
-        // output_pin sda_err(peripheral::gpio_b, 7);
-        // m_i2c.clear_error_flag(&sda_err, &scl_err);
-        pin scl(peripheral::gpio_b, 6);
-        pin sda(peripheral::gpio_b, 7);
-        scl.function(pin::pin_function::alternate4)
-          .open_drain(true)
-          .resistor(pin_resistor::pull_up);
-        sda.function(pin::pin_function::alternate4)
-          .open_drain(true)
-          .resistor(pin_resistor::pull_up);
-      }
-      break;
-    case 2:
-      m_id = peripheral::i2c2;
+      pin scl(peripheral::gpio_b, 6);
+      pin sda(peripheral::gpio_b, 7);
+      scl.function(pin::pin_function::alternate4)
+        .open_drain(true)
+        .resistor(pin_resistor::pull_up);
+      sda.function(pin::pin_function::alternate4)
+        .open_drain(true)
+        .resistor(pin_resistor::pull_up);
+    } break;
+    case peripheral::i2c2: {
       m_i2c = stm32_generic::i2c(i2c2, p_waiter);
-      {
-        pin scl(peripheral::gpio_b, 10);
-        pin sda(peripheral::gpio_b, 11);
-        scl.function(pin::pin_function::alternate4)
-          .open_drain(true)
-          .resistor(hal::pin_resistor::pull_up);
-        sda.function(pin::pin_function::alternate4)
-          .open_drain(true)
-          .resistor(pin_resistor::pull_up);
-      }
-      break;
-    case 3:
-      m_id = peripheral::i2c3;
+      pin scl(peripheral::gpio_b, 10);
+      pin sda(peripheral::gpio_b, 11);
+      scl.function(pin::pin_function::alternate4)
+        .open_drain(true)
+        .resistor(hal::pin_resistor::pull_up);
+      sda.function(pin::pin_function::alternate4)
+        .open_drain(true)
+        .resistor(pin_resistor::pull_up);
+    } break;
+    case peripheral::i2c3: {
       m_i2c = stm32_generic::i2c(i2c3, p_waiter);
-      {
-        pin scl(peripheral::gpio_a, 8);
-        pin sda(peripheral::gpio_c, 9);
-        scl.function(pin::pin_function::alternate4)
-          .open_drain(true)
-          .resistor(hal::pin_resistor::pull_up);
-        sda.function(pin::pin_function::alternate4)
-          .open_drain(true)
-          .resistor(pin_resistor::pull_up);
-      }
-      break;
+      pin scl(peripheral::gpio_a, 8);
+      pin sda(peripheral::gpio_c, 9);
+      scl.function(pin::pin_function::alternate4)
+        .open_drain(true)
+        .resistor(hal::pin_resistor::pull_up);
+      sda.function(pin::pin_function::alternate4)
+        .open_drain(true)
+        .resistor(pin_resistor::pull_up);
+    } break;
     default:
       hal::safe_throw(hal::operation_not_supported(this));
   }
-  power(m_id).on();
   i2c::driver_configure(p_settings);
   stm32f411::initialize_interrupts();
   setup_interrupt();
-}
-
-void i2c::driver_transaction(hal::byte p_address,
-                             std::span<hal::byte const> p_data_out,
-                             std::span<hal::byte> p_data_in,
-                             hal::function_ref<hal::timeout_function> p_timeout)
+};
+void i2c_manager_impl::i2c::driver_transaction(
+  hal::byte p_address,
+  std::span<hal::byte const> p_data_out,
+  std::span<hal::byte> p_data_in,
+  hal::function_ref<hal::timeout_function> p_timeout)
 {
   m_i2c.transaction(p_address, p_data_out, p_data_in, p_timeout);
 }
 
-i2c::~i2c()
+i2c_manager_impl::i2c::~i2c()
 {
-  switch (m_id) {
+  switch (m_manager->m_port) {
     case peripheral::i2c1:
       cortex_m::disable_interrupt(irq::i2c1_ev);
       cortex_m::disable_interrupt(irq::i2c1_er);
@@ -117,14 +123,14 @@ i2c::~i2c()
       cortex_m::disable_interrupt(irq::i2c3_er);
       break;
   }
-  power(m_id).off();
+  power(m_manager->m_port).off();
 }
 
-void i2c::driver_configure(settings const& p_settings)
+void i2c_manager_impl::i2c::driver_configure(settings const& p_settings)
 {
-  m_i2c.configure(p_settings, frequency(m_id));
+  m_i2c.configure(p_settings, frequency(m_manager->m_port));
 }
-void i2c::setup_interrupt()
+void i2c_manager_impl::i2c::setup_interrupt()
 {
   // Create a lambda to call the interrupt() method
   auto event_isr = [this]() { m_i2c.handle_i2c_event(); };
@@ -134,7 +140,7 @@ void i2c::setup_interrupt()
   cortex_m::interrupt_pointer event_handler;
   cortex_m::interrupt_pointer error_handler;
 
-  switch (m_id) {
+  switch (m_manager->m_port) {
     case peripheral::i2c1:
       event_handler =
         static_callable<i2c, 1, void(void)>(event_isr).get_handler();

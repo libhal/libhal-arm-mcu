@@ -1,3 +1,16 @@
+// Copyright 2024 - 2025 Khalil Estell and the libhal contributors
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 
 #include <cmath>
 #include <cstdint>
@@ -214,23 +227,37 @@ struct i2c_filter
   /// Digital noise filter enabled and filtering capability up to n * TPCLK1
   static constexpr auto digital_filter = hal::bit_mask::from<3, 0>();
 };
+
+/// i2c register map (RM0383 CH 18.6.11)
 struct i2c_reg_t
 {
+  /// Control reg 1 (CH 18.6.1)
   hal::u32 volatile cr1;
+  /// Control reg 2 (CH 18.6.2)
   hal::u32 volatile cr2;
+  /// Own address reg 1 (CH 18.6.3)
   hal::u32 volatile oar1;
+  /// Own address reg 2 (CH 18.6.4)
   hal::u32 volatile oar2;
+  /// Data reg (CH 18.6.5)
   hal::u32 volatile data_reg;
+  /// Status reg 1 (CH 18.6.6)
   hal::u32 volatile sr1;
+  /// Status reg 2 (CH 18.6.7)
   hal::u32 volatile sr2;
+  /// Clock control reg (CH 18.6.8)
   hal::u32 volatile ccr;
+  /// Rise time reg (CH 18.6.9)
   hal::u32 volatile trise;
+  /// Noise filter reg (CH 18.6.10)
   hal::u32 volatile filter;
 };
-static inline i2c_reg_t* get_i2c_reg(void* p_i2c)
+namespace {
+inline i2c_reg_t* get_i2c_reg(void* p_i2c)
 {
   return reinterpret_cast<i2c_reg_t*>(p_i2c);
 }
+}  // namespace
 
 i2c::i2c(void* p_i2c, hal::io_waiter& p_waiter)
 {
@@ -252,72 +279,12 @@ i2c::~i2c()
   bit_modify(i2c_reg->cr1).clear(i2c_cr1::software_reset);
 }
 
-void i2c::clear_error_flag(hal::output_pin* sda, hal::output_pin* scl)
-{
-  auto i2c_reg = get_i2c_reg(m_i2c);
-  /// 1. Disable the I2C peripheral by clearing the PE bit in I2Cx_CR1 register.
-  bit_modify(i2c_reg->cr1).clear(i2c_cr1::peripheral_enable);
-
-  /// 2. Configure the SCL and SDA I/Os as General Purpose Output Open-Drain,
-  /// High level (Write 1 to GPIOx_ODR).
-  sda->configure({ .resistor = pin_resistor::none, .open_drain = true });
-  scl->configure({ .resistor = pin_resistor::none, .open_drain = true });
-  sda->level(true);
-  scl->level(true);
-  // /// 3. Check SCL and SDA High level in GPIOx_IDR.
-  // while (!sda->level() || !scl->level()) {
-  //   continue;
-  // }
-  // /// 4. Configure the SDA I/O as General Purpose Output Open-Drain, Low
-  // level
-  // /// (Write 0 to GPIOx_ODR).
-  // sda->level(false);
-  // scl->level(false);
-  // /// 5. Check SDA Low level in GPIOx_IDR.
-  // while (sda->level() || scl->level()) {
-  //   continue;
-  // }
-  // /// 8. Configure the SCL I/O as General Purpose Output Open-Drain, High
-  // level
-  // /// (Write 1 to GPIOx_ODR).
-  // sda->level(true);
-  // scl->level(true);
-
-  // /// 9. Check SCL High level in GPIOx_IDR.
-  // while (!sda->level() || !scl->level()) {
-  //   continue;
-  // }
-
-  /// 13. Set SWRST bit in I2Cx_CR1 register.
-  // bit_modify(i2c_reg->cr1).set(i2c_cr1::software_reset);
-
-  // /// 14. Clear SWRST bit in I2Cx_CR1 register.
-  // bit_modify(i2c_reg->cr1).clear(i2c_cr1::software_reset);
-
-  // /// 15. Enable the I2C peripheral by setting the PE bit in I2Cx_CR1
-  // register. bit_modify(i2c_reg->cr1).set(i2c_cr1::peripheral_enable);
-
-  // Set the SDA line to high, so that after the slave releases
-  // the SDA and listen for ACK/NACK, it will get a NACK.
-  sda->level(true);
-
-  for (int i = 0; i < 10; ++i) {
-    // Set SCL high.
-    scl->level(true);
-    continue;
-    // Set SCL low.
-    scl->level(false);
-    continue;
-  }
-  // Set SCL high. When I2C is idle the line should be pulled high.
-  scl->level(true);
-}
-
 void i2c::configure(hal::i2c::settings const& p_settings, hertz p_frequency)
 {
   constexpr auto slow_mode_max_speed = 100_Hz;
-  if (static_cast<u32>(p_frequency) < 2_MHz ||
-      static_cast<u32>(p_frequency) > 50_MHz) {
+  auto const freq = static_cast<u32>(p_frequency);
+
+  if (2_MHz > freq || freq > 50_MHz) {
     safe_throw(hal::argument_out_of_domain(this));
   }
   auto i2c_reg = get_i2c_reg(m_i2c);
@@ -328,36 +295,36 @@ void i2c::configure(hal::i2c::settings const& p_settings, hertz p_frequency)
     .set(i2c_filter::digital_filter)
     .clear(i2c_filter::analog);
 
-  /// I2C communication speed, fSCL ~ 1/(thigh + tlow). The real frequency may
+  /// I2C communication speed, fahb / (2 * ccr). The real frequency may
   /// differ due to the analog noise filter input delay.
   /// CH 18.6.8 in RM0383 (stm32f411 user manual)
 
-  u16 const ccr_value = static_cast<hal::u32>(p_frequency) /
-                        (2 * static_cast<hal::u32>(p_settings.clock_rate));
+  u16 const ccr_value =
+    freq / (2 * static_cast<hal::u32>(p_settings.clock_rate));
   if (p_settings.clock_rate > slow_mode_max_speed) {
     if (ccr_value > 4) {
       bit_modify(i2c_reg->ccr)
         .set(i2c_ccr::i2c_mode_sel)
-        .insert(i2c_ccr::ccr, ccr_value);
+        .insert<i2c_ccr::ccr>(ccr_value);
     } else {
       safe_throw(hal::argument_out_of_domain(this));
     }
   } else {
     bit_modify(i2c_reg->ccr)
       .clear(i2c_ccr::i2c_mode_sel)
-      .insert(i2c_ccr::ccr, ccr_value);
+      .insert<i2c_ccr::ccr>(ccr_value);
   }
 
-  auto const perf_freq = static_cast<hal::u8>(p_frequency / 1_MHz);
-  bit_modify(i2c_reg->cr1)
-    .set(i2c_cr1::peripheral_enable)
-    .set(i2c_cr1::ack_enable)
-    .clear(i2c_cr1::smbus_mode);
+  auto const ahb_freq = static_cast<hal::u8>(p_frequency / 1_MHz);
   bit_modify(i2c_reg->cr2)
     .set(i2c_cr2::buffer_intr_en)
     .set(i2c_cr2::event_intr_en)
     .set(i2c_cr2::error_intr_en)
-    .insert(i2c_cr2::apb_frequency, perf_freq);
+    .insert<i2c_cr2::apb_frequency>(ahb_freq);
+  bit_modify(i2c_reg->cr1)
+    .set(i2c_cr1::peripheral_enable)
+    .set(i2c_cr1::ack_enable)
+    .clear(i2c_cr1::smbus_mode);
 }
 
 void i2c::handle_i2c_event() noexcept
@@ -368,81 +335,102 @@ void i2c::handle_i2c_event() noexcept
   if (bit_extract<i2c_sr1::start>(status)) {
     if (!m_data_out.empty()) {
       data = to_8_bit_address(m_address, i2c_operation::write);
-      m_transmitter = true;
-      m_reciever = false;
+      m_state = transmittion_state::transmitter;
     } else {
       data = to_8_bit_address(m_address, i2c_operation::read);
-      m_transmitter = false;
-      m_reciever = true;
+      m_state = transmittion_state::reciever;
     }
     return;
   }
 
   if (bit_extract<i2c_sr1::addr>(status)) {
-    if (m_data_in.size() == 1 && m_reciever) {
-      bit_modify(i2c_reg->cr1).clear(i2c_cr1::ack_enable);
-    }
-    if (m_data_in.size() == 2 && m_reciever) {
-      bit_modify(i2c_reg->cr1).clear(i2c_cr1::ack_enable).set(i2c_cr1::pos);
-    }
-    [[maybe_unused]] auto addr = i2c_reg->sr2;
-    if (m_data_in.size() == 2 && m_reciever) {
-      while (!bit_extract<i2c_sr1::byte_transfered_finish>(status)) {
-        continue;
+    if (m_state == transmittion_state::reciever) {
+      switch (m_data_in.size()) {
+        case 1: {
+          bit_modify(i2c_reg->cr1).clear(i2c_cr1::ack_enable);
+          i2c_reg->sr2;
+          break;
+        }
+        case 2: {
+          bit_modify(i2c_reg->cr1).clear(i2c_cr1::ack_enable).set(i2c_cr1::pos);
+          i2c_reg->sr2;
+          while (!bit_extract<i2c_sr1::byte_transfered_finish>(status)) {
+            continue;
+          }
+          m_data_in[1] = data;
+          m_data_in[0] = data;
+          break;
+        }
+        default: {
+          i2c_reg->sr2;
+        }
       }
-      m_data_in[1] = data;
-      m_data_in[0] = data;
+    } else {
+      i2c_reg->sr2;
     }
-
     return;
   }
 
   if (bit_extract<i2c_sr1::tx_empty>(status)) {
-    if (m_data_out.empty()) {
-      // wait for transaction to finish
-      while (bit_extract<i2c_sr1::byte_transfered_finish>(status)) {
-        continue;
-      }
+    if (!m_data_out.empty()) {
+      data = m_data_out[0];
+      m_data_out = m_data_out.subspan(1);
+    } else {
       if (!m_data_in.empty()) {
         bit_modify(i2c_reg->cr1).set(i2c_cr1::start);
       } else {
         bit_modify(i2c_reg->cr1).clear(i2c_cr1::ack_enable);
         bit_modify(i2c_reg->cr1).set(i2c_cr1::stop);
-        m_busy = false;
+        m_state = transmittion_state::free;
       }
-    } else {
-      data = m_data_out[0];
-      m_data_out = m_data_out.subspan(1);
     }
-    return;
+    // if (m_data_out.empty()) {
+    //   // wait for transaction to finish
+    //   while (!bit_extract<i2c_sr1::byte_transfered_finish>(status)) {
+    //     continue;
+    //   }
+    //   if (!m_data_in.empty()) {
+    //     bit_modify(i2c_reg->cr1).set(i2c_cr1::start);
+    //   } else {
+    //     bit_modify(i2c_reg->cr1).clear(i2c_cr1::ack_enable);
+    //     bit_modify(i2c_reg->cr1).set(i2c_cr1::stop);
+    //     m_state = transmittion_state::free;
+    //   }
+    // } else {
+    //   data = m_data_out[0];
+    //   m_data_out = m_data_out.subspan(1);
+    // }
+    // return;
   }
 
   if (bit_extract<i2c_sr1::rx_not_empty>(status)) {
     switch (m_data_in.size()) {
       case 2: {
-        while (bit_extract<i2c_sr1::byte_transfered_finish>(status)) {
+        while (!bit_extract<i2c_sr1::byte_transfered_finish>(status)) {
           continue;
         }
         bit_modify(i2c_reg->cr1).clear(i2c_cr1::ack_enable);
         m_data_in[0] = data;
 
-        while (bit_extract<i2c_sr1::byte_transfered_finish>(status)) {
+        while (!bit_extract<i2c_sr1::byte_transfered_finish>(status)) {
           continue;
         }
         bit_modify(i2c_reg->cr1).set(i2c_cr1::stop);
         m_data_in[1] = data;
         m_data_in[2] = data;
-        m_busy = false;
+        m_state = transmittion_state::free;
+        m_waiter->resume();
         break;
       }
 
       case 1: {
-        while (bit_extract<i2c_sr1::byte_transfered_finish>(status)) {
+        while (!bit_extract<i2c_sr1::byte_transfered_finish>(status)) {
           continue;
         }
         m_data_in[0] = data;
         bit_modify(i2c_reg->cr1).set(i2c_cr1::stop);
-        m_busy = false;
+        m_state = transmittion_state::free;
+        m_waiter->resume();
         break;
       }
 
@@ -466,15 +454,9 @@ void i2c::handle_i2c_error() noexcept
   bool soft_reset = false;
   auto& status = i2c_reg->sr1;
 
-  if (bit_extract<i2c_sr1::bus_error>(status)) {
-    m_status = error_state::io_error;
-    bit_modify(i2c_reg->sr1).clear<i2c_sr1::bus_error>();
-    soft_reset = true;
-  }
+  if (bit_extract<i2c_sr1::arbitration_lost>(status)) {
 
-  if (bit_extract<i2c_sr1::ack_failure>(status)) {
-    m_status = error_state::no_such_device;
-    bit_modify(i2c_reg->sr1).clear<i2c_sr1::ack_failure>();
+    m_status = error_state::arbitration_lost;
     soft_reset = true;
   }
 
@@ -484,10 +466,18 @@ void i2c::handle_i2c_error() noexcept
     bit_modify(i2c_reg->sr1).clear(i2c_sr1::timeout_error);
   }
 
-  if (bit_extract<i2c_sr1::arbitration_lost>(status)) {
-
-    m_status = error_state::arbitration_lost;
+  if (bit_extract<i2c_sr1::ack_failure>(status)) {
+    m_status = error_state::no_such_device;
+    bit_modify(i2c_reg->sr1).clear<i2c_sr1::ack_failure>();
     soft_reset = true;
+    m_waiter->resume();
+  }
+
+  if (bit_extract<i2c_sr1::bus_error>(status)) {
+    m_status = error_state::io_error;
+    bit_modify(i2c_reg->sr1).clear<i2c_sr1::bus_error>();
+    soft_reset = true;
+    m_waiter->resume();
   }
 
   if (soft_reset) {
@@ -504,45 +494,48 @@ void i2c::transaction(hal::byte p_address,
   m_address = p_address;
   m_data_out = p_data_out;
   m_data_in = p_data_in;
-  m_busy = true;
-
+  m_state = transmittion_state::transmitter;
   auto i2c_reg = get_i2c_reg(m_i2c);
-  bit_modify(i2c_reg->cr1)
-    .set(i2c_cr1::peripheral_enable)
-    .set(i2c_cr1::ack_enable)
-    .clear(i2c_cr1::stop);
+  bit_modify(i2c_reg->cr1).set(i2c_cr1::ack_enable);
+  bit_modify(i2c_reg->cr1).set(i2c_cr1::peripheral_enable).clear(i2c_cr1::stop);
   bit_modify(i2c_reg->cr1).set(i2c_cr1::start);
-  while (m_busy) {
+  while (m_state != transmittion_state::free) {
     try {
       p_timeout();
       m_waiter->wait();
+      switch (m_status) {
+        case error_state::no_error: {
+          break;
+        }
+        case error_state::no_such_device: {
+          safe_throw(hal::no_such_device(m_address, this));
+          break;
+        }
+        case error_state::io_error: {
+          safe_throw(hal::io_error(this));
+          break;
+        }
+        case error_state::arbitration_lost: {
+          while (bit_extract<i2c_sr2::bus_busy>(i2c_reg->sr2)) {
+            continue;
+          }
+          bit_modify(i2c_reg->cr1)
+            .set(i2c_cr1::peripheral_enable)
+            .set(i2c_cr1::ack_enable)
+            .clear(i2c_cr1::stop);
+          bit_modify(i2c_reg->cr1).set(i2c_cr1::start);
+          break;
+        }
+      }
+
     } catch (...) {
       // The expected exception is hal::timed_out, but it could be something
       // else. Let rethrow the exception so the caller handle it.
       // A better option here would be to use a std::scope_failure handler.
       bit_value(i2c_reg->cr1).clear(i2c_cr1::peripheral_enable);
-      m_waiter->resume();
       throw;
     }
-  }
-  i2c_reg->cr1 = 0;
-  switch (m_status) {
-    case error_state::no_error: {
-      break;
-    }
-    case error_state::no_such_device: {
-      safe_throw(hal::no_such_device(m_address, this));
-      break;
-    }
-    case error_state::io_error: {
-      safe_throw(hal::io_error(this));
-      break;
-    }
-    case error_state::arbitration_lost: {
-      safe_throw(hal::resource_unavailable_try_again(this));
-      break;
-    }
+    i2c_reg->cr1 = 0;
   };
-  m_waiter->resume();
 }
 }  // namespace hal::stm32_generic

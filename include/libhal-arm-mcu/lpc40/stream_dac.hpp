@@ -24,7 +24,7 @@ public:
   stream_dac_u16& operator=(stream_dac_u16 const& p_other) = delete;
   stream_dac_u16(stream_dac_u16&& p_other) noexcept = delete;
   stream_dac_u16& operator=(stream_dac_u16&& p_other) noexcept = delete;
-  virtual ~stream_dac_u16() = default;
+  ~stream_dac_u16() override = default;
 
 private:
   void driver_write(hal::stream_dac_u16::samples const& p_samples) override;
@@ -54,7 +54,7 @@ public:
   stream_dac_u8& operator=(stream_dac_u8 const& p_other) = delete;
   stream_dac_u8(stream_dac_u8&& p_other) noexcept = delete;
   stream_dac_u8& operator=(stream_dac_u8&& p_other) noexcept = delete;
-  virtual ~stream_dac_u8() = default;
+  ~stream_dac_u8() override = default;
 
 private:
   void driver_write(hal::stream_dac_u8::samples const& p_samples) override;

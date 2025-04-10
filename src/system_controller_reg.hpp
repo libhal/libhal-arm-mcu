@@ -16,6 +16,7 @@
 
 #include <array>
 #include <cstdint>
+#include <libhal/units.hpp>
 
 namespace hal::cortex_m {
 /// Structure type to access the System Control Block (SCB).
@@ -66,8 +67,10 @@ struct scb_registers_t
 };
 
 /// System control block address
-inline constexpr intptr_t scb_address = 0xE000'ED00UL;
+inline constexpr auto scb_address = static_cast<uptr>(0xE000'ED00UL);
 
 /// @return auto* - Address of the Cortex M system control block register
-inline auto* scb = reinterpret_cast<scb_registers_t*>(scb_address);
+inline auto* scb =
+  // NOLINTNEXTLINE(performance-no-int-to-ptr)
+  reinterpret_cast<scb_registers_t*>(scb_address);
 }  // namespace hal::cortex_m

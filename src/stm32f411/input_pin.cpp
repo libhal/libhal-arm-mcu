@@ -12,10 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include <cstdint>
-
 #include <libhal-arm-mcu/stm32f411/input_pin.hpp>
 #include <libhal-util/bit.hpp>
+#include <libhal/units.hpp>
 
 #include "gpio_reg.hpp"
 

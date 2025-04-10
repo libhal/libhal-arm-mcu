@@ -71,7 +71,7 @@ int main()
 extern "C"
 {
   // This gets rid of an issue with libhal-exceptions in Debug mode.
-  void __assert_func()
+  void __assert_func()  // NOLINT
   {
   }
 }

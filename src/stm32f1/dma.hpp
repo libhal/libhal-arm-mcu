@@ -17,6 +17,7 @@
 #include <array>
 
 #include <libhal-util/bit.hpp>
+#include <libhal-util/units.hpp>
 
 namespace hal::stm32f1::dma {
 /// Namespace for the control registers (DMA->CCR) bit masks and predefined
@@ -93,6 +94,11 @@ struct dma_t
   std::array<dma_channel_t, 7> channel;
 };
 
-inline auto* dma1 = reinterpret_cast<dma_t*>(0x4002'0000);
-inline auto* dma2 = reinterpret_cast<dma_t*>(0x4002'0400);
+/// System control block address
+inline constexpr auto dma1_addr = static_cast<uptr>(0x4002'0000);
+inline constexpr auto dma2_addr = static_cast<uptr>(0x4002'0400);
+// NOLINTBEGIN(performance-no-int-to-ptr)
+inline auto* dma1 = reinterpret_cast<dma_t*>(dma1_addr);
+inline auto* dma2 = reinterpret_cast<dma_t*>(dma2_addr);
+// NOLINTEND(performance-no-int-to-ptr)
 }  // namespace hal::stm32f1::dma

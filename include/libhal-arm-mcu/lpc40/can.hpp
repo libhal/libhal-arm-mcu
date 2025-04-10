@@ -14,9 +14,8 @@
 
 #pragma once
 
-#include <cstdint>
-
 #include <libhal/can.hpp>
+#include <libhal/units.hpp>
 
 #include "constants.hpp"
 #include "pin.hpp"
@@ -56,7 +55,7 @@ public:
   can& operator=(can const& p_other) = delete;
   can(can&& p_other) noexcept = delete;
   can& operator=(can&& p_other) noexcept = delete;
-  virtual ~can();
+  ~can() override;
 
 private:
   void driver_configure(settings const& p_settings) override;

@@ -14,8 +14,6 @@
 
 #pragma once
 
-#include <cstdint>
-
 #include <libhal/error.hpp>
 #include <libhal/units.hpp>
 
@@ -35,7 +33,7 @@ static constexpr auto internal_high_speed_oscillator = 16.0_MHz;
 static constexpr auto watchdog_clock_rate = internal_low_speed_oscillator;
 
 /// Available dividers for the AHB bus
-enum class ahb_divider : std::uint8_t
+enum class ahb_divider : u8
 {
   divide_by_1 = 0,
   divide_by_2 = 0b1000,
@@ -49,7 +47,7 @@ enum class ahb_divider : std::uint8_t
 };
 
 /// Available dividers for the APB bus
-enum class apb_divider : std::uint8_t
+enum class apb_divider : u8
 {
   divide_by_1 = 0,
   divide_by_2 = 0b100,
@@ -59,7 +57,7 @@ enum class apb_divider : std::uint8_t
 };
 
 /// Available dividers for the ADC bus
-enum class adc_divider : std::uint8_t
+enum class adc_divider : u8
 {
   divide_by_2 = 0b00,
   divide_by_4 = 0b01,
@@ -68,21 +66,21 @@ enum class adc_divider : std::uint8_t
 };
 
 /// Available clock sources available for the system clock
-enum class system_clock_select : std::uint8_t
+enum class system_clock_select : u8
 {
   high_speed_internal = 0b00,
   high_speed_external = 0b01,
   pll = 0b10,
 };
 
-enum class pll_source : std::uint8_t
+enum class pll_source : u8
 {
   high_speed_internal = 0b00,
   high_speed_external = 0b01,
 };
 
 /// Available clock sources for the RTC
-enum class rtc_source : std::uint8_t
+enum class rtc_source : u8
 {
   no_clock = 0b00,
   low_speed_external = 0b01,
@@ -91,7 +89,7 @@ enum class rtc_source : std::uint8_t
 };
 
 /// Available sources for the I2S clocks
-enum class i2s_source : std::uint8_t
+enum class i2s_source : u8
 {
   pll_i2s_clk = 0,
   /// External I2S_CKIN pin

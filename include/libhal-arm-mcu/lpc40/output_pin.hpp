@@ -14,9 +14,8 @@
 
 #pragma once
 
-#include <cstdint>
-
 #include <libhal/output_pin.hpp>
+#include <libhal/units.hpp>
 
 namespace hal::lpc40 {
 /**
@@ -33,22 +32,20 @@ public:
    * @param p_pin - selects which pin within the port to use
    * @param p_settings - initial pin settings
    */
-  output_pin(std::uint8_t p_port,
-             std::uint8_t p_pin,
-             output_pin::settings const& p_settings = {});
+  output_pin(u8 p_port, u8 p_pin, output_pin::settings const& p_settings = {});
 
   output_pin(output_pin const& p_other) = delete;
   output_pin& operator=(output_pin const& p_other) = delete;
   output_pin(output_pin&& p_other) noexcept = delete;
   output_pin& operator=(output_pin&& p_other) noexcept = delete;
-  virtual ~output_pin() = default;
+  ~output_pin() override = default;
 
 private:
   void driver_configure(settings const& p_settings) override;
   void driver_level(bool p_high) override;
   bool driver_level() override;
 
-  std::uint8_t m_port{};
-  std::uint8_t m_pin{};
+  u8 m_port{};
+  u8 m_pin{};
 };
 }  // namespace hal::lpc40

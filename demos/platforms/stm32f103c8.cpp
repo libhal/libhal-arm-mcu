@@ -80,15 +80,15 @@ void initialize_platform(resource_list& p_resources)
   static auto pb0 = adc.acquire_channel(hal::stm32f1::adc_pins::pb0);
   p_resources.adc = &pb0;
 
-  static hal::stm32f1::output_pin sda_output_pin('B', 7);
-  static hal::stm32f1::output_pin scl_output_pin('B', 6);
-  static hal::bit_bang_i2c bit_bang_i2c(
-    hal::bit_bang_i2c::pins{
-      .sda = &sda_output_pin,
-      .scl = &scl_output_pin,
-    },
-    steady_clock);
-  p_resources.i2c = &bit_bang_i2c;
+  // static hal::stm32f1::output_pin sda_output_pin('B', 7);
+  // static hal::stm32f1::output_pin scl_output_pin('B', 6);
+  // static hal::bit_bang_i2c bit_bang_i2c(
+  //   hal::bit_bang_i2c::pins{
+  //     .sda = &sda_output_pin,
+  //     .scl = &scl_output_pin,
+  //   },
+  //   steady_clock);
+  // p_resources.i2c = &bit_bang_i2c;
 
   static hal::stm32f1::output_pin spi_chip_select('A', 4);
   p_resources.spi_chip_select = &spi_chip_select;

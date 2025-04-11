@@ -21,25 +21,70 @@
 
 void application(resource_list& p_map)
 {
+  using namespace std::chrono_literals;
+
   auto& clock = *p_map.clock.value();
   auto& console = *p_map.console.value();
   auto& callback_timer = *p_map.callback_timer.value();
 
   hal::print(console, "Callback timer demo starting...\n");
 
-  auto func_to_call = [&console] () 
-  {
-    hal::print<128>(console, "Callback function executed!\n");
-  };
-  hal::time_duration delay_amount(1'000'000'000);
+  volatile bool interrupt_toggled = false;
 
-  callback_timer.schedule(func_to_call, delay_amount);
-  while (true) {
-    using namespace std::chrono_literals;
-    auto uptime = clock.uptime();
+
+
+
+
+
+
+  // &interrupt_toggled <-- add this back to capture list later
+  auto func_to_call = [&console, &clock]() {
+    auto stop_timer = clock.uptime();
+    hal::print<128>(console, "\nCallback function executed! Clock cycle %" PRIu32 "\n", static_cast<std::uint32_t>(stop_timer));
+    //interrupt_toggled = true;
+  };
+
+  hal::print(console,
+             "Scheduling callback function to occur in 3 seconds...\n");
+
+  callback_timer.schedule(func_to_call, 250ms);
+  auto start_timer = clock.uptime();
+  hal::u64 uptime = 0;
+  while (static_cast<std::uint32_t>(uptime) < 231281530) {
+    uptime = clock.uptime();
     hal::print<128>(console,
-                    "%" PRIu32 "ns\n",
+                    "Cycles: %" PRIu32 "\n",
                     static_cast<std::uint32_t>(uptime));
+    hal::delay(clock, 100ms);
+  }
+  hal::print<128>(console, "Start Clock cycle %" PRIu32 "\n", static_cast<std::uint32_t>(start_timer));
+
+
+
+
+
+  hal::delay(clock, 1000ms);
+  hal::print(console, "Testing is_scheduled() and cancel() function...\n");
+  callback_timer.schedule(func_to_call, hal::time_duration(10'000'000'000));
+  hal::delay(clock, 500ms);
+  auto is_scheduled = callback_timer.is_running();
+  auto is_scheduled_string = (is_scheduled) ? "true" : "false";
+  hal::print<128>(console, "Callback scheduled (Expected True)?: %s\n", is_scheduled_string);
+  callback_timer.cancel();
+  is_scheduled = callback_timer.is_running();
+  is_scheduled_string = (is_scheduled) ? "true" : "false";
+  hal::print<128>(console, "Callback scheduled (Expected False)?: %s\n", is_scheduled_string);
+
+  hal::delay(clock, 1000ms);
+  hal::print(console, "Testing overwriting callback functionality...\n");
+  interrupt_toggled = false;
+  callback_timer.schedule(func_to_call, hal::time_duration(20'000'000'000));
+  callback_timer.schedule(func_to_call, hal::time_duration(1'000'000'000));
+  while (interrupt_toggled == false) {
+    auto uptime2 = clock.uptime();
+    hal::print<128>(console,
+                    "Current Uptime: %" PRIu32 "ns\n",
+                    static_cast<std::uint32_t>(uptime2));
     hal::delay(clock, 100ms);
   }
 }

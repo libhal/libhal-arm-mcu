@@ -225,7 +225,8 @@ void timer::handle_interrupt()
   static auto timer_reg = stm32_generic::get_timer_reg(reg);
 
   static constexpr auto update_interrupt_flag = hal::bit_mask::from(0);
-  bit_extract<update_interrupt_flag>(timer_reg->status_register);
+  bit_modify(timer_reg->status_register).clear(update_interrupt_flag);
+  //bit_extract<update_interrupt_flag>(timer_reg->status_register);
 }
 
 void timer::interrupt()

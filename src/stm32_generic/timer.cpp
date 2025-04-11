@@ -62,11 +62,11 @@ void timer::schedule(hal::time_duration p_delay, u32 p_timer_clock_frequency)
 
   u32 const time_per_tick_ns = scale_factor_ns / p_timer_clock_frequency;
   u32 const ticks_required = p_delay.count() / time_per_tick_ns;
-  u32 const prescaler_value = ticks_required / timer_max_ticks;
+  u16 const prescaler_value = ticks_required / timer_max_ticks;
   u32 const prescaler_frequency =
     p_timer_clock_frequency / (prescaler_value + 1);
   u32 const prescaler_time_per_tick_ns = scale_factor_ns / prescaler_frequency;
-  u32 const prescaler_ticks_required =
+  u16 const prescaler_ticks_required =
     p_delay.count() / prescaler_time_per_tick_ns;
 
   bit_modify(reg->prescale_register).insert<prescaler>(prescaler_value);

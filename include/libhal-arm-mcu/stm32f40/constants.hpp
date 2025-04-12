@@ -14,18 +14,18 @@
 
 #pragma once
 
-#include <cstdint>
+#include <libhal/units.hpp>
 
 namespace hal::stm32f4110 {
 
 /// List of each peripheral and their power on id number for this platform
-enum class peripheral : std::uint32_t
+enum class peripheral : u32  // NOLINT(performance-enum-size)
 {
   max
 };
 
 /// List of interrupt request numbers for this platform
-enum class irq : std::uint16_t
+enum class irq : u16  // NOLINT(performance-enum-size)
 {
   max,
 };

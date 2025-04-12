@@ -14,10 +14,8 @@
 
 #pragma once
 
-#include <cstdint>
-
-#include <libhal-util/units.hpp>
 #include <libhal/timer.hpp>
+#include <libhal/units.hpp>
 
 namespace hal::cortex_m {
 /**
@@ -80,7 +78,7 @@ public:
    *
    * Stop the timer and disable the interrupt service routine.
    */
-  ~systick_timer();
+  ~systick_timer() override;
 
 private:
   bool driver_is_running() override;

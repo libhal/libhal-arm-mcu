@@ -17,7 +17,6 @@ public:
   stub_out_registers(T** p_register_pointer)
     : m_register_pointer(p_register_pointer)
     , m_original(nullptr)
-    , m_stub{}
   {
     m_original = *m_register_pointer;
     *m_register_pointer = reinterpret_cast<T*>(m_stub.data());
@@ -54,7 +53,7 @@ public:
 private:
   T** m_register_pointer;
   T* m_original;
-  std::array<hal::byte, sizeof(T)> m_stub;
+  std::array<hal::byte, sizeof(T)> m_stub{};
   bool m_moved = false;
 };
 

@@ -14,11 +14,10 @@
 
 #pragma once
 
-#include <cstdint>
-
 #include <libhal-arm-mcu/stm32_generic/uart.hpp>
 #include <libhal/initializers.hpp>
 #include <libhal/serial.hpp>
+#include <libhal/units.hpp>
 
 #include "constants.hpp"
 #include "dma.hpp"
@@ -55,12 +54,12 @@ public:
    * buffer is outside of the maximum dma length.
    */
   uart(hal::runtime,
-       std::uint8_t p_port,
+       u8 p_port,
        std::span<hal::byte> p_buffer,
        serial::settings const& p_settings = {});
 
 private:
-  uart(std::uint8_t p_port,
+  uart(u8 p_port,
        std::span<hal::byte> p_receive_buffer,
        serial::settings const& p_settings);
 
@@ -69,10 +68,10 @@ private:
   read_t driver_read(std::span<hal::byte> p_data) override;
   void driver_flush() override;
 
-  std::uint32_t dma_cursor_position();
+  u32 dma_cursor_position();
   stm32_generic::uart m_stm32_uart;
   peripheral m_dma;
-  uint8_t m_dma_stream;
+  u8 m_dma_stream;
   peripheral m_id;
 };
 }  // namespace hal::stm32f411

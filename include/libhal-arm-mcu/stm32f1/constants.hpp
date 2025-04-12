@@ -91,7 +91,7 @@ enum class peripheral : u8
 };
 
 /// List of interrupt request numbers for this platform
-enum class irq : cortex_m::irq_t
+enum class irq : cortex_m::irq_t  // NOLINT(performance-enum-size)
 {
   /// Window WatchDog
   window_watchdog = 0,

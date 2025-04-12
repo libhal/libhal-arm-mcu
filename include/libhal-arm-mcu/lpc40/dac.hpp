@@ -25,7 +25,7 @@ class dac : public hal::dac
 {
 public:
   dac();
-  virtual ~dac() = default;
+  ~dac() override = default;
 
 private:
   void driver_write(float p_percentage) override;

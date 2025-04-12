@@ -14,11 +14,12 @@
 
 #pragma once
 
-#include <optional>
+#include <memory>
 
 #include <libhal/adc.hpp>
 #include <libhal/can.hpp>
 #include <libhal/dac.hpp>
+#include <libhal/error.hpp>
 #include <libhal/functional.hpp>
 #include <libhal/i2c.hpp>
 #include <libhal/input_pin.hpp>
@@ -40,25 +41,38 @@ struct resource_list
   // if the value, is not present. That exception will be caught in main and a
   // message will be printed if the `console` field has been set, then call
   // std::terminate.
-  std::optional<hal::serial*> console;
-  std::optional<hal::zero_copy_serial*> zero_copy_serial;
-  std::optional<hal::output_pin*> status_led;
-  std::optional<hal::steady_clock*> clock;
-  std::optional<hal::can_transceiver*> can_transceiver;
-  std::optional<hal::can_bus_manager*> can_bus_manager;
-  std::optional<hal::can_interrupt*> can_interrupt;
-  std::optional<hal::adc*> adc;
-  std::optional<hal::input_pin*> input_pin;
-  std::optional<hal::i2c*> i2c;
-  std::optional<hal::interrupt_pin*> interrupt_pin;
-  std::optional<hal::pwm*> pwm;
-  std::optional<hal::pwm16_channel*> pwm_channel;
-  std::optional<hal::pwm_group_manager*> pwm_frequency;
-  std::optional<hal::spi*> spi;
-  std::optional<hal::output_pin*> spi_chip_select;
-  std::optional<hal::stream_dac_u8*> stream_dac;
-  std::optional<hal::dac*> dac;
+  std::shared_ptr<hal::serial> console;
+  std::shared_ptr<hal::zero_copy_serial> zero_copy_serial;
+  std::shared_ptr<hal::output_pin> status_led;
+  std::shared_ptr<hal::steady_clock> clock;
+  std::shared_ptr<hal::can_transceiver> can_transceiver;
+  std::shared_ptr<hal::can_mask_filter> can_mask_filter;
+  std::shared_ptr<hal::can_bus_manager> can_bus_manager;
+  std::shared_ptr<hal::can_interrupt> can_interrupt;
+  std::shared_ptr<hal::adc> adc;
+  std::shared_ptr<hal::input_pin> input_pin;
+  std::shared_ptr<hal::i2c> i2c;
+  std::shared_ptr<hal::interrupt_pin> interrupt_pin;
+  std::shared_ptr<hal::pwm> pwm;
+  std::shared_ptr<hal::pwm16_channel> pwm_channel;
+  std::shared_ptr<hal::pwm_group_manager> pwm_frequency;
+  std::shared_ptr<hal::spi> spi;
+  std::shared_ptr<hal::output_pin> spi_chip_select;
+  std::shared_ptr<hal::stream_dac_u8> stream_dac;
+  std::shared_ptr<hal::dac> dac;
 };
+
+namespace hal {
+// class empty
+}
+
+template<class T>
+void resource_contract_assert(std::shared_ptr<T> p_object)
+{
+  if (not p_object) {
+    hal::safe_throw(hal::unknown(nullptr));
+  }
+}
 
 // Each application file should have this function implemented
 void application(resource_list& p_map);

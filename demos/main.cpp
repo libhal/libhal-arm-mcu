@@ -23,12 +23,12 @@ resource_list resources{};
 [[noreturn]] void terminate_handler() noexcept
 {
   if (resources.console) {
-    hal::print(*resources.console.value(), "☠️ APPLICATION TERMINATED ☠️\n\n");
+    hal::print(*resources.console, "☠️ APPLICATION TERMINATED ☠️\n\n");
   }
 
   if (resources.status_led && resources.clock) {
-    auto& led = *resources.status_led.value();
-    auto& clock = *resources.clock.value();
+    auto& led = *resources.status_led;
+    auto& clock = *resources.clock;
 
     while (true) {
       using namespace std::chrono_literals;
@@ -59,7 +59,7 @@ int main()
     application(resources);
   } catch (std::bad_optional_access const& e) {
     if (resources.console) {
-      hal::print(*resources.console.value(),
+      hal::print(*resources.console,
                  "A resource required by the application was not available!\n"
                  "Calling terminate!\n");
     }

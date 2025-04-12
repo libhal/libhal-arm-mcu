@@ -41,11 +41,17 @@ void application(resource_list& p_map)
 {
   using namespace hal::literals;
 
-  auto& clock = *p_map.clock.value();
-  auto& can_transceiver = *p_map.can_transceiver.value();
-  auto& can_bus_manager = *p_map.can_bus_manager.value();
-  auto& can_interrupt = *p_map.can_interrupt.value();
-  auto& console = *p_map.console.value();
+  resource_contract_assert(p_map.clock);
+  resource_contract_assert(p_map.can_transceiver);
+  resource_contract_assert(p_map.can_bus_manager);
+  resource_contract_assert(p_map.can_interrupt);
+  resource_contract_assert(p_map.console);
+
+  auto& clock = *p_map.clock;
+  auto& can_transceiver = *p_map.can_transceiver;
+  auto& can_bus_manager = *p_map.can_bus_manager;
+  auto& can_interrupt = *p_map.can_interrupt;
+  auto& console = *p_map.console;
 
   // Change the CAN baudrate here.
   static constexpr auto baudrate = 100.0_kHz;

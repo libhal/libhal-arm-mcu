@@ -18,9 +18,13 @@
 
 void application(resource_list& p_map)
 {
-  auto& clock = *p_map.clock.value();
-  auto& led = *p_map.status_led.value();
-  auto& button = *p_map.input_pin.value();
+  resource_contract_assert(p_map.clock);
+  resource_contract_assert(p_map.status_led);
+  resource_contract_assert(p_map.input_pin);
+
+  auto& clock = *p_map.clock;
+  auto& led = *p_map.status_led;
+  auto& button = *p_map.input_pin;
 
   while (true) {
     // Checking level for the lpc40xx drivers NEVER generates an error so this

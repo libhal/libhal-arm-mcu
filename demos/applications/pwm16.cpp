@@ -24,10 +24,15 @@ void application(resource_list& p_map)
   using namespace std::chrono_literals;
   using namespace hal::literals;
 
-  auto& pwm = *p_map.pwm_channel.value();
-  auto& pwm_frequency = *p_map.pwm_frequency.value();
-  auto& console = *p_map.console.value();
-  auto& clock = *p_map.clock.value();
+  resource_contract_assert(p_map.pwm_channel);
+  resource_contract_assert(p_map.pwm_frequency);
+  resource_contract_assert(p_map.console);
+  resource_contract_assert(p_map.clock);
+
+  auto& pwm = *p_map.pwm_channel;
+  auto& pwm_frequency = *p_map.pwm_frequency;
+  auto& console = *p_map.console;
+  auto& clock = *p_map.clock;
 
   while (true) {
     pwm.duty_cycle(0);

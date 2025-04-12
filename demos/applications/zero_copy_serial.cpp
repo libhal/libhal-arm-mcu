@@ -80,8 +80,11 @@ void application(resource_list& p_map)
   using namespace std::chrono_literals;
   using namespace hal::literals;
 
-  auto& clock = *p_map.clock.value();
-  auto& console = *p_map.zero_copy_serial.value();
+  resource_contract_assert(p_map.clock);
+  resource_contract_assert(p_map.zero_copy_serial);
+
+  auto& clock = *p_map.clock;
+  auto& console = *p_map.zero_copy_serial;
 
   auto previous_cursor = console.receive_cursor();
 

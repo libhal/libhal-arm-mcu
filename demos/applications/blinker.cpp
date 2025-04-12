@@ -19,14 +19,11 @@
 
 void application(resource_list& p_map)
 {
-  auto& clock = *p_map.clock.value();
-  auto& led = *p_map.status_led.value();
-
   while (true) {
     using namespace std::chrono_literals;
-    led.level(false);
-    hal::delay(clock, 500ms);
-    led.level(true);
-    hal::delay(clock, 500ms);
+    p_map.status_led->level(false);
+    hal::delay(*p_map.clock, 500ms);
+    p_map.status_led->level(true);
+    hal::delay(*p_map.clock, 500ms);
   }
 }

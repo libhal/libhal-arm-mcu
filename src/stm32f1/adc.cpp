@@ -238,8 +238,9 @@ pin_select to_pin_select(adc_pins const& p_pin)
 }
 }  // namespace
 
-adc_manager::adc_manager(peripheral p_id, hal::basic_lock& p_lock)
-  : m_lock(&p_lock)
+adc_manager::adc_manager(peripheral p_id,
+                         std::shared_ptr<hal::basic_lock> p_lock)
+  : m_lock(std::move(p_lock))
   , m_reg(nullptr)
   , m_id(p_id)
 {
@@ -291,7 +292,7 @@ adc_manager::adc_manager(peripheral p_id, hal::basic_lock& p_lock)
 }
 adc_manager::channel adc_manager::acquire_channel(adc_pins p_pin)
 {
-  return { *this, p_pin };
+  return { shared_from_this(), p_pin };
 }
 
 float adc_manager::read_channel(adc_pins p_pin)
@@ -325,8 +326,9 @@ float adc_manager::read_channel(adc_pins p_pin)
   return sample / full_scale_float;
 }
 
-adc_manager::channel::channel(adc_manager& p_manager, adc_pins p_pin)
-  : m_manager(&p_manager)
+adc_manager::channel::channel(std::shared_ptr<adc_manager> p_manager,
+                              adc_pins p_pin)
+  : m_manager(std::move(p_manager))
   , m_pin(p_pin)
 {
   // Set specified pin to analog input mode.

@@ -47,6 +47,7 @@ constexpr bool use_bit_bang_spi = false;
 constexpr bool use_libhal_4_pwm = false;
 
 namespace hal {
+
 template<usize buffer_size>
 struct arena
 {
@@ -86,22 +87,6 @@ auto& static_arena(buffer_param auto p_buffer_size)
   return allocator_object;
 }
 
-auto& driver_memory = static_arena(hal::buffer<1024>);
-
-template<typename T, typename... Args>
-std::shared_ptr<T> alloc(Args&&... p_args)
-{
-  return std::allocate_shared<T>(driver_memory.allocator(),
-                                 std::forward<Args>(p_args)...);
-}
-
-template<typename T>
-std::shared_ptr<T> alloc(T&& p_object)
-{
-  return std::allocate_shared<T>(driver_memory.allocator(),
-                                 std::forward<T>(p_object));
-}
-
 template<typename Allocator>
 auto make_alloc_helper(Allocator& allocator)
 {
@@ -113,51 +98,57 @@ auto make_alloc_helper(Allocator& allocator)
 
 void initialize_platform(resource_list& p_resources)
 {
-  hal::driver_memory.release(hal::unsafe{});
+  auto& driver_memory = static_arena(hal::buffer<1024>);
+  driver_memory.release(hal::unsafe{});
 
   using namespace hal::literals;
   p_resources.reset = []() { hal::cortex_m::reset(); };
-
-  auto alloc = hal::make_alloc_helper(hal::driver_memory.allocator());
 
   // Set the MCU to the maximum clock speed
   hal::stm32f1::maximum_speed_using_internal_oscillator();
   hal::stm32f1::release_jtag_pins();
 
-  using st_peripheral = hal::stm32f1::peripheral;
+  auto alloc = hal::make_alloc_helper(driver_memory.allocator());
 
-  p_resources.clock = hal::alloc<hal::cortex_m::dwt_counter>(
+  using st_peripheral = hal::stm32f1::peripheral;
+  p_resources.clock = alloc<hal::cortex_m::dwt_counter>(
     hal::stm32f1::frequency(hal::stm32f1::peripheral::cpu));
 
-  p_resources.console =
-    hal::alloc<hal::stm32f1::uart>(hal::port<1>, hal::buffer<128>);
+  p_resources.console = std::allocate_shared<hal::stm32f1::uart>(
+    driver_memory.allocator(), hal::port<1>, hal::buffer<128>);
 
-  auto usart2 = hal::alloc<hal::stm32f1::usart<st_peripheral::usart2>>();
+  auto usart2 =
+    std::allocate_shared<hal::stm32f1::usart<st_peripheral::usart2>>(
+      driver_memory.allocator());
   // TODO(kammce): Acquire serial should take an allocator and return a
   // shared_ptr.
-
-  p_resources.zero_copy_serial =
-    hal::alloc(usart2->acquire_serial(hal::buffer<128>));
+#if 0
+  p_resources.zero_copy_serial = std::allocate_shared(
+    driver_memory.allocator(), usart2->acquire_serial(hal::buffer<128>));
 
   // ===========================================================================
   // Setup GPIO
   // ===========================================================================
 
-  auto gpio_a = hal::alloc<hal::stm32f1::gpio<st_peripheral::gpio_a>>();
-  auto gpio_b = hal::alloc<hal::stm32f1::gpio<st_peripheral::gpio_b>>();
-  auto gpio_c = hal::alloc<hal::stm32f1::gpio<st_peripheral::gpio_c>>();
-  p_resources.status_led = hal::alloc(gpio_c->acquire_output_pin(13));
-  p_resources.input_pin = hal::alloc<hal::stm32f1::input_pin>('B', 4);
+  auto gpio_a =
+    std::allocate_shared<hal::stm32f1::gpio<st_peripheral::gpio_a>>();
+  auto gpio_b =
+    std::allocate_shared<hal::stm32f1::gpio<st_peripheral::gpio_b>>();
+  auto gpio_c =
+    std::allocate_shared<hal::stm32f1::gpio<st_peripheral::gpio_c>>();
+  p_resources.status_led = std::allocate_shared(gpio_c->acquire_output_pin(13));
+  p_resources.input_pin = std::allocate_shared<hal::stm32f1::input_pin>('B', 4);
 
-  auto adc_lock = hal::alloc<hal::atomic_spin_lock>();
-  auto adc = hal::alloc<hal::stm32f1::adc<st_peripheral::adc1>>(adc_lock);
+  auto adc_lock = std::allocate_shared<hal::atomic_spin_lock>();
+  auto adc =
+    std::allocate_shared<hal::stm32f1::adc<st_peripheral::adc1>>(adc_lock);
   p_resources.adc =
-    hal::alloc(adc->acquire_channel(hal::stm32f1::adc_pins::pb0));
+    std::allocate_shared(adc->acquire_channel(hal::stm32f1::adc_pins::pb0));
 
-  static auto i2c_sda = hal::alloc<hal::stm32f1::output_pin>('B', 7);
-  static auto i2c_scl = hal::alloc<hal::stm32f1::output_pin>('B', 6);
+  static auto i2c_sda = std::allocate_shared<hal::stm32f1::output_pin>('B', 7);
+  static auto i2c_scl = std::allocate_shared<hal::stm32f1::output_pin>('B', 6);
 
-  p_resources.i2c = hal::alloc<hal::bit_bang_i2c>(
+  p_resources.i2c = std::allocate_shared<hal::bit_bang_i2c>(
     hal::bit_bang_i2c::pins{
       // dangerous! Ensure object has static storage duration
       .sda = i2c_sda.get(),
@@ -166,14 +157,15 @@ void initialize_platform(resource_list& p_resources)
     },
     std::ref(*p_resources.clock));  // TODO(kammce): dangerous!
 
-  p_resources.spi_chip_select = hal::alloc<hal::stm32f1::output_pin>('A', 4);
+  p_resources.spi_chip_select =
+    std::allocate_shared<hal::stm32f1::output_pin>('A', 4);
 
   if constexpr (use_bit_bang_spi) {
-    static auto sck = hal::alloc<hal::stm32f1::output_pin>('A', 5);
-    static auto copi = hal::alloc<hal::stm32f1::output_pin>('A', 6);
-    static auto cipo = hal::alloc<hal::stm32f1::input_pin>('A', 7);
+    static auto sck = std::allocate_shared<hal::stm32f1::output_pin>('A', 5);
+    static auto copi = std::allocate_shared<hal::stm32f1::output_pin>('A', 6);
+    static auto cipo = std::allocate_shared<hal::stm32f1::input_pin>('A', 7);
 
-    p_resources.spi = hal::alloc<hal::bit_bang_spi>(
+    p_resources.spi = std::allocate_shared<hal::bit_bang_spi>(
       hal::bit_bang_spi::pins{
         // dangerous! Ensure object has static storage duration
         .sck = sck.get(),
@@ -189,28 +181,29 @@ void initialize_platform(resource_list& p_resources)
         .clock_phase = false,
       });
   } else {
-    p_resources.spi = hal::alloc<hal::stm32f1::spi>(hal::bus<1>,
-                                                    hal::spi::settings{
-                                                      .clock_rate = 250.0_kHz,
-                                                      .clock_polarity = false,
-                                                      .clock_phase = false,
-                                                    });
+    p_resources.spi =
+      std::allocate_shared<hal::stm32f1::spi>(hal::bus<1>,
+                                              hal::spi::settings{
+                                                .clock_rate = 250.0_kHz,
+                                                .clock_polarity = false,
+                                                .clock_phase = false,
+                                              });
   }
 
   if constexpr (use_libhal_4_pwm) {
     // Use old PWM
   } else {
-    auto timer = hal::alloc<
+    auto timer = std::allocate_shared<
       hal::stm32f1::general_purpose_timer<hal::stm32f1::peripheral::timer2>>();
-    p_resources.pwm_channel =
-      hal::alloc(timer->acquire_pwm16_channel(hal::stm32f1::timer2_pin::pa1));
+    p_resources.pwm_channel = std::allocate_shared(
+      timer->acquire_pwm16_channel(hal::stm32f1::timer2_pin::pa1));
     p_resources.pwm_frequency =
-      hal::alloc(timer->acquire_pwm_group_frequency());
+      std::allocate_shared(timer->acquire_pwm_group_frequency());
   }
 
   try {
     using namespace std::chrono_literals;
-    auto can = alloc.operator()<hal::stm32f1::can_peripheral_manager>(
+    auto can = alloc<hal::stm32f1::can_peripheral_manager>(
       100_kHz,
       std::ref(*p_resources.clock),
       1ms,
@@ -225,13 +218,14 @@ void initialize_platform(resource_list& p_resources)
     static std::array<hal::can_message, 8> receive_buffer{};
     // dangerous! Ensure object has static storage duration
     p_resources.can_transceiver =
-      hal::alloc(can->acquire_transceiver(receive_buffer));
-    p_resources.can_bus_manager = hal::alloc(can->acquire_bus_manager());
-    p_resources.can_interrupt = hal::alloc(can->acquire_interrupt());
+      std::allocate_shared(can->acquire_transceiver(receive_buffer));
+    p_resources.can_bus_manager =
+      std::allocate_shared(can->acquire_bus_manager());
+    p_resources.can_interrupt = std::allocate_shared(can->acquire_interrupt());
 
     // Allow all messages
     {
-      auto dual_mask_filter = hal::alloc(can->acquire_mask_filter());
+      auto dual_mask_filter = std::allocate_shared(can->acquire_mask_filter());
       using can_mask_filter =
         std::remove_reference_t<decltype(dual_mask_filter->filter[0])>;
       std::shared_ptr<can_mask_filter> filter(dual_mask_filter,
@@ -246,4 +240,5 @@ void initialize_platform(resource_list& p_resources)
       "- CAN disabled - check CANRX/CANTX connections to transceiver.\n"
       "- System will operate normally if CAN is NOT required.\n\n");
   }
+#endif
 }

@@ -25,11 +25,8 @@ void application(resource_list& p_map)
   using namespace std::chrono_literals;
   using namespace hal::literals;
 
-  resource_contract_assert(p_map.clock);
-  resource_contract_assert(p_map.console);
-
-  auto& clock = *p_map.clock;
-  auto& console = *p_map.console;
+  auto& clock = resource_contract_assert(p_map.clock);
+  auto& console = resource_contract_assert(p_map.console);
 
   while (true) {
     using namespace std::chrono_literals;

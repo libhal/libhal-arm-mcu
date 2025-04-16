@@ -67,11 +67,13 @@ namespace hal {
 }
 
 template<class T>
-void resource_contract_assert(std::shared_ptr<T> p_object)
+T& resource_contract_assert(std::shared_ptr<T> p_object)
 {
   if (not p_object) {
     hal::safe_throw(hal::unknown(nullptr));
   }
+
+  return *p_object;
 }
 
 // Each application file should have this function implemented

@@ -14,6 +14,8 @@
 
 #pragma once
 
+#include <memory>
+
 #include <libhal-arm-mcu/stm32f1/constants.hpp>
 #include <libhal/adc.hpp>
 #include <libhal/lock.hpp>
@@ -51,7 +53,7 @@ enum class adc_pins : hal::u8
  * applies to the MCU variants that have more than one adc available.
  *
  */
-class adc_manager
+class adc_manager : public std::enable_shared_from_this<adc_manager>
 {
 public:
   template<peripheral select>
@@ -83,13 +85,13 @@ protected:
    * trying to read from the adc's. This can be a basic_lock or any type that
    * derives from it.
    */
-  adc_manager(peripheral p_id, hal::basic_lock& p_lock);
+  adc_manager(peripheral p_id, std::shared_ptr<hal::basic_lock> p_lock);
 
   float read_channel(adc_pins p_pin);
   void setup();
 
   /// The lock to be used for thread safety with adc reads.
-  hal::basic_lock* m_lock;
+  std::shared_ptr<hal::basic_lock> m_lock;
   /// A pointer to track the location of the registers for the specified adc
   /// peripheral.
   void* m_reg;
@@ -101,7 +103,7 @@ template<peripheral select>
 class adc final : public adc_manager
 {
 public:
-  adc(hal::basic_lock& p_lock)
+  adc(std::shared_ptr<hal::basic_lock> p_lock)
     : adc_manager(select, p_lock)
   {
   }
@@ -124,14 +126,14 @@ public:
    * @param p_pin - The pin that will be used for this channels analog input.
    */
   template<peripheral id>
-  channel(stm32f1::adc<id>& p_adc, adc_pins p_pin)
+  channel(std::shared_ptr<stm32f1::adc<id>> p_adc, adc_pins p_pin)
     : channel(p_adc, p_pin)
   {
   }
   channel(channel const& p_other) = delete;
   channel& operator=(channel const& p_other) = delete;
-  channel(channel&& p_other) noexcept = delete;
-  channel& operator=(channel&& p_other) noexcept = delete;
+  channel(channel&& p_other) noexcept = default;
+  channel& operator=(channel&& p_other) noexcept = default;
   ~channel() override;
 
 private:
@@ -143,12 +145,12 @@ private:
    * @param p_manager - The adc peripheral manager that this channel belongs to.
    * @param p_pin - The pin that will be used for this channels analog input.
    */
-  channel(adc_manager& p_manager, adc_pins p_pin);
+  channel(std::shared_ptr<adc_manager> p_manager, adc_pins p_pin);
 
   float driver_read() override;
 
   /// The adc peripheral manager that manages this channel.
-  adc_manager* m_manager;
+  std::shared_ptr<adc_manager> m_manager;
   /// The pin that is used for this channel.
   adc_pins m_pin;
 };

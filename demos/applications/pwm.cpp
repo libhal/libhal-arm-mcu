@@ -22,11 +22,8 @@ void application(resource_list& p_map)
   using namespace std::chrono_literals;
   using namespace hal::literals;
 
-  resource_contract_assert(p_map.pwm);
-  resource_contract_assert(p_map.clock);
-
-  auto& pwm = *p_map.pwm;
-  auto& clock = *p_map.clock;
+  auto& pwm = resource_contract_assert(p_map.pwm);
+  auto& clock = resource_contract_assert(p_map.clock);
 
   while (true) {
     pwm.frequency(1.0_kHz);

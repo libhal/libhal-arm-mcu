@@ -20,13 +20,9 @@
 
 void application(resource_list& p_map)
 {
-  resource_contract_assert(p_map.clock);
-  resource_contract_assert(p_map.console);
-  resource_contract_assert(p_map.i2c);
-
-  auto& clock = *p_map.clock;
-  auto& console = *p_map.console;
-  auto& i2c = *p_map.i2c;
+  auto& clock = resource_contract_assert(p_map.clock);
+  auto& console = resource_contract_assert(p_map.console);
+  auto& i2c = resource_contract_assert(p_map.i2c);
 
   hal::print(console, "Application starting!\n");
 

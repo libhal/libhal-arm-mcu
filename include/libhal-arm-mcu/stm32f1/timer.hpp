@@ -264,7 +264,6 @@ private:
 
   hal::stm32_generic::pwm m_pwm;
   hal::u16 m_pin_num;
-  stm32f1::peripheral m_select;
 };
 
 /**

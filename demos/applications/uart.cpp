@@ -33,6 +33,7 @@ void application(resource_list& p_map)
     using namespace std::string_view_literals;
 
     std::string_view message = "Hello, World!\n";
+    p_map.interface->foo();
     hal::print(console, message);
     // Echo anything received
     std::array<hal::byte, 64> read_buffer;

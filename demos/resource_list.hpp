@@ -164,6 +164,70 @@ boost::intrusive_ptr<local_rc<T>> allocate_intrusive(
   // Note: No need to call intrusive_ptr_add_ref as the initial count is 0
   return boost::intrusive_ptr<local_rc<T>>(ptr);
 }
+
+// =============================================================================
+//  Extra stuff
+// =============================================================================
+
+inline int volatile global = 0;
+
+class interface
+{
+public:
+  virtual void foo() = 0;
+  virtual ~interface() = default;
+
+private:
+  friend void intrusive_ptr_add_ref(interface* p_rc) noexcept;
+  friend void intrusive_ptr_release(interface* p_rc) noexcept;
+
+  std::atomic<int> m_atomic_count;
+  std::pmr::polymorphic_allocator<hal::byte> m_allocator;
+};
+
+class impl : public interface
+{
+public:
+  void foo() override
+  {
+    counter++;
+  }
+
+  ~impl() override
+  {
+    global = global + 1;
+  }
+
+  int counter = 0;
+};
+class impl2 : public interface
+{
+public:
+  void foo() override
+  {
+    counter--;
+  }
+
+  ~impl2() override
+  {
+    global = global - 1;
+  }
+
+  int counter = 0;
+};
+
+inline void intrusive_ptr_add_ref(interface* p_rc) noexcept
+{
+  ++p_rc->m_atomic_count;
+}
+
+inline void intrusive_ptr_release(interface* p_rc) noexcept
+{
+  if (p_rc->m_atomic_count.fetch_sub(1) == 1) {
+    // auto a = p_rc->m_allocator;
+    p_rc->~interface();
+  }
+}
 }  // namespace hal
 
 struct resource_list
@@ -179,6 +243,7 @@ struct resource_list
   std::shared_ptr<hal::zero_copy_serial> zero_copy_serial;
   std::shared_ptr<hal::output_pin> status_led;
   boost::intrusive_ptr<hal::local_rc<hal::steady_clock>> clock;
+  boost::intrusive_ptr<hal::interface> interface;
   std::shared_ptr<hal::can_transceiver> can_transceiver;
   std::shared_ptr<hal::can_mask_filter> can_mask_filter;
   std::shared_ptr<hal::can_bus_manager> can_bus_manager;
@@ -217,6 +282,7 @@ T& resource_contract_assert(boost::intrusive_ptr<T> p_object)
 }
 
 // Each application file should have this function implemented
+[[gnu::noinline]]
 void application(resource_list& p_map);
 
 // Each platform file should have this function implemented

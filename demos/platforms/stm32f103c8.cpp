@@ -118,6 +118,11 @@ public:
     return m_allocator;
   }
 
+  auto* operator->() noexcept
+  {
+    return &m_allocator;
+  }
+
 private:
   template<typename Allocator>
   friend auto make_alloc_helper(Allocator& p_allocator);
@@ -135,66 +140,6 @@ auto make_alloc_helper(Allocator& p_allocator)
 {
   return allocator_helper{ p_allocator };
 }
-
-template<class T>
-class erased_shared_ptr
-{
-public:
-  erased_shared_ptr(T* p_obj)
-    : m_obj(p_obj)
-  {
-  }
-
-  auto* operator*()
-  {
-    return reinterpret_cast<T*>(m_obj.get());
-  }
-  auto* operator->()
-  {
-    return reinterpret_cast<T*>(m_obj.get());
-  }
-
-private:
-  std::shared_ptr<void> m_obj;
-};
-
-#if 0
-class ref_steady_clock
-  : public hal::steady_clock
-  , public local_ref_count<ref_steady_clock>
-{
-public:
-  ref_steady_clock(std::pmr::polymorphic_allocator<hal::byte> p_alloc,
-                   hal::steady_clock* p_clock)
-    : local_ref_count(p_alloc)
-    , m_clock(p_clock)
-  {
-  }
-
-  auto* operator*()
-  {
-    return m_clock;
-  }
-
-  auto* operator->()
-  {
-    return m_clock;
-  }
-
-private:
-  hertz driver_frequency() override
-  {
-    return m_clock->frequency();
-  }
-
-  u64 driver_uptime() override
-  {
-    return m_clock->uptime();
-  }
-
-  hal::steady_clock* m_clock;
-};
-#endif
 }  // namespace hal
 
 hal::u64 initial_uptime = 0;
@@ -214,9 +159,9 @@ void initialize_platform(resource_list& p_resources)
 
   using st_peripheral = hal::stm32f1::peripheral;
 
-#if 0
-  hal::cortex_m::dwt_counter clock(
+  static hal::cortex_m::dwt_counter clock(
     hal::stm32f1::frequency(hal::stm32f1::peripheral::cpu));
+#if 0
 
   hal::ref_steady_clock my_clock(mem.inner_allocator(), &clock);
 
@@ -232,6 +177,19 @@ void initialize_platform(resource_list& p_resources)
   p_resources.clock = mem.alloc<hal::cortex_m::dwt_counter>(
     hal::stm32f1::frequency(hal::stm32f1::peripheral::cpu));
 #else
+  if (clock.uptime() > 1000) {
+    boost::intrusive_ptr<hal::impl> val = (*mem).allocate_object<hal::impl>();
+    p_resources.interface = val;
+    p_resources.interface->foo();
+    p_resources.interface->foo();
+    p_resources.interface->foo();
+  } else {
+    boost::intrusive_ptr<hal::impl2> val = mem->allocate_object<hal::impl2>();
+    p_resources.interface = val;
+    p_resources.interface->foo();
+    p_resources.interface->foo();
+    p_resources.interface->foo();
+  }
 
 #endif
 

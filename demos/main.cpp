@@ -75,3 +75,47 @@ extern "C"
   {
   }
 }
+
+// Override global new operator
+void* operator new(std::size_t)
+{
+  throw std::bad_alloc();
+}
+
+// Override global new[] operator
+void* operator new[](std::size_t)
+{
+  throw std::bad_alloc();
+}
+
+void* operator new(unsigned int, std::align_val_t)
+{
+  throw std::bad_alloc();
+}
+
+// Override global delete operator
+void operator delete(void*) noexcept
+{
+}
+
+// Override global delete[] operator
+void operator delete[](void*) noexcept
+{
+}
+
+// Optional: Override sized delete operators (C++14 and later)
+void operator delete(void*, std::size_t) noexcept
+{
+}
+
+void operator delete[](void*, std::size_t) noexcept
+{
+}
+
+void operator delete[](void*, std::align_val_t) noexcept
+{
+}
+
+void operator delete(void*, std::align_val_t) noexcept
+{
+}

@@ -20,9 +20,9 @@
 
 void application(resource_list& p_map)
 {
-  auto& dac = resource_contract_assert(p_map.dac);
-  auto& counter = resource_contract_assert(p_map.clock);
-  auto& uart0 = resource_contract_assert(p_map.console);
+  auto& dac = **(p_map.dac);
+  auto& counter = **(p_map.clock);
+  auto& uart0 = **(p_map.console);
 
   while (true) {
     using namespace std::chrono_literals;

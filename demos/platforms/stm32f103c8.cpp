@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include "smart_ref.hpp"
 #include <memory>
 #include <memory_resource>
 
@@ -97,15 +98,15 @@ public:
   allocator_helper& operator=(allocator_helper&&) = delete;
 
   template<typename T, typename... Args>
-  std::shared_ptr<T> alloc(Args&&... p_args)
+  hal::smart_ref<T> alloc(Args&&... p_args)
   {
-    return std::allocate_shared<T>(m_allocator, std::forward<Args>(p_args)...);
+    return hal::make_shared_ref<T>(m_allocator, std::forward<Args>(p_args)...);
   }
 
   template<typename T>
-  std::shared_ptr<T> alloc(T&& p_object)
+  hal::smart_ref<T> alloc(T&& p_object)
   {
-    return std::allocate_shared<T>(m_allocator, std::forward<T>(p_object));
+    return hal::make_shared_ref<T>(m_allocator, std::forward<T>(p_object));
   }
 
   auto inner_allocator()
@@ -159,39 +160,8 @@ void initialize_platform(resource_list& p_resources)
 
   using st_peripheral = hal::stm32f1::peripheral;
 
-  static hal::cortex_m::dwt_counter clock(
-    hal::stm32f1::frequency(hal::stm32f1::peripheral::cpu));
-#if 0
-
-  hal::ref_steady_clock my_clock(mem.inner_allocator(), &clock);
-
-  boost::intrusive_ptr<hal::ref_steady_clock> my_ptr(&my_clock);
-  initial_uptime = my_ptr->uptime();
-
-  p_resources.clock = my_ptr;
-#elif 0
-  auto val = hal::allocate_intrusive<hal::cortex_m::dwt_counter>(
+  p_resources.clock = hal::make_shared_ref<hal::cortex_m::dwt_counter>(
     *mem, hal::stm32f1::frequency(hal::stm32f1::peripheral::cpu));
-  p_resources.clock = std::move(val);
-#elif 0
-  p_resources.clock = mem.alloc<hal::cortex_m::dwt_counter>(
-    hal::stm32f1::frequency(hal::stm32f1::peripheral::cpu));
-#else
-  if (clock.uptime() > 1000) {
-    boost::intrusive_ptr<hal::impl> val = (*mem).allocate_object<hal::impl>();
-    p_resources.interface = val;
-    p_resources.interface->foo();
-    p_resources.interface->foo();
-    p_resources.interface->foo();
-  } else {
-    boost::intrusive_ptr<hal::impl2> val = mem->allocate_object<hal::impl2>();
-    p_resources.interface = val;
-    p_resources.interface->foo();
-    p_resources.interface->foo();
-    p_resources.interface->foo();
-  }
-
-#endif
 
   p_resources.console =
     mem.alloc<hal::stm32f1::uart>(hal::port<1>, hal::buffer<128>);
@@ -214,7 +184,7 @@ void initialize_platform(resource_list& p_resources)
   p_resources.input_pin = mem.alloc<hal::stm32f1::input_pin>('B', 4);
 
   static auto adc_lock = mem.alloc<hal::atomic_spin_lock>();
-  auto adc = mem.alloc<hal::stm32f1::adc<st_peripheral::adc1>>(adc_lock);
+  auto adc = mem.alloc<hal::stm32f1::adc<st_peripheral::adc1>>(&*adc_lock);
   p_resources.adc =
     mem.alloc(adc->acquire_channel(hal::stm32f1::adc_pins::pb0));
 
@@ -224,15 +194,16 @@ void initialize_platform(resource_list& p_resources)
   p_resources.i2c = mem.alloc<hal::bit_bang_i2c>(
     hal::bit_bang_i2c::pins{
       // dangerous! Ensure object has static storage duration
-      .sda = i2c_sda.get(),
+      .sda = &(*i2c_sda),
       // dangerous! Ensure object has static storage duration
-      .scl = i2c_scl.get(),
+      .scl = &(*i2c_scl),
     },
-    std::ref(*p_resources.clock));  // TODO(kammce): dangerous!
+    **p_resources.clock);  // TODO(kammce): dangerous!
 
   p_resources.spi_chip_select = mem.alloc<hal::stm32f1::output_pin>('A', 4);
 
   if constexpr (use_bit_bang_spi) {
+
     static auto sck = mem.alloc<hal::stm32f1::output_pin>('A', 5);
     static auto copi = mem.alloc<hal::stm32f1::output_pin>('A', 6);
     static auto cipo = mem.alloc<hal::stm32f1::input_pin>('A', 7);
@@ -240,11 +211,11 @@ void initialize_platform(resource_list& p_resources)
     p_resources.spi = mem.alloc<hal::bit_bang_spi>(
       hal::bit_bang_spi::pins{
         // dangerous! Ensure object has static storage duration
-        .sck = sck.get(),
+        .sck = &*sck,
         // dangerous! Ensure object has static storage duration
-        .copi = copi.get(),
+        .copi = &*copi,
         // dangerous! Ensure object has static storage duration
-        .cipo = cipo.get(),
+        .cipo = &*cipo,
       },
       p_resources.clock,
       hal::spi::settings{
@@ -274,10 +245,7 @@ void initialize_platform(resource_list& p_resources)
   try {
     using namespace std::chrono_literals;
     auto can = mem.alloc<hal::stm32f1::can_peripheral_manager>(
-      100_kHz,
-      std::ref(*p_resources.clock),
-      1ms,
-      hal::stm32f1::can_pins::pb9_pb8);
+      100_kHz, **p_resources.clock, 1ms, hal::stm32f1::can_pins::pb9_pb8);
 
     // Self test allows the can transceiver to see its own messages as if they
     // were received on the bus. This also prevents messages from being received
@@ -295,14 +263,14 @@ void initialize_platform(resource_list& p_resources)
     // Allow all messages
     {
       auto dual_mask_filter = mem.alloc(can->acquire_mask_filter());
-      std::shared_ptr<hal::can_mask_filter> filter(
-        dual_mask_filter, &dual_mask_filter->filter[0]);
-      p_resources.can_mask_filter = filter;
-      p_resources.can_mask_filter->allow({ { .id = 0, .mask = 0 } });
+      // std::shared_ptr<hal::can_mask_filter> filter(
+      //   dual_mask_filter, &dual_mask_filter->filter[0]);
+      // p_resources.can_mask_filter = filter;
+      // p_resources.can_mask_filter->allow({ { .id = 0, .mask = 0 } });
     }
   } catch (hal::timed_out&) {
     hal::print(
-      *p_resources.console,
+      **p_resources.console,
       "⚠️ CAN peripheral timeout error!\n"
       "- CAN disabled - check CANRX/CANTX connections to transceiver.\n"
       "- System will operate normally if CAN is NOT required.\n\n");

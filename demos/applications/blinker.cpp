@@ -19,8 +19,8 @@
 
 void application(resource_list& p_map)
 {
-  auto& status_led = resource_contract_assert(p_map.status_led);
-  auto& clock = resource_contract_assert(p_map.clock);
+  auto& status_led = **(p_map.status_led);
+  auto& clock = **(p_map.clock);
 
   while (true) {
     using namespace std::chrono_literals;

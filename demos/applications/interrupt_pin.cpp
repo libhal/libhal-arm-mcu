@@ -16,8 +16,8 @@
 
 void application(resource_list& p_map)
 {
-  auto& led = resource_contract_assert(p_map.status_led);
-  auto& button = resource_contract_assert(p_map.interrupt_pin);
+  auto& led = **(p_map.status_led);
+  auto& button = **(p_map.interrupt_pin);
 
   led.level(false);
   button.configure({});

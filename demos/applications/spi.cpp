@@ -23,10 +23,10 @@ void application(resource_list& p_map)
   using namespace std::chrono_literals;
   using namespace hal::literals;
 
-  auto& clock = resource_contract_assert(p_map.clock);
-  auto& console = resource_contract_assert(p_map.console);
-  auto& spi = resource_contract_assert(p_map.spi);
-  auto& chip_select = resource_contract_assert(p_map.spi_chip_select);
+  auto& clock = **(p_map.clock);
+  auto& console = **(p_map.console);
+  auto& spi = **(p_map.spi);
+  auto& chip_select = **(p_map.spi_chip_select);
 
   chip_select.level(true);
 

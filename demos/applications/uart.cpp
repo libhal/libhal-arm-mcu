@@ -25,15 +25,14 @@ void application(resource_list& p_map)
   using namespace std::chrono_literals;
   using namespace hal::literals;
 
-  auto& clock = resource_contract_assert(p_map.clock);
-  auto& console = resource_contract_assert(p_map.console);
+  auto& clock = **(p_map.clock);
+  auto& console = **(p_map.console);
 
   while (true) {
     using namespace std::chrono_literals;
     using namespace std::string_view_literals;
 
     std::string_view message = "Hello, World!\n";
-    p_map.interface->foo();
     hal::print(console, message);
     // Echo anything received
     std::array<hal::byte, 64> read_buffer;

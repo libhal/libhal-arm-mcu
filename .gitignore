@@ -58,3 +58,4 @@ conanbuildinfo.txt
 # CMake
 CMakeUserPresets.json
 
+.archive/

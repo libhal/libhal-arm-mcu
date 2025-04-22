@@ -1,9 +1,9 @@
 #pragma once
 
-#include <atomic>
 #include <cstddef>
+
+#include <atomic>
 #include <memory_resource>
-#include <new>
 #include <type_traits>
 #include <utility>
 
@@ -73,25 +73,12 @@ struct rc
   // Static function to destroy an instance and return its size
   static usize destroy_function(void const* p_object)
   {
-    static_cast<rc<T>*>(p_object)->~rc<T>();
+    static_cast<rc<T> const*>(p_object)->~rc<T>();
     return sizeof(rc<T>);
   }
 };
 
-// Allocate and construct a rc
-template<typename T, typename... Args>
-std::pair<ref_info*, T*> create_controlled_object(
-  std::pmr::polymorphic_allocator<byte>& p_alloc,
-  Args&&... args)
-{
-  using rc_t = rc<T>;
-
-  // Allocate memory for the wrapper
-  rc_t* obj = p_alloc.allocate_object<rc_t>(std::forward<Args>(args)...);
-
-  // Return pointers to the ref_info and the object
-  return { &obj->m_info, &obj->m_object };
-}
+// static_assert(offsetof(rc<int>, ))
 }  // namespace detail
 
 // The smart_ref implementation
@@ -99,32 +86,18 @@ template<typename T>
 class smart_ref
 {
 public:
-  // Factory function to create a smart_ref with its control block
-  template<typename... Args>
-  static smart_ref make(std::pmr::polymorphic_allocator<byte> p_alloc,
-                        Args&&... args)
-  {
-    auto [ctrl, obj] =
-      detail::create_controlled_object<T>(p_alloc, std::forward<Args>(args)...);
-    return smart_ref(ctrl, obj);
-  }
+  template<class U, typename... Args>
+  friend smart_ref<U> make_shared_ref(
+    std::pmr::polymorphic_allocator<byte> p_alloc,
+    Args&&... args);
 
   using element_type = T;
 
-  // Delete default constructor - smart_ref must always be valid
+  /// Delete default constructor - smart_ref must always be valid
   smart_ref() = delete;
 
-  // Delete nullptr constructor - smart_ref must always be valid
+  /// Delete nullptr constructor - smart_ref must always be valid
   smart_ref(std::nullptr_t) = delete;
-
-  // Internal constructor with control block and pointer - used by make() and
-  // aliasing
-  smart_ref(ref_info* p_ctrl, T* p_ptr) noexcept
-    : m_ctrl(p_ctrl)
-    , m_ptr(p_ptr)
-  {
-    intrusive_ptr_add_ref(m_ctrl);
-  }
 
   // Copy constructor
   smart_ref(smart_ref const& p_other) noexcept
@@ -132,16 +105,6 @@ public:
     , m_ptr(p_other.m_ptr)
   {
     intrusive_ptr_add_ref(m_ctrl);
-  }
-
-  // Move constructor
-  smart_ref(smart_ref&& p_other) noexcept
-    : m_ctrl(p_other.m_ctrl)
-    , m_ptr(p_other.m_ptr)
-  {
-    p_other.m_ctrl =
-      nullptr;  // This should never happen but prevents double-free
-    p_other.m_ptr = nullptr;
   }
 
   // Converting copy constructor
@@ -179,7 +142,9 @@ public:
   // Destructor
   ~smart_ref()
   {
-    intrusive_ptr_release(m_ctrl);
+    if (m_ctrl && m_ptr) {
+      intrusive_ptr_release(m_ctrl);
+    }
   }
 
   // Copy assignment operator
@@ -194,19 +159,12 @@ public:
     return *this;
   }
 
-  // Move assignment operator
-  smart_ref& operator=(smart_ref&& p_other) noexcept
-  {
-    if (this != &p_other) {
-      intrusive_ptr_release(m_ctrl);
-      m_ctrl = p_other.m_ctrl;
-      m_ptr = p_other.m_ptr;
-      p_other.m_ctrl =
-        nullptr;  // This should never happen but prevents double-free
-      p_other.m_ptr = nullptr;
-    }
-    return *this;
-  }
+  // Delete move assignment operator because we do not want to allow invalid
+  // moved from objects to exist. A new smart_ref is always a copy.
+  smart_ref& operator=(smart_ref&& p_other) noexcept = delete;
+  // Delete move assignment operator because we do not want to allow invalid
+  // moved from objects to exist. A new smart_ref is always a copy.
+  smart_ref(smart_ref&& p_other) noexcept = delete;
 
   // Swap function
   void swap(smart_ref& p_other) noexcept
@@ -233,6 +191,14 @@ public:
   }
 
 private:
+  // Internal constructor with control block and pointer - used by make() and
+  // aliasing
+  smart_ref(ref_info* p_ctrl, T* p_ptr) noexcept
+    : m_ctrl(p_ctrl)
+    , m_ptr(p_ptr)
+  {
+  }
+
   ref_info* m_ctrl;
   T* m_ptr;
 
@@ -259,5 +225,16 @@ template<typename T, typename U>
 bool operator!=(smart_ref<T> const& p_lhs, smart_ref<U> const& p_rhs) noexcept
 {
   return !(p_lhs == p_rhs);
+}
+
+// Factory function to create a smart_ref with its control block
+template<class T, typename... Args>
+inline smart_ref<T> make_shared_ref(
+  std::pmr::polymorphic_allocator<byte> p_alloc,
+  Args&&... args)
+{
+  using rc_t = detail::rc<T>;
+  auto* obj = p_alloc.new_object<rc_t>(p_alloc, std::forward<Args>(args)...);
+  return smart_ref(&obj->m_info, &obj->m_object);
 }
 }  // namespace hal

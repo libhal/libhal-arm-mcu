@@ -85,13 +85,13 @@ protected:
    * trying to read from the adc's. This can be a basic_lock or any type that
    * derives from it.
    */
-  adc_manager(peripheral p_id, std::shared_ptr<hal::basic_lock> p_lock);
+  adc_manager(peripheral p_id, hal::basic_lock* p_lock);
 
   float read_channel(adc_pins p_pin);
   void setup();
 
   /// The lock to be used for thread safety with adc reads.
-  std::shared_ptr<hal::basic_lock> m_lock;
+  hal::basic_lock* m_lock;
   /// A pointer to track the location of the registers for the specified adc
   /// peripheral.
   void* m_reg;
@@ -103,7 +103,7 @@ template<peripheral select>
 class adc final : public adc_manager
 {
 public:
-  adc(std::shared_ptr<hal::basic_lock> p_lock)
+  adc(hal::basic_lock* p_lock)
     : adc_manager(select, p_lock)
   {
   }
@@ -126,7 +126,7 @@ public:
    * @param p_pin - The pin that will be used for this channels analog input.
    */
   template<peripheral id>
-  channel(std::shared_ptr<stm32f1::adc<id>> p_adc, adc_pins p_pin)
+  channel(stm32f1::adc<id>* p_adc, adc_pins p_pin)
     : channel(p_adc, p_pin)
   {
   }
@@ -145,12 +145,12 @@ private:
    * @param p_manager - The adc peripheral manager that this channel belongs to.
    * @param p_pin - The pin that will be used for this channels analog input.
    */
-  channel(std::shared_ptr<adc_manager> p_manager, adc_pins p_pin);
+  channel(adc_manager* p_manager, adc_pins p_pin);
 
   float driver_read() override;
 
   /// The adc peripheral manager that manages this channel.
-  std::shared_ptr<adc_manager> m_manager;
+  adc_manager* m_manager;
   /// The pin that is used for this channel.
   adc_pins m_pin;
 };

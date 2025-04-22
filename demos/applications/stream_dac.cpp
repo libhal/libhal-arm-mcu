@@ -19,7 +19,7 @@
 
 void application(resource_list& p_map)
 {
-  auto& dac = resource_contract_assert(p_map.stream_dac);
+  auto& dac = **(p_map.stream_dac);
 
   while (true) {
     // Change to 8'000.0f for LOFI

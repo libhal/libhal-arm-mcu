@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "smart_ref.hpp"
-#include <memory>
+#include <cassert>
+#include <cstddef>
 #include <memory_resource>
 
 #include <libhal-arm-mcu/dwt_counter.hpp>
@@ -43,10 +43,75 @@
 
 #include <resource_list.hpp>
 
+#include "smart_ref.hpp"
+
 constexpr bool use_bit_bang_spi = false;
 constexpr bool use_libhal_4_pwm = false;
 
 namespace hal {
+
+class monotonic_resource : public std::pmr::memory_resource
+{
+private:
+  void* m_buffer = nullptr;
+  size_t m_buffer_size = 0;
+  size_t m_current_offset = 0;
+
+  // Align the given size up to the specified alignment
+  static size_t align_up(size_t size, size_t alignment)
+  {
+    return (size + alignment - 1) & ~(alignment - 1);
+  }
+
+public:
+  // Constructor that takes a pre-allocated buffer and its size
+  monotonic_resource(void* buffer, size_t buffer_size) noexcept
+    : m_buffer(buffer)
+    , m_buffer_size(buffer_size)
+  {
+  }
+
+  // Reset the resource to its initial state
+  void reset() noexcept
+  {
+    m_current_offset = 0;
+  }
+
+private:
+  // Implement the required functions from std::pmr::memory_resource
+
+  // NOLINTNEXTLINE
+  void* do_allocate(size_t bytes, size_t alignment) override
+  {
+    // Align the current offset to satisfy the requested alignment
+    size_t aligned_offset = align_up(m_current_offset, alignment);
+
+    // Check if we have enough space
+    if (aligned_offset + bytes > m_buffer_size) {
+      throw std::bad_alloc();
+    }
+
+    // Update the current offset
+    void* result = static_cast<char*>(m_buffer) + aligned_offset;
+    m_current_offset = aligned_offset + bytes;
+
+    return result;
+  }
+
+  void do_deallocate(void*, size_t, size_t) override
+  {
+    // In a monotonic resource, deallocate is a no-op
+    // Memory is only reclaimed when reset() is called
+  }
+
+  [[nodiscard]] bool do_is_equal(
+    std::pmr::memory_resource const& other) const noexcept override
+  {
+    // Resources are equal if they are the same object
+    return this == &other;
+  }
+};
+
 template<usize buffer_size>
 struct arena
 {
@@ -64,18 +129,14 @@ struct arena
 
   void release(hal::unsafe)
   {
-    m_resource.release();
     m_driver_memory.fill(0);
   }
 
 private:
   // Create a polymorphic allocator using the monotonic buffer resource
   std::array<hal::byte, buffer_size> m_driver_memory{};
-  std::pmr::monotonic_buffer_resource m_resource{
-    m_driver_memory.data(),
-    m_driver_memory.size(),
-    std::pmr::null_memory_resource()
-  };
+  monotonic_resource m_resource{ m_driver_memory.data(),
+                                 m_driver_memory.size() };
   std::pmr::polymorphic_allocator<hal::byte> m_allocator{ &m_resource };
 };
 

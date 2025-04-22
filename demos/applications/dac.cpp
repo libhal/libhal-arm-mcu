@@ -18,11 +18,11 @@
 
 #include <resource_list.hpp>
 
-void application(resource_list& p_map)
+void application()
 {
-  auto& dac = **(p_map.dac);
-  auto& counter = **(p_map.clock);
-  auto& uart0 = **(p_map.console);
+  auto& counter = *resources::uptime_clock();
+  auto& dac = *resources::dac();
+  auto& uart0 = *resources::console();
 
   while (true) {
     using namespace std::chrono_literals;

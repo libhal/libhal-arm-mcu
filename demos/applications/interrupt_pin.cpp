@@ -14,10 +14,10 @@
 
 #include <resource_list.hpp>
 
-void application(resource_list& p_map)
+void application()
 {
-  auto& led = **(p_map.status_led);
-  auto& button = **(p_map.interrupt_pin);
+  auto& led = *resources::status_led();
+  auto& button = *resources::interrupt_pin();
 
   led.level(false);
   button.configure({});

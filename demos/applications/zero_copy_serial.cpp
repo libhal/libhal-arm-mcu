@@ -75,13 +75,13 @@ void print(hal::zero_copy_serial& p_serial,
   p_serial.write(hal::as_bytes(buffer).first(length));
 }
 
-void application(resource_list& p_map)
+void application()
 {
   using namespace std::chrono_literals;
   using namespace hal::literals;
 
-  auto& clock = **(p_map.clock);
-  auto& console = **(p_map.zero_copy_serial);
+  auto& clock = *resources::uptime_clock();
+  auto& console = *resources::zero_copy_serial();
 
   auto previous_cursor = console.receive_cursor();
 

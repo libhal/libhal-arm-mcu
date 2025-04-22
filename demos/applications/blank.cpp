@@ -14,6 +14,6 @@
 
 #include <resource_list.hpp>
 
-void application(resource_list&)
+void application()
 {
 }

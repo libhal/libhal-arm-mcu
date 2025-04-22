@@ -19,15 +19,15 @@
 
 #include <resource_list.hpp>
 
-void application(resource_list& p_map)
+void application()
 {
   using namespace std::chrono_literals;
   using namespace hal::literals;
 
-  auto& pwm = **(p_map.pwm_channel);
-  auto& pwm_frequency = **(p_map.pwm_frequency);
-  auto& console = **(p_map.console);
-  auto& clock = **(p_map.clock);
+  auto& clock = *resources::uptime_clock();
+  auto& pwm = *resources::pwm_channel();
+  auto& pwm_frequency = *resources::pwm_frequency();
+  auto& console = *resources::console();
 
   while (true) {
     pwm.duty_cycle(0);

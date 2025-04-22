@@ -18,15 +18,15 @@
 
 #include <resource_list.hpp>
 
-void application(resource_list& p_map)
+void application()
 {
   using namespace std::chrono_literals;
   using namespace hal::literals;
 
-  auto& clock = **(p_map.clock);
-  auto& console = **(p_map.console);
-  auto& spi = **(p_map.spi);
-  auto& chip_select = **(p_map.spi_chip_select);
+  auto& clock = *resources::uptime_clock();
+  auto& console = *(resources::console());
+  auto& spi = *(resources::spi());
+  auto& chip_select = *(resources::spi_chip_select());
 
   chip_select.level(true);
 

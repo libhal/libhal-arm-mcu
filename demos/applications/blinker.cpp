@@ -17,10 +17,10 @@
 
 #include <resource_list.hpp>
 
-void application(resource_list& p_map)
+void application()
 {
-  auto& status_led = **(p_map.status_led);
-  auto& clock = **(p_map.clock);
+  auto& clock = *resources::uptime_clock();
+  auto& status_led = *resources::status_led();
 
   while (true) {
     using namespace std::chrono_literals;

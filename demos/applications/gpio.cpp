@@ -16,11 +16,11 @@
 
 #include <resource_list.hpp>
 
-void application(resource_list& p_map)
+void application()
 {
-  auto& clock = **(p_map.clock);
-  auto& led = **(p_map.status_led);
-  auto& button = **(p_map.input_pin);
+  auto& clock = *resources::uptime_clock();
+  auto& led = *resources::status_led();
+  auto& button = *resources::input_pin();
 
   while (true) {
     // Checking level for the lpc40xx drivers NEVER generates an error so this

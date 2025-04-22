@@ -18,10 +18,9 @@
 
 #include <resource_list.hpp>
 
-resource_list resources{};
-
 [[noreturn]] void terminate_handler() noexcept
 {
+#if 0
   if (resources.console) {
     hal::print(**resources.console, "☠️ APPLICATION TERMINATED ☠️\n\n");
   }
@@ -42,6 +41,7 @@ resource_list resources{};
       hal::delay(clock, 1000ms);
     }
   }
+#endif
 
   // spin here forever
   while (true) {
@@ -52,19 +52,8 @@ resource_list resources{};
 int main()
 {
   hal::set_terminate(terminate_handler);
-
-  initialize_platform(resources);
-
-  try {
-    application(resources);
-  } catch (std::bad_optional_access const& e) {
-    if (resources.console) {
-      hal::print(**resources.console,
-                 "A resource required by the application was not available!\n"
-                 "Calling terminate!\n");
-    }
-  }  // Allow any other exceptions to terminate the application
-
+  initialize_platform();
+  application();
   std::terminate();
 }
 

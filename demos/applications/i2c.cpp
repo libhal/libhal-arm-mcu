@@ -18,11 +18,11 @@
 
 #include <resource_list.hpp>
 
-void application(resource_list& p_map)
+void application()
 {
-  auto& clock = **(p_map.clock);
-  auto& console = **(p_map.console);
-  auto& i2c = **(p_map.i2c);
+  auto& clock = *resources::uptime_clock();
+  auto& console = *resources::console();
+  auto& i2c = *resources::i2c();
 
   hal::print(console, "Application starting!\n");
 

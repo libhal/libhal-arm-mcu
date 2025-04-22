@@ -37,15 +37,15 @@ void print_can_message(hal::serial& p_console,
                   p_message.payload[7]);
 }
 
-void application(resource_list& p_map)
+void application()
 {
   using namespace hal::literals;
 
-  auto& clock = **(p_map.clock);
-  auto& can_transceiver = **(p_map.can_transceiver);
-  auto& can_bus_manager = **(p_map.can_bus_manager);
-  auto& can_interrupt = **(p_map.can_interrupt);
-  auto& console = **(p_map.console);
+  auto& clock = *(resources::uptime_clock());
+  auto& can_transceiver = *(resources::can_transceiver());
+  auto& can_bus_manager = *(resources::can_bus_manager());
+  auto& can_interrupt = *(resources::can_interrupt());
+  auto& console = *(resources::console());
 
   // Change the CAN baudrate here.
   static constexpr auto baudrate = 100.0_kHz;

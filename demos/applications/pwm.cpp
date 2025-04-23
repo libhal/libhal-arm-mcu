@@ -22,24 +22,24 @@ void application()
   using namespace std::chrono_literals;
   using namespace hal::literals;
 
-  auto& clock = *resources::uptime_clock();
-  auto& pwm = *resources::pwm();
+  auto clock = resources::uptime_clock();
+  auto pwm = resources::pwm();
 
   while (true) {
-    pwm.frequency(1.0_kHz);
+    pwm->frequency(1.0_kHz);
 
     for (unsigned iteration = 0; iteration <= 100; iteration += 1) {
       auto duty_cycle = static_cast<float>(iteration) / 100.0f;
-      pwm.duty_cycle(duty_cycle);
-      hal::delay(clock, 100ms);
+      pwm->duty_cycle(duty_cycle);
+      hal::delay(*clock, 100ms);
     }
 
-    pwm.duty_cycle(0.5f);
+    pwm->duty_cycle(0.5f);
 
     for (unsigned iteration = 1; iteration < 20; iteration++) {
       auto const frequency = static_cast<hal::hertz>(100_Hz * iteration);
-      pwm.frequency(frequency);
-      hal::delay(clock, 100ms);
+      pwm->frequency(frequency);
+      hal::delay(*clock, 100ms);
     }
   }
 }

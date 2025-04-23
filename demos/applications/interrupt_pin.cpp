@@ -16,18 +16,18 @@
 
 void application()
 {
-  auto& led = *resources::status_led();
-  auto& button = *resources::interrupt_pin();
+  auto led = resources::status_led();
+  auto button = resources::interrupt_pin();
 
-  led.level(false);
-  button.configure({});
+  led->level(false);
+  button->configure({});
 
   auto handler = [&led]([[maybe_unused]] bool p_level) {
-    auto previous_state = led.level();
-    (void)led.level(!previous_state);
+    auto previous_state = led->level();
+    (void)led->level(!previous_state);
   };
 
-  button.on_trigger(handler);
+  button->on_trigger(handler);
 
   while (true) {
     continue;

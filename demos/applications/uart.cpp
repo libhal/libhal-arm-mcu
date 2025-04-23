@@ -25,19 +25,19 @@ void application()
   using namespace std::chrono_literals;
   using namespace hal::literals;
 
-  auto& clock = *resources::uptime_clock();
-  auto& console = *resources::console();
+  auto clock = resources::uptime_clock();
+  auto console = resources::console();
 
   while (true) {
     using namespace std::chrono_literals;
     using namespace std::string_view_literals;
 
     std::string_view message = "Hello, World!\n";
-    hal::print(console, message);
+    hal::print(*console, message);
     // Echo anything received
     std::array<hal::byte, 64> read_buffer;
-    console.write(console.read(read_buffer).data);
+    console->write(console->read(read_buffer).data);
 
-    hal::delay(clock, 1s);
+    hal::delay(*clock, 1s);
   }
 }

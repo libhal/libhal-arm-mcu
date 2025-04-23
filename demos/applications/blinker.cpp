@@ -19,14 +19,14 @@
 
 void application()
 {
-  auto& clock = *resources::uptime_clock();
-  auto& status_led = *resources::status_led();
+  auto clock = resources::uptime_clock();
+  auto status_led = resources::status_led();
 
   while (true) {
     using namespace std::chrono_literals;
-    status_led.level(false);
-    hal::delay(clock, 500ms);
-    status_led.level(true);
-    hal::delay(clock, 500ms);
+    status_led->level(false);
+    hal::delay(*clock, 500ms);
+    status_led->level(true);
+    hal::delay(*clock, 500ms);
   }
 }

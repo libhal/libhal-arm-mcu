@@ -18,19 +18,19 @@
 
 void application()
 {
-  auto& clock = *resources::uptime_clock();
-  auto& led = *resources::status_led();
-  auto& button = *resources::input_pin();
+  auto clock = resources::uptime_clock();
+  auto led = resources::status_led();
+  auto button = resources::input_pin();
 
   while (true) {
     // Checking level for the lpc40xx drivers NEVER generates an error so this
     // is fine.
-    if (button.level()) {
+    if (button->level()) {
       using namespace std::chrono_literals;
-      led.level(false);
-      hal::delay(clock, 200ms);
-      led.level(true);
-      hal::delay(clock, 200ms);
+      led->level(false);
+      hal::delay(*clock, 200ms);
+      led->level(true);
+      hal::delay(*clock, 200ms);
     }
   }
 }

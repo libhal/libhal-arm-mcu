@@ -13,9 +13,7 @@
 // limitations under the License.
 
 #include <cassert>
-#include <cstddef>
 #include <libhal/error.hpp>
-#include <memory_resource>
 
 #include <libhal-arm-mcu/dwt_counter.hpp>
 #include <libhal-arm-mcu/startup.hpp>
@@ -47,14 +45,9 @@
 #include "smart_ref.hpp"
 
 constexpr bool use_bit_bang_spi = false;
-constexpr bool use_libhal_4_pwm = false;
-
-auto& driver_memory = static_arena(hal::buffer<1024>);
 
 void initialize_platform()
 {
-  driver_memory.release(hal::unsafe{});
-
   // Set the MCU to the maximum clock speed
   hal::stm32f1::maximum_speed_using_internal_oscillator();
   hal::stm32f1::release_jtag_pins();
@@ -68,9 +61,15 @@ void reset_device()
   hal::cortex_m::reset();
 }
 
+auto& driver_memory()
+{
+  auto& driver_memory = static_arena(hal::buffer<1024>);
+  return driver_memory;
+}
+
 auto mem()
 {
-  return hal::make_alloc_helper(driver_memory.allocator());
+  return hal::make_alloc_helper(driver_memory().allocator());
 }
 
 auto gpio_a()
@@ -78,11 +77,13 @@ auto gpio_a()
   static auto port = mem().alloc<hal::stm32f1::gpio<st_peripheral::gpio_a>>();
   return port;
 }
+
 auto gpio_b()
 {
   static auto port = mem().alloc<hal::stm32f1::gpio<st_peripheral::gpio_b>>();
   return port;
 }
+
 auto gpio_c()
 {
   static auto port = mem().alloc<hal::stm32f1::gpio<st_peripheral::gpio_c>>();
@@ -102,7 +103,8 @@ hal::smart_ref<hal::zero_copy_serial> zero_copy_serial()
 
 hal::smart_ref<hal::output_pin> status_led()
 {
-  return mem().alloc(gpio_c()->acquire_output_pin(13));
+  auto gpio = gpio_c();
+  return mem().alloc(gpio->acquire_output_pin(13));
 }
 
 auto static_dwt_counter()
@@ -135,6 +137,8 @@ hal::smart_ref<hal::i2c> i2c()
   static auto i2c_sda = mem().alloc<hal::stm32f1::output_pin>('B', 7);
   static auto i2c_scl = mem().alloc<hal::stm32f1::output_pin>('B', 6);
 
+  auto clock_ref = uptime_clock();
+
   return mem().alloc<hal::bit_bang_i2c>(
     hal::bit_bang_i2c::pins{
       // dangerous! Ensure object has static storage duration
@@ -142,7 +146,7 @@ hal::smart_ref<hal::i2c> i2c()
       // dangerous! Ensure object has static storage duration
       .scl = &(*i2c_scl),
     },
-    *uptime_clock());
+    *clock_ref);
 }
 
 auto timer2()
@@ -155,22 +159,24 @@ auto timer2()
 
 hal::smart_ref<hal::pwm16_channel> pwm_channel()
 {
+  auto timer = timer2();
   return mem().alloc(
-    timer2()->acquire_pwm16_channel(hal::stm32f1::timer2_pin::pa1));
+    timer->acquire_pwm16_channel(hal::stm32f1::timer2_pin::pa1));
 }
 
 hal::smart_ref<hal::pwm_group_manager> pwm_frequency()
 {
-  return mem().alloc(timer2()->acquire_pwm_group_frequency());
+  auto timer = timer2();
+  return mem().alloc(timer->acquire_pwm_group_frequency());
 }
 
-auto static_can()
+auto can_manager()
 {
   using namespace hal::literals;
   using namespace std::chrono_literals;
-
+  auto clock_ref = uptime_clock();
   static auto can = mem().alloc<hal::stm32f1::can_peripheral_manager>(
-    100_kHz, *uptime_clock(), 1ms, hal::stm32f1::can_pins::pb9_pb8);
+    100_kHz, *clock_ref, 1ms, hal::stm32f1::can_pins::pb9_pb8);
 
   // Self test allows the can transceiver to see its own messages as if they
   // were received on the bus. This also prevents messages from being received
@@ -180,30 +186,34 @@ auto static_can()
 
   return can;
 }
+
 hal::smart_ref<hal::can_transceiver> can_transceiver()
 {
   static std::array<hal::can_message, 8> receive_buffer{};
-  // dangerous! Ensure object has static storage duration
-  return mem().alloc(static_can()->acquire_transceiver(receive_buffer));
+  auto can = can_manager();
+  return mem().alloc(can->acquire_transceiver(receive_buffer));
 }
 
 hal::smart_ref<hal::can_mask_filter> can_mask_filter()
 {
   // Does not need to be static because the aliasing constructor will extend the
   // lifetime of the object.
-  auto dual_mask_filter = mem().alloc(static_can()->acquire_mask_filter());
+  auto can = can_manager();
+  auto dual_mask_filter = mem().alloc(can->acquire_mask_filter());
   dual_mask_filter->filter[0].allow({ { .id = 0, .mask = 0 } });
   return { dual_mask_filter, &dual_mask_filter->filter[0] };
 }
 
 hal::smart_ref<hal::can_bus_manager> can_bus_manager()
 {
-  return mem().alloc(static_can()->acquire_bus_manager());
+  auto can = can_manager();
+  return mem().alloc(can->acquire_bus_manager());
 }
 
 hal::smart_ref<hal::can_interrupt> can_interrupt()
 {
-  return mem().alloc(static_can()->acquire_interrupt());
+  auto can = can_manager();
+  return mem().alloc(can->acquire_interrupt());
 }
 
 hal::smart_ref<hal::spi> spi()
@@ -249,6 +259,7 @@ hal::smart_ref<hal::stream_dac_u8> stream_dac()
 {
   hal::safe_throw(hal::operation_not_supported(nullptr));
 }
+
 hal::smart_ref<hal::dac> dac()
 {
   hal::safe_throw(hal::operation_not_supported(nullptr));
@@ -264,3 +275,47 @@ hal::smart_ref<hal::pwm> pwm()
   hal::safe_throw(hal::operation_not_supported(nullptr));
 }
 }  // namespace resources
+
+// Override global new operator
+void* operator new(std::size_t)
+{
+  throw std::bad_alloc();
+}
+
+// Override global new[] operator
+void* operator new[](std::size_t)
+{
+  throw std::bad_alloc();
+}
+
+void* operator new(unsigned int, std::align_val_t)
+{
+  throw std::bad_alloc();
+}
+
+// Override global delete operator
+void operator delete(void*) noexcept
+{
+}
+
+// Override global delete[] operator
+void operator delete[](void*) noexcept
+{
+}
+
+// Optional: Override sized delete operators (C++14 and later)
+void operator delete(void*, std::size_t) noexcept
+{
+}
+
+void operator delete[](void*, std::size_t) noexcept
+{
+}
+
+void operator delete[](void*, std::align_val_t) noexcept
+{
+}
+
+void operator delete(void*, std::align_val_t) noexcept
+{
+}

@@ -173,13 +173,17 @@ public:
     std::swap(m_ptr, p_other.m_ptr);
   }
 
+  // Disable dereferencing for r-values (temporaries)
+  T& operator*() && = delete;
+  T* operator->() && = delete;
+
   // Dereference operators
-  T& operator*() const noexcept
+  T& operator*() const& noexcept
   {
     return *m_ptr;
   }
 
-  T* operator->() const noexcept
+  T* operator->() const& noexcept
   {
     return m_ptr;
   }

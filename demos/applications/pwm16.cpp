@@ -24,43 +24,43 @@ void application()
   using namespace std::chrono_literals;
   using namespace hal::literals;
 
-  auto& clock = *resources::uptime_clock();
-  auto& pwm = *resources::pwm_channel();
-  auto& pwm_frequency = *resources::pwm_frequency();
-  auto& console = *resources::console();
+  auto clock = resources::uptime_clock();
+  auto pwm = resources::pwm_channel();
+  auto pwm_frequency = resources::pwm_frequency();
+  auto console = resources::console();
 
   while (true) {
-    pwm.duty_cycle(0);
-    pwm_frequency.frequency(1.0_kHz);
-    hal::print(console,
+    pwm->duty_cycle(0);
+    pwm_frequency->frequency(1.0_kHz);
+    hal::print(*console,
                "Sweeping duty cycle from 0% (0x0000) to 100% (0xFFFF)\n");
     hal::print<32>(
-      console, ">> PWM Frequency = %" PRIu32 "Hz\n", pwm.frequency());
-    hal::delay(clock, 1s);
+      *console, ">> PWM Frequency = %" PRIu32 "Hz\n", pwm->frequency());
+    hal::delay(*clock, 1s);
     auto constexpr duty_cycle_step_count = 20;
     hal::u16 const duty_cycle_step = 0xFFFF / duty_cycle_step_count;
     for (hal::u32 duty_cycle = 0; duty_cycle < 0xFFFF;
          duty_cycle += duty_cycle_step) {
       hal::print<64>(
-        console, ">> Duty: 0x%04" PRIX32 " / 0xFFFF \n", duty_cycle);
-      pwm.duty_cycle(duty_cycle);
-      hal::delay(clock, 100ms);
+        *console, ">> Duty: 0x%04" PRIX32 " / 0xFFFF \n", duty_cycle);
+      pwm->duty_cycle(duty_cycle);
+      hal::delay(*clock, 100ms);
     }
 
-    pwm.duty_cycle(0);
+    pwm->duty_cycle(0);
 
-    hal::print(console, "Sweeping frequency from 1kHz to 20kHz\n");
-    hal::print(console, ">> PWM Duty Cycle = 50%\n");
-    hal::delay(clock, 1s);
-    pwm.duty_cycle(0xFFFF / 2);  // 50% duty cycle
+    hal::print(*console, "Sweeping frequency from 1kHz to 20kHz\n");
+    hal::print(*console, ">> PWM Duty Cycle = 50%\n");
+    hal::delay(*clock, 1s);
+    pwm->duty_cycle(0xFFFF / 2);  // 50% duty cycle
 
     for (hal::u32 multiplier = 1; multiplier < 20; multiplier++) {
       auto frequency = 1000 /* Hz */ * multiplier;
-      pwm_frequency.frequency(frequency);
-      hal::print<64>(console, ">> Freq: %" PRIu32 "Hz\n", pwm.frequency());
-      hal::delay(clock, 100ms);
+      pwm_frequency->frequency(frequency);
+      hal::print<64>(*console, ">> Freq: %" PRIu32 "Hz\n", pwm->frequency());
+      hal::delay(*clock, 100ms);
     }
 
-    hal::print(console, "\n");
+    hal::print(*console, "\n");
   }
 }

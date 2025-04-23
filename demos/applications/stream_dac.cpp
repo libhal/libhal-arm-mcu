@@ -19,11 +19,11 @@
 
 void application()
 {
-  auto& dac = *resources::stream_dac();
+  auto dac = resources::stream_dac();
 
   while (true) {
     // Change to 8'000.0f for LOFI
-    dac.write({
+    dac->write({
       .sample_rate = 16'000.0f,
       .data = uniq_BOMBORA_u8_pcm,
     });

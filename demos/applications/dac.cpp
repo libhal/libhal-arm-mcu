@@ -20,23 +20,23 @@
 
 void application()
 {
-  auto& counter = *resources::uptime_clock();
-  auto& dac = *resources::dac();
-  auto& uart0 = *resources::console();
+  auto clock = resources::uptime_clock();
+  auto dac = resources::dac();
+  auto console = resources::console();
 
   while (true) {
     using namespace std::chrono_literals;
     float f1 = 0.0f;
     float f2 = 0.5f;
     float f3 = 1.0f;
-    dac.write(f1);
-    hal::print<32>(uart0, "Written %f\n", f1);
-    hal::delay(counter, 5s);
-    dac.write(f2);
-    hal::print<32>(uart0, "Written %f\n", f2);
-    hal::delay(counter, 5s);
-    dac.write(f3);
-    hal::print<32>(uart0, "Written %f\n", f3);
-    hal::delay(counter, 5s);
+    dac->write(f1);
+    hal::print<32>(*console, "Written %f\n", f1);
+    hal::delay(*clock, 5s);
+    dac->write(f2);
+    hal::print<32>(*console, "Written %f\n", f2);
+    hal::delay(*clock, 5s);
+    dac->write(f3);
+    hal::print<32>(*console, "Written %f\n", f3);
+    hal::delay(*clock, 5s);
   }
 }

@@ -192,6 +192,21 @@ void disable_interrupt(irq_t p_irq)
   nvic_disable_irq(p_irq);
 }
 
+bool is_interrupt_enabled(irq_t p_irq)
+{
+  if (!is_valid_irq_request(p_irq)) {
+    return false;
+  }
+
+  if (p_irq < 0) {
+    return true;
+  }
+
+  uint32_t enable_register = nvic->iser[register_index(p_irq)];
+
+  return (enable_register & (1 << p_irq)) != 0U;
+}
+
 bool verify_vector_enabled(irq_t p_irq, interrupt_pointer p_handler)
 {
   if (!is_valid_irq_request(p_irq)) {

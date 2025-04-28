@@ -1,5 +1,8 @@
+#include <libhal-arm-mcu/interrupt.hpp>
 #include <libhal-arm-mcu/stm32_generic/timer.hpp>
 #include <libhal-util/bit.hpp>
+#include <libhal/error.hpp>
+#include <limits>
 
 #include "timer.hpp"
 
@@ -30,16 +33,16 @@ timer::timer(hal::unsafe)
 
 bool timer::is_running()
 {
-  static constexpr auto counter_enable = hal::bit_mask::from(0);
-  static auto reg = get_timer_reg(m_reg);
+  constexpr auto counter_enable = hal::bit_mask::from(0);
+  auto reg = get_timer_reg(m_reg);
 
   return (bit_extract<counter_enable>(reg->control_register));
 }
 
 void timer::cancel()
 {
-  static constexpr auto counter_enable = hal::bit_mask::from(0);
-  static auto reg = get_timer_reg(m_reg);
+  constexpr auto counter_enable = hal::bit_mask::from(0);
+  auto reg = get_timer_reg(m_reg);
 
   bit_modify(reg->control_register).clear(counter_enable);
 }
@@ -48,28 +51,45 @@ void timer::schedule(hal::time_duration p_delay, u32 p_timer_clock_frequency)
 {
   timer::cancel();
 
-  static constexpr auto counter_enable = hal::bit_mask::from(0);
-  static constexpr auto update_generation = hal::bit_mask::from(0);
-  static constexpr auto prescaler = hal::bit_mask::from(0, 15);
-  static constexpr auto auto_reload_value = hal::bit_mask::from(0, 15);
-  static constexpr auto counter = hal::bit_mask::from(0, 15);
+  constexpr auto counter_enable = hal::bit_mask::from(0);
+  constexpr auto update_generation = hal::bit_mask::from(0);
+  constexpr auto prescaler = hal::bit_mask::from(0, 15);
+  constexpr auto auto_reload_value = hal::bit_mask::from(0, 15);
+  constexpr auto counter = hal::bit_mask::from(0, 15);
 
-  static auto reg = get_timer_reg(m_reg);
+  auto reg = get_timer_reg(m_reg);
 
-  static constexpr u32 scale_factor_ns = 1'000'000'000;
-  static constexpr u32 timer_max_ticks = 65'535;
-  static constexpr u16 timer_reset_value = 0;
+  constexpr u32 scale_factor = decltype(p_delay)::period::den;
+  constexpr u16 prescaler_max_value = std::numeric_limits<hal::u16>::max();
+  constexpr u16 timer_max_ticks = std::numeric_limits<hal::u16>::max();
+  constexpr u16 timer_reset_value = 0;
 
-  u32 const time_per_tick_ns = scale_factor_ns / p_timer_clock_frequency;
-  u32 const ticks_required = p_delay.count() / time_per_tick_ns;
-  u16 const prescaler_value = ticks_required / timer_max_ticks;
-  u32 const prescaler_frequency =
-    p_timer_clock_frequency / (prescaler_value + 1);
-  u32 const prescaler_time_per_tick_ns = scale_factor_ns / prescaler_frequency;
-  u16 const prescaler_ticks_required =
-    p_delay.count() / prescaler_time_per_tick_ns;
+  u32 const time_per_tick_ns = scale_factor / p_timer_clock_frequency;
+  // Check if CPU Frequency too fast
+  if (time_per_tick_ns == 0) {
+    safe_throw(hal::argument_out_of_domain(this));
+  }
+  // Use 64-bit to prevent immediate overflow. If still too big after division,
+  // exception thrown.
+  u64 const ticks_required = p_delay.count() / time_per_tick_ns;
+  u64 const prescaler_value = ticks_required / timer_max_ticks;
+  if (prescaler_value > prescaler_max_value) {
+    safe_throw(hal::argument_out_of_domain(this));
+  }
 
-  bit_modify(reg->prescale_register).insert<prescaler>(prescaler_value);
+  u16 prescaler_ticks_required;
+  // When the delay amount is shorter than one clock cycle
+  if (ticks_required == 0) {
+    prescaler_ticks_required = 1;
+  } else {
+    u32 const prescaler_frequency =
+      p_timer_clock_frequency / (static_cast<u16>(prescaler_value) + 1);
+    u32 const prescaler_time_per_tick_ns = scale_factor / prescaler_frequency;
+    prescaler_ticks_required = p_delay.count() / prescaler_time_per_tick_ns;
+  }
+
+  bit_modify(reg->prescale_register)
+    .insert<prescaler>(static_cast<u16>(prescaler_value));
   bit_modify(reg->auto_reload_register)
     .insert<auto_reload_value>(prescaler_ticks_required);
   bit_modify(reg->counter_register).insert<counter>(timer_reset_value);
@@ -85,6 +105,9 @@ void timer::initialize(hal::unsafe,
 {
   m_reg = p_peripheral_address;
   initialize_interrupts_function();
+  if (hal::cortex_m::is_interrupt_enabled(p_irq)) {
+    hal::safe_throw(hal::device_or_resource_busy(this));
+  }
   cortex_m::enable_interrupt(p_irq, p_handler);
   timer_reg_t* reg = get_timer_reg(m_reg);
   setup(reg);

@@ -35,9 +35,6 @@ inline void* timer2 = reinterpret_cast<void*>(0x4000'0000);
 inline void* timer3 = reinterpret_cast<void*>(0x4000'0400);
 inline void* timer4 = reinterpret_cast<void*>(0x4000'0800);
 inline void* timer5 = reinterpret_cast<void*>(0x4000'0C00);
-// Basic timers
-// inline void* timer6 = reinterpret_cast<void*>(0x4000'1000);
-// inline void* timer7 = reinterpret_cast<void*>(0x4000'1400);
 // Advanced timer
 inline void* timer8 = reinterpret_cast<void*>(0x4001'3400);
 // General purpose timers 9 - 14
@@ -92,8 +89,10 @@ timer::timer(void* p_reg, stm32f1::peripheral p_select)
   : m_timer(unsafe{})
   , m_select(p_select)
 {
+  // Captures the needed stm32f1 series interrupt data to be passed
   auto peripheral_interrupt_params = setup_interrupt();
 
+  // Passes the stm32f1 series data to the generic stm32 timer object
   m_timer.initialize(unsafe{},
                      p_reg,
                      &stm32f1::initialize_interrupts,
@@ -116,7 +115,7 @@ void timer::driver_schedule(hal::callback<void(void)> p_callback,
 {
   m_callback = p_callback;
   auto const timer_frequency = frequency(m_select);
-  m_timer.schedule(p_delay, static_cast<u32>(timer_frequency)); // 64 vs 32bit
+  m_timer.schedule(p_delay, static_cast<u32>(timer_frequency));
 }
 
 timer::interrupt_params timer::setup_interrupt()
@@ -176,9 +175,9 @@ timer::interrupt_params timer::setup_interrupt()
       peripheral_interrupt_params.handler =
         static_callable<timer, 8, void(void)>(isr).get_handler();
       break;
-    case peripheral::timer10:
+    case peripheral::timer10: // uses timer 1's interrupt vector
       peripheral_interrupt_params.irq =
-        static_cast<cortex_m::irq_t>(irq::tim1_up_tim10); // re-used vector entry
+        static_cast<cortex_m::irq_t>(irq::tim1_up_tim10);
       peripheral_interrupt_params.handler =
         static_callable<timer, 9, void(void)>(isr).get_handler();
       break;
@@ -194,9 +193,9 @@ timer::interrupt_params timer::setup_interrupt()
       peripheral_interrupt_params.handler =
         static_callable<timer, 11, void(void)>(isr).get_handler();
       break;
-    case peripheral::timer13:
-      peripheral_interrupt_params.irq =
-        static_cast<cortex_m::irq_t>(irq::tim8_up_tim13);  // re-used vector entry
+    case peripheral::timer13: // uses timer 8's interrupt vector
+      peripheral_interrupt_params.irq = 
+        static_cast<cortex_m::irq_t>(irq::tim8_up_tim13);
       peripheral_interrupt_params.handler =
         static_callable<timer, 12, void(void)>(isr).get_handler();
       break;
@@ -209,7 +208,7 @@ timer::interrupt_params timer::setup_interrupt()
         static_callable<timer, 13, void(void)>(isr).get_handler();
       break;
   }
-  return (peripheral_interrupt_params);
+  return peripheral_interrupt_params;
 }
 
 void timer::handle_interrupt()
@@ -226,7 +225,6 @@ void timer::handle_interrupt()
 
   static constexpr auto update_interrupt_flag = hal::bit_mask::from(0);
   bit_modify(timer_reg->status_register).clear(update_interrupt_flag);
-  //bit_extract<update_interrupt_flag>(timer_reg->status_register);
 }
 
 void timer::interrupt()
@@ -279,6 +277,30 @@ hal::stm32f1::timer general_purpose_timer_manager::acquire_timer()
   return { peripheral_to_general_register(m_id), m_id };
 }
 
+hal::stm32f1::pwm_group_frequency
+advanced_timer_manager::acquire_pwm_group_frequency()
+{
+  if (m_timer_usage != timer_usage::uninitialized &&
+      m_timer_usage != timer_usage::pwm_generator) {
+    safe_throw(hal::resource_unavailable_try_again(this));
+  }
+
+  m_timer_usage = timer_usage::pwm_generator;
+  return { peripheral_to_advanced_register(m_id), m_id };
+}
+
+hal::stm32f1::pwm_group_frequency
+general_purpose_timer_manager::acquire_pwm_group_frequency()
+{
+  if (m_timer_usage != timer_usage::uninitialized &&
+      m_timer_usage != timer_usage::pwm_generator) {
+    safe_throw(hal::resource_unavailable_try_again(this));
+  }
+
+  m_timer_usage = timer_usage::pwm_generator;
+  return { peripheral_to_general_register(m_id), m_id };
+}
+
 hal::stm32f1::pwm advanced_timer_manager::acquire_pwm(timer_pins p_pin)
 {
   if (m_timer_usage != timer_usage::uninitialized &&
@@ -325,30 +347,6 @@ general_purpose_timer_manager::acquire_pwm16_channel(timer_pins p_pin)
   return { peripheral_to_general_register(m_id), m_id, false, p_pin };
 }
 
-hal::stm32f1::pwm_group_frequency
-advanced_timer_manager::acquire_pwm_group_frequency()
-{
-  if (m_timer_usage != timer_usage::uninitialized &&
-      m_timer_usage != timer_usage::pwm_generator) {
-    safe_throw(hal::resource_unavailable_try_again(this));
-  }
-
-  m_timer_usage = timer_usage::pwm_generator;
-  return { peripheral_to_advanced_register(m_id), m_id };
-}
-
-hal::stm32f1::pwm_group_frequency
-general_purpose_timer_manager::acquire_pwm_group_frequency()
-{
-  if (m_timer_usage != timer_usage::uninitialized &&
-      m_timer_usage != timer_usage::pwm_generator) {
-    safe_throw(hal::resource_unavailable_try_again(this));
-  }
-
-  m_timer_usage = timer_usage::pwm_generator;
-  return { peripheral_to_general_register(m_id), m_id };
-}
-
 // Tell the compiler which instances to generate
 template class advanced_timer<peripheral::timer1>;
 template class advanced_timer<peripheral::timer8>;
@@ -356,8 +354,6 @@ template class general_purpose_timer<peripheral::timer2>;
 template class general_purpose_timer<peripheral::timer3>;
 template class general_purpose_timer<peripheral::timer4>;
 template class general_purpose_timer<peripheral::timer5>;
-// template class basic_timer<peripheral::timer6>;
-// template class basic_timer<peripheral::timer7>;
 template class general_purpose_timer<peripheral::timer9>;
 template class general_purpose_timer<peripheral::timer10>;
 template class general_purpose_timer<peripheral::timer11>;

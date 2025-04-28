@@ -14,6 +14,7 @@
 
 #pragma once
 
+#include <atomic>
 #include <optional>
 #include <type_traits>
 
@@ -216,12 +217,18 @@ class advanced_timer_manager;
 
 class general_purpose_timer_manager;
 
+/**
+ * @brief This class implements the `hal::timer` interface.
+ *
+ * Can schedule function callbacks to occur via interupt after a designated
+ * amount of time.
+ *
+ */
 class timer final : public hal::timer
 {
 public:
   friend class hal::stm32f1::advanced_timer_manager;
   friend class hal::stm32f1::general_purpose_timer_manager;
-  // friend class hal::stm32f1::basic_timer;
 
   timer(timer const& p_other) = delete;
   timer& operator=(timer const& p_other) = delete;
@@ -231,12 +238,24 @@ public:
   //~timer() override;
 
 private:
+  /**
+   * @brief Stores the IRQ number as well as handler object, which are needed
+   * to enable the interrupt.
+   *
+   */
   struct interrupt_params
   {
     cortex_m::irq_t irq;
     cortex_m::interrupt_pointer handler;
   };
 
+  /**
+   * @brief This constructor is private because the only way one should be
+   * able to access this timer is through one of the timer classes.
+   *
+   * @param p_reg - The address of the selected timer.
+   * @param p_select - The selected timer.
+   */
   timer(void* p_reg, stm32f1::peripheral p_select);
 
   bool driver_is_running() override;
@@ -244,13 +263,35 @@ private:
   void driver_schedule(hal::callback<void(void)> p_callback,
                        hal::time_duration p_delay) override;
 
+  /**
+   * @brief Does the configuration required and returns the necessary data to
+   * enable the interrupt.
+   *
+   * @return interrupt_params - the data necessary to enable the interrupt in
+   * the stm32_generic timer class.
+   */
   interrupt_params setup_interrupt();
+  /**
+   * @brief Resets and returns the program from the interrupt.
+   *
+   */
   void handle_interrupt();
+  /**
+   * @brief The function used as the handler for the ISR.
+   *
+   */
   void interrupt();
 
+  /// The stm32_generic timer object which is used to actually control the
+  /// timer.
   hal::stm32_generic::timer m_timer;
+  /// The selected timer to be used.
   peripheral m_select;
+  /// The function to be used in the handler for the callback.
   std::optional<hal::callback<void(void)>> m_callback;
+
+  // Add pointer to manager object. This replaces m_select member variable. make
+  // resource objects (pwm, timer) friends with manager
 };
 
 /**
@@ -431,14 +472,16 @@ public:
 
   ~advanced_timer_manager();
 
+  [[nodiscard]] hal::stm32f1::timer
+  acquire_timer();  // do to general timer as well
+  [[nodiscard]] hal::stm32f1::pwm_group_frequency acquire_pwm_group_frequency();
+
 protected:
   advanced_timer_manager(peripheral p_id);
 
-  [[nodiscard]] hal::stm32f1::timer acquire_timer();
   [[nodiscard]] hal::stm32f1::pwm acquire_pwm(timer_pins p_pin);
   [[nodiscard]] hal::stm32f1::pwm16_channel acquire_pwm16_channel(
     timer_pins p_pin);
-  [[nodiscard]] hal::stm32f1::pwm_group_frequency acquire_pwm_group_frequency();
 
   peripheral m_id;
 
@@ -451,6 +494,7 @@ private:
   };
 
   timer_usage m_timer_usage = timer_usage::uninitialized;
+  std::atomic<int> resource_count = 0;
 };
 
 template<peripheral select>
@@ -464,11 +508,6 @@ class advanced_timer final : public advanced_timer_manager
   advanced_timer()
     : advanced_timer_manager(select)
   {
-  }
-
-  [[nodiscard]] hal::stm32f1::timer acquire_timer()
-  {
-    return advanced_timer_manager::acquire_timer();
   }
 
   /**
@@ -507,11 +546,6 @@ class advanced_timer final : public advanced_timer_manager
     return advanced_timer_manager::acquire_pwm16_channel(
       static_cast<timer_pins>(p_pin));
   }
-
-  [[nodiscard]] hal::stm32f1::pwm_group_frequency acquire_pwm_group_frequency()
-  {
-    return advanced_timer_manager::acquire_pwm_group_frequency();
-  }
 };
 
 /**
@@ -539,14 +573,15 @@ public:
 
   ~general_purpose_timer_manager();
 
+  [[nodiscard]] hal::stm32f1::timer acquire_timer();
+  [[nodiscard]] hal::stm32f1::pwm_group_frequency acquire_pwm_group_frequency();
+
 protected:
   general_purpose_timer_manager(peripheral p_id);
 
-  [[nodiscard]] hal::stm32f1::timer acquire_timer();
   [[nodiscard]] hal::stm32f1::pwm acquire_pwm(timer_pins p_pin);
   [[nodiscard]] hal::stm32f1::pwm16_channel acquire_pwm16_channel(
     timer_pins p_pin);
-  [[nodiscard]] hal::stm32f1::pwm_group_frequency acquire_pwm_group_frequency();
 
   peripheral m_id;
 
@@ -578,11 +613,6 @@ public:
   general_purpose_timer()
     : general_purpose_timer_manager(select)
   {
-  }
-
-  [[nodiscard]] hal::stm32f1::timer acquire_timer()
-  {
-    return general_purpose_timer_manager::acquire_timer();
   }
 
   /**
@@ -621,11 +651,6 @@ public:
   {
     return general_purpose_timer_manager::acquire_pwm16_channel(
       static_cast<timer_pins>(p_pin));
-  }
-
-  [[nodiscard]] hal::stm32f1::pwm_group_frequency acquire_pwm_group_frequency()
-  {
-    return general_purpose_timer_manager::acquire_pwm_group_frequency();
   }
 };
 

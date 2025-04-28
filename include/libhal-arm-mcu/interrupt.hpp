@@ -295,6 +295,33 @@ inline void disable_interrupt(irq_enum auto p_irq)
 }
 
 /**
+ * @brief determine if a particular interrupt has been enabled.
+ *
+ * This is only to determine if that particular entry is enabled, it does not
+ * care about what handler is inside.
+ *
+ * @param p_irq - irq to check.
+ * @return true - the interrupt has been enabled.
+ * @return false - the interrupt is disabled or is invalid.
+ */
+[[nodiscard]] bool is_interrupt_enabled(irq_t p_irq);
+
+/**
+ * @brief determine if a particular interrupt has been enabled.
+ *
+ * This is only to determine if that particular entry is enabled, it does not
+ * care about what handler is inside.
+ *
+ * @param p_irq - irq to check.
+ * @return true - the interrupt has been enabled.
+ * @return false - the interrupt is disabled or is invalid.
+ */
+[[nodiscard]] inline bool is_interrupt_enabled(irq_enum auto p_irq)
+{
+  return is_interrupt_enabled(static_cast<irq_t>(p_irq));
+}
+
+/**
  * @brief determine if a particular handler has been put into the interrupt
  * vector table.
  *

@@ -257,18 +257,28 @@ inline i2c_reg_t* get_i2c_reg(void* p_i2c)
 {
   return reinterpret_cast<i2c_reg_t*>(p_i2c);
 }
+
+/**
+ * @brief Reads the status register
+ *
+ * just trying to make the code more readable
+ *
+ * @param p_i2c_reg Peripheral register pointers
+ */
+inline void read_status_reg2(i2c_reg_t const* p_i2c_reg)
+{
+  p_i2c_reg->sr2;
+}
 }  // namespace
 
-i2c::i2c(void* p_i2c, hal::io_waiter& p_waiter)
+i2c::i2c(void* p_i2c)
 {
   m_i2c = p_i2c;
-  m_waiter = &p_waiter;
 }
 
 i2c::i2c()
 {
   m_i2c = nullptr;
-  m_waiter = nullptr;
 }
 
 i2c::~i2c()
@@ -332,19 +342,23 @@ void i2c::handle_i2c_event() noexcept
   auto i2c_reg = get_i2c_reg(m_i2c);
   auto& status = i2c_reg->sr1;
   auto& data = i2c_reg->data_reg;
+
+  /// @warning SOMETIMES STM32 I2C peripheral enable will just self reset, we
+  /// need it to not
+  bit_modify(i2c_reg->cr1).set(i2c_cr1::peripheral_enable);
   if (bit_extract<i2c_sr1::start>(status)) {
     if (!m_data_out.empty()) {
       data = to_8_bit_address(m_address, i2c_operation::write);
-      m_state = transmittion_state::transmitter;
+      m_state = transmission_state::transmitter;
     } else {
       data = to_8_bit_address(m_address, i2c_operation::read);
-      m_state = transmittion_state::reciever;
+      m_state = transmission_state::reciever;
     }
     return;
   }
 
   if (bit_extract<i2c_sr1::addr>(status)) {
-    if (m_state == transmittion_state::reciever) {
+    if (m_state == transmission_state::reciever) {
       switch (m_data_in.size()) {
         case 1: {
           bit_modify(i2c_reg->cr1).clear(i2c_cr1::ack_enable);
@@ -353,20 +367,17 @@ void i2c::handle_i2c_event() noexcept
         }
         case 2: {
           bit_modify(i2c_reg->cr1).clear(i2c_cr1::ack_enable).set(i2c_cr1::pos);
-          i2c_reg->sr2;
-          while (!bit_extract<i2c_sr1::byte_transfered_finish>(status)) {
-            continue;
-          }
+          read_status_reg2(i2c_reg);
           m_data_in[1] = data;
           m_data_in[0] = data;
           break;
         }
         default: {
-          i2c_reg->sr2;
+          read_status_reg2(i2c_reg);
         }
       }
     } else {
-      i2c_reg->sr2;
+      read_status_reg2(i2c_reg);
     }
     return;
   }
@@ -381,56 +392,30 @@ void i2c::handle_i2c_event() noexcept
       } else {
         bit_modify(i2c_reg->cr1).clear(i2c_cr1::ack_enable);
         bit_modify(i2c_reg->cr1).set(i2c_cr1::stop);
-        m_state = transmittion_state::free;
+        m_state = transmission_state::free;
       }
     }
-    // if (m_data_out.empty()) {
-    //   // wait for transaction to finish
-    //   while (!bit_extract<i2c_sr1::byte_transfered_finish>(status)) {
-    //     continue;
-    //   }
-    //   if (!m_data_in.empty()) {
-    //     bit_modify(i2c_reg->cr1).set(i2c_cr1::start);
-    //   } else {
-    //     bit_modify(i2c_reg->cr1).clear(i2c_cr1::ack_enable);
-    //     bit_modify(i2c_reg->cr1).set(i2c_cr1::stop);
-    //     m_state = transmittion_state::free;
-    //   }
-    // } else {
-    //   data = m_data_out[0];
-    //   m_data_out = m_data_out.subspan(1);
-    // }
-    // return;
+    return;
   }
 
   if (bit_extract<i2c_sr1::rx_not_empty>(status)) {
     switch (m_data_in.size()) {
       case 2: {
-        while (!bit_extract<i2c_sr1::byte_transfered_finish>(status)) {
-          continue;
-        }
         bit_modify(i2c_reg->cr1).clear(i2c_cr1::ack_enable);
         m_data_in[0] = data;
-
-        while (!bit_extract<i2c_sr1::byte_transfered_finish>(status)) {
-          continue;
-        }
         bit_modify(i2c_reg->cr1).set(i2c_cr1::stop);
         m_data_in[1] = data;
         m_data_in[2] = data;
-        m_state = transmittion_state::free;
-        m_waiter->resume();
+        m_state = transmission_state::free;
+
         break;
       }
 
       case 1: {
-        while (!bit_extract<i2c_sr1::byte_transfered_finish>(status)) {
-          continue;
-        }
         m_data_in[0] = data;
         bit_modify(i2c_reg->cr1).set(i2c_cr1::stop);
-        m_state = transmittion_state::free;
-        m_waiter->resume();
+        m_state = transmission_state::free;
+
         break;
       }
 
@@ -451,13 +436,10 @@ void i2c::handle_i2c_event() noexcept
 void i2c::handle_i2c_error() noexcept
 {
   auto i2c_reg = get_i2c_reg(m_i2c);
-  bool soft_reset = false;
   auto& status = i2c_reg->sr1;
 
   if (bit_extract<i2c_sr1::arbitration_lost>(status)) {
-
     m_status = error_state::arbitration_lost;
-    soft_reset = true;
   }
 
   if (bit_extract<i2c_sr1::timeout_error>(status)) {
@@ -469,20 +451,11 @@ void i2c::handle_i2c_error() noexcept
   if (bit_extract<i2c_sr1::ack_failure>(status)) {
     m_status = error_state::no_such_device;
     bit_modify(i2c_reg->sr1).clear<i2c_sr1::ack_failure>();
-    soft_reset = true;
-    m_waiter->resume();
   }
 
   if (bit_extract<i2c_sr1::bus_error>(status)) {
     m_status = error_state::io_error;
     bit_modify(i2c_reg->sr1).clear<i2c_sr1::bus_error>();
-    soft_reset = true;
-    m_waiter->resume();
-  }
-
-  if (soft_reset) {
-    bit_modify(i2c_reg->cr1).set(i2c_cr1::software_reset);
-    bit_modify(i2c_reg->cr1).clear(i2c_cr1::software_reset);
   }
 }
 void i2c::transaction(hal::byte p_address,
@@ -494,15 +467,16 @@ void i2c::transaction(hal::byte p_address,
   m_address = p_address;
   m_data_out = p_data_out;
   m_data_in = p_data_in;
-  m_state = transmittion_state::transmitter;
+  m_state = transmission_state::transmitter;
   auto i2c_reg = get_i2c_reg(m_i2c);
   bit_modify(i2c_reg->cr1).set(i2c_cr1::ack_enable);
-  bit_modify(i2c_reg->cr1).set(i2c_cr1::peripheral_enable).clear(i2c_cr1::stop);
+  bit_modify(i2c_reg->cr1).set(i2c_cr1::peripheral_enable);
+  bit_modify(i2c_reg->cr1).clear(i2c_cr1::stop);
   bit_modify(i2c_reg->cr1).set(i2c_cr1::start);
-  while (m_state != transmittion_state::free) {
+  while (m_state != transmission_state::free) {
     try {
       p_timeout();
-      m_waiter->wait();
+      handle_i2c_error();
       switch (m_status) {
         case error_state::no_error: {
           break;
@@ -535,7 +509,6 @@ void i2c::transaction(hal::byte p_address,
       bit_value(i2c_reg->cr1).clear(i2c_cr1::peripheral_enable);
       throw;
     }
-    i2c_reg->cr1 = 0;
   };
 }
 }  // namespace hal::stm32_generic

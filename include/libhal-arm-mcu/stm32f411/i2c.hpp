@@ -47,8 +47,7 @@ public:
 
   class i2c;
 
-  i2c acquire_i2c(hal::i2c::settings const& p_settings = {},
-                  hal::io_waiter& p_waiter = hal::polling_io_waiter());
+  i2c acquire_i2c(hal::i2c::settings const& p_settings = {});
 
 private:
   i2c_manager_impl(peripheral p_select);
@@ -64,16 +63,8 @@ private:
  * the driver does when its waiting for the i2c transaction to complete.
  */
 template<peripheral select>
-class i2c_manager final : public i2c_manager_impl 
+class i2c_manager final : public i2c_manager_impl
 {
-  /**
-   * @brief i2c driver for the stm32f411 series of microcontrollers
-   *
-   * The stm32f411 series i2c peripherals utilize a state machine and interrupts
-   * to handle transmitting and receiving data. This driver does the same. A
-   * `hal::io_waiter` may be passed to the constructor in order to control what
-   * the driver does when its waiting for the i2c transaction to complete.
-   */
 public:
   static_assert(select == peripheral::i2c1 or /* line break */
                   select == peripheral::i2c2 or select == peripheral::i2c3,
@@ -82,30 +73,25 @@ public:
     : i2c_manager_impl(select)
   {
   }
-
-private:
 };
 
 class i2c_manager_impl::i2c final : public hal::i2c
 {
 public:
   /**
-   * @brief Construct a new i2c object NOTE: does not use internal pull-up
-   * resistors
+   * @brief Construct a new i2c object
    *
-   * @param p_bus_number - i2c bus number from 1 to 3
+   * Will enable internal pull up resistors to make sure the signals don't drop
+   * low. These pull ups should be taken into consideration but not be the only
+   * pull ups on the line
+   *
+   * @param p_manager - i2c bus manager
    * @param p_settings - i2c setting
-   * @param p_waiter - A `hal::io_waiter` for controlling the driver's behavior
-   * while the cpu waits for the interrupt driven i2c transaction to finish.
-   * Note that if the waiter blocks the thread, then the timeout passed to
-   * transaction() will be ignored. If sleep is used, then the timeout will be
-   * checked after each waking interrupt fires off.
    * @throws hal::operation_not_supported - if the settings or if the bus number
-   * is not 0, 1, or 2.
+   * @brief Construct a new i2c object
+   *
    */
-  i2c(i2c_manager_impl& p_manager,
-      i2c::settings const& p_settings = {},
-      hal::io_waiter& p_waiter = hal::polling_io_waiter());
+  i2c(i2c_manager_impl& p_manager, i2c::settings const& p_settings = {});
   i2c(i2c const& p_other) = delete;
   i2c& operator=(i2c const& p_other) = delete;
   i2c(i2c&& p_other) noexcept = delete;

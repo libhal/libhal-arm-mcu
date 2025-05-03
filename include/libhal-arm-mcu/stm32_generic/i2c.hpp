@@ -19,24 +19,22 @@
 
 #include <libhal/i2c.hpp>
 #include <libhal/initializers.hpp>
-#include <libhal/io_waiter.hpp>
 #include <libhal/output_pin.hpp>
 #include <libhal/units.hpp>
 
 namespace hal::stm32_generic {
+/**
+ * @brief A generic i2c implementation for all stm32 series MCUs
+ *
+ * This class is meant to only be used by platform libraries or drivers aiming
+ * to be platform libraries for stm32 devices. As an application develop,
+ * prefer to use the platform specific drivers instead as they handle all of
+ * the initialization for you.
+ *
+ */
 class i2c
 {
 public:
-  /**
-   * @brief A generic i2c implementation for all stm32f series MCUs
-   *
-   * This class is meant to only be used by platform libraries or drivers aiming
-   * to be platform libraries for stm32f devices. As an application develop,
-   * prefer to use the platform specific drivers instead as they handle all of
-   * the initialization for you.
-   *
-   */
-
   /**
    * @brief Construct a new i2c object
    * Care must be taken when constructing this object. The constructor does not
@@ -47,14 +45,14 @@ public:
    * peripheral across the stm32 series of MCUs is different, meaning its not
    * something that can efficiently be manged by this generic driver.
    *
-   * After constructing this object, in order to use this driver the program
-   * must:
+   * Things that needed to be done before construction:
    *
    * 1. Configure pins to be controlled by the i2c peripheral pointed to by the
    *    `p_peripheral_address` input parameter.
    * 2. Power on the appropriate i2c peripheral
-   * 3. Execute the `configure()` function with the appropriate peripheral
-   *    frequency.
+   *
+   * After construction, execute the `configure()` function with the appropriate
+   * peripheral frequency and i2c settings.
    *
    * Performing these in this order will properly initialize the i2c driver and
    * allow the usage of the `transfer()` API. Failing to execute these steps in
@@ -65,13 +63,8 @@ public:
    * meaning care needs to be taken when using this.
    *
    * @param p_i2c - i2c peripheral address
-   * @param p_waiter - A `hal::io_waiter` for controlling the driver's behavior
-   * while the cpu waits for the interrupt driven i2c transaction to finish.
-   * Note that if the waiter blocks the thread, then the timeout passed to
-   * transaction() will be ignored. If sleep is used, then the timeout will be
-   * checked after each waking interrupt fires off.
    */
-  i2c(void* p_i2c, hal::io_waiter& p_waiter);
+  i2c(void* p_i2c);
   i2c();
   /**
    * @brief Perform a transfer operation as defined in `hal::i2c::transaction`
@@ -88,7 +81,7 @@ public:
   /**
    * @brief Configures i2c peripheral
    *
-   * Because each stm32f series MCU has its own unique clock tree, there is no
+   * Because each stm32 series MCU has its own unique clock tree, there is no
    * single, simple and space efficient may to determine the system's i2c clock
    * speed. So the caller must supply the operating frequency of the i2c
    * peripheral for this to work. This API is meant to be called by platform
@@ -125,18 +118,17 @@ private:
     io_error,
     arbitration_lost,
   };
-  enum class transmittion_state : hal::u8
+  enum class transmission_state : hal::u8
   {
     transmitter,
     reciever,
     free,
   };
   void* m_i2c;
-  hal::io_waiter* m_waiter = nullptr;
   std::span<hal::byte const> m_data_out;
   std::span<hal::byte> m_data_in;
   error_state m_status{};
   hal::byte m_address = hal::byte{ 0x00 };
-  transmittion_state m_state = transmittion_state::free;
+  transmission_state m_state = transmission_state::free;
 };
 }  // namespace hal::stm32_generic

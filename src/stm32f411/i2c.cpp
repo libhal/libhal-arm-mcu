@@ -30,9 +30,9 @@
 #include "power.hpp"
 
 namespace hal::stm32f411 {
-i2c_manager_impl::i2c_manager_impl(peripheral select)
+i2c_manager_impl::i2c_manager_impl(peripheral p_select)
+  : m_port(p_select)
 {
-  m_port = select;
   power(m_port).on();
 }
 
@@ -41,15 +41,13 @@ i2c_manager_impl::~i2c_manager_impl()
   power(m_port).off();
 }
 i2c_manager_impl::i2c i2c_manager_impl::acquire_i2c(
-  hal::i2c::settings const& p_settings,
-  hal::io_waiter& p_waiter)
+  hal::i2c::settings const& p_settings)
 {
-  return { *this, p_settings, p_waiter };
+  return { *this, p_settings };
 }
 
 i2c_manager_impl::i2c::i2c(i2c_manager_impl& p_manager,
-                           i2c::settings const& p_settings,
-                           hal::io_waiter& p_waiter)
+                           i2c::settings const& p_settings)
 {
   auto const i2c1 = reinterpret_cast<void*>(0x4000'5400);
   auto const i2c2 = reinterpret_cast<void*>(0x4000'5800);
@@ -57,7 +55,7 @@ i2c_manager_impl::i2c::i2c(i2c_manager_impl& p_manager,
   m_manager = &p_manager;
   switch (p_manager.m_port) {
     case peripheral::i2c1: {
-      m_i2c = stm32_generic::i2c(i2c1, p_waiter);
+      m_i2c = stm32_generic::i2c(i2c1);
       pin scl(peripheral::gpio_b, 6);
       pin sda(peripheral::gpio_b, 7);
       scl.function(pin::pin_function::alternate4)
@@ -68,7 +66,7 @@ i2c_manager_impl::i2c::i2c(i2c_manager_impl& p_manager,
         .resistor(pin_resistor::pull_up);
     } break;
     case peripheral::i2c2: {
-      m_i2c = stm32_generic::i2c(i2c2, p_waiter);
+      m_i2c = stm32_generic::i2c(i2c2);
       pin scl(peripheral::gpio_b, 10);
       pin sda(peripheral::gpio_b, 11);
       scl.function(pin::pin_function::alternate4)
@@ -79,7 +77,7 @@ i2c_manager_impl::i2c::i2c(i2c_manager_impl& p_manager,
         .resistor(pin_resistor::pull_up);
     } break;
     case peripheral::i2c3: {
-      m_i2c = stm32_generic::i2c(i2c3, p_waiter);
+      m_i2c = stm32_generic::i2c(i2c3);
       pin scl(peripheral::gpio_a, 8);
       pin sda(peripheral::gpio_c, 9);
       scl.function(pin::pin_function::alternate4)

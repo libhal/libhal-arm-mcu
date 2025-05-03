@@ -144,6 +144,9 @@ void initialize_platform(resource_list& p_resources)
   p_resources.pwm_channel = pwm_channel;
   p_resources.pwm_frequency = pwm_frequency;
 
+  // TODO(#125): Initializing the can peripheral without it connected to a can
+  // transceiver causes it to stall on occasion.
+#if 0
   try {
     using namespace std::chrono_literals;
     static hal::stm32f1::can_peripheral_manager can(
@@ -175,4 +178,5 @@ void initialize_platform(resource_list& p_resources)
       "- CAN disabled - check CANRX/CANTX connections to transceiver.\n"
       "- System will operate normally if CAN is NOT required.\n\n");
   }
+#endif
 }

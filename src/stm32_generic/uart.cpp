@@ -1,11 +1,12 @@
 #include <cmath>
 
 #include <cstdint>
+#include <span>
+
 #include <libhal-arm-mcu/stm32_generic/uart.hpp>
 #include <libhal-util/bit.hpp>
 #include <libhal-util/serial.hpp>
 #include <libhal/units.hpp>
-#include <span>
 
 namespace hal::stm32_generic {
 

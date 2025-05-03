@@ -13,7 +13,6 @@
 // limitations under the License.
 
 #include <cassert>
-#include <libhal/error.hpp>
 
 #include <libhal-arm-mcu/dwt_counter.hpp>
 #include <libhal-arm-mcu/startup.hpp>
@@ -35,6 +34,7 @@
 #include <libhal-util/inert_drivers/inert_adc.hpp>
 #include <libhal-util/serial.hpp>
 #include <libhal-util/steady_clock.hpp>
+#include <libhal/error.hpp>
 #include <libhal/lock.hpp>
 #include <libhal/pwm.hpp>
 #include <libhal/steady_clock.hpp>

@@ -7,6 +7,8 @@
 #include <type_traits>
 #include <utility>
 
+// Provides hal::u32 (and the like similar to Rust), hal::usize, hal::byte and
+// many others
 #include <libhal/units.hpp>
 
 namespace hal {

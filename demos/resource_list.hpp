@@ -34,12 +34,9 @@
 #include <libhal/units.hpp>
 #include <libhal/zero_copy_serial.hpp>
 
-#include "smart_ref.hpp"
+#include "pointers.hpp"
 
 namespace hal {
-template<class T>
-using optional_smart_ref = std::optional<hal::smart_ref<T>>;
-
 class monotonic_resource : public std::pmr::memory_resource
 {
 private:
@@ -103,18 +100,23 @@ private:
 };
 
 template<usize buffer_size>
-struct arena
+struct monotonic_allocator
 {
-  arena() = default;
-  arena(arena&) = delete;
-  arena& operator=(arena&) = delete;
-  arena(arena&&) = default;
-  arena& operator=(arena&&) = default;
-  ~arena() = default;
+  monotonic_allocator() = default;
+  monotonic_allocator(monotonic_allocator&) = delete;
+  monotonic_allocator& operator=(monotonic_allocator&) = delete;
+  monotonic_allocator(monotonic_allocator&&) = default;
+  monotonic_allocator& operator=(monotonic_allocator&&) = default;
+  ~monotonic_allocator() = default;
 
-  auto& allocator()
+  std::pmr::polymorphic_allocator<hal::byte> operator*()
   {
-    return m_allocator;
+    return { &m_resource };
+  }
+
+  std::pmr::polymorphic_allocator<hal::byte> operator->()
+  {
+    return { &m_resource };
   }
 
   void release(hal::unsafe)
@@ -127,92 +129,30 @@ private:
   std::array<hal::byte, buffer_size> m_driver_memory{};
   monotonic_resource m_resource{ m_driver_memory.data(),
                                  m_driver_memory.size() };
-  std::pmr::polymorphic_allocator<hal::byte> m_allocator{ &m_resource };
 };
-
-template<class = decltype([]() {})>
-auto& static_arena(hal::buffer_param auto p_buffer_size)
-{
-  static arena<p_buffer_size()> allocator_object{};
-  return allocator_object;
-}
-
-template<class allocator>
-class allocator_helper
-{
-public:
-  allocator_helper(allocator_helper&) = delete;
-  allocator_helper& operator=(allocator_helper&) = delete;
-  allocator_helper(allocator_helper&&) = delete;
-  allocator_helper& operator=(allocator_helper&&) = delete;
-
-  template<typename T, typename... Args>
-  hal::smart_ref<T> alloc(Args&&... p_args)
-  {
-    return hal::make_shared_ref<T>(m_allocator, std::forward<Args>(p_args)...);
-  }
-
-  template<typename T>
-  hal::smart_ref<T> alloc(T&& p_object)
-  {
-    return hal::make_shared_ref<T>(m_allocator, std::forward<T>(p_object));
-  }
-
-  auto inner_allocator()
-  {
-    return m_allocator;
-  }
-
-  auto& operator*() noexcept
-  {
-    return m_allocator;
-  }
-
-  auto* operator->() noexcept
-  {
-    return &m_allocator;
-  }
-
-private:
-  template<typename Allocator>
-  friend auto make_alloc_helper(Allocator& p_allocator);
-
-  allocator_helper(allocator& p_allocator)
-    : m_allocator(p_allocator)
-  {
-  }
-
-  allocator& m_allocator;
-};
-
-template<typename Allocator>
-auto make_alloc_helper(Allocator& p_allocator)
-{
-  return allocator_helper{ p_allocator };
-}
 }  // namespace hal
 
 namespace resources {
 void reset_device();
-hal::smart_ref<hal::serial> console();
-hal::smart_ref<hal::zero_copy_serial> zero_copy_serial();
-hal::smart_ref<hal::output_pin> status_led();
-hal::smart_ref<hal::steady_clock> uptime_clock();
-hal::smart_ref<hal::can_transceiver> can_transceiver();
-hal::smart_ref<hal::can_mask_filter> can_mask_filter();
-hal::smart_ref<hal::can_bus_manager> can_bus_manager();
-hal::smart_ref<hal::can_interrupt> can_interrupt();
-hal::smart_ref<hal::adc> adc();
-hal::smart_ref<hal::input_pin> input_pin();
-hal::smart_ref<hal::i2c> i2c();
-hal::smart_ref<hal::interrupt_pin> interrupt_pin();
-hal::smart_ref<hal::pwm> pwm();
-hal::smart_ref<hal::pwm16_channel> pwm_channel();
-hal::smart_ref<hal::pwm_group_manager> pwm_frequency();
-hal::smart_ref<hal::spi> spi();
-hal::smart_ref<hal::output_pin> spi_chip_select();
-hal::smart_ref<hal::stream_dac_u8> stream_dac();
-hal::smart_ref<hal::dac> dac();
+hal::v5::strong_ptr<hal::serial> console();
+hal::v5::strong_ptr<hal::zero_copy_serial> zero_copy_serial();
+hal::v5::strong_ptr<hal::output_pin> status_led();
+hal::v5::strong_ptr<hal::steady_clock> uptime_clock();
+hal::v5::strong_ptr<hal::can_transceiver> can_transceiver();
+hal::v5::strong_ptr<hal::can_mask_filter> can_mask_filter();
+hal::v5::strong_ptr<hal::can_bus_manager> can_bus_manager();
+hal::v5::strong_ptr<hal::can_interrupt> can_interrupt();
+hal::v5::strong_ptr<hal::adc> adc();
+hal::v5::strong_ptr<hal::input_pin> input_pin();
+hal::v5::strong_ptr<hal::i2c> i2c();
+hal::v5::strong_ptr<hal::interrupt_pin> interrupt_pin();
+hal::v5::strong_ptr<hal::pwm> pwm();
+hal::v5::strong_ptr<hal::pwm16_channel> pwm_channel();
+hal::v5::strong_ptr<hal::pwm_group_manager> pwm_frequency();
+hal::v5::strong_ptr<hal::spi> spi();
+hal::v5::strong_ptr<hal::output_pin> spi_chip_select();
+hal::v5::strong_ptr<hal::stream_dac_u8> stream_dac();
+hal::v5::strong_ptr<hal::dac> dac();
 }  // namespace resources
 
 // Each application file should have this function implemented

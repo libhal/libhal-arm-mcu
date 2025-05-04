@@ -412,8 +412,51 @@ public:
   }
 
   /**
-   * @brief Safe aliasing constructor for std::array members
+   * @brief Safe aliasing constructor for object members
+   * TODO(kammce): fix the comment
+   * This constructor creates a strong_ptr that points to a member of an object
+   * managed by another strong_ptr. The resulting strong_ptr shares ownership
+   * with the original strong_ptr, keeping the entire parent object alive.
    *
+   * This version is only enabled for non-array members to prevent potential
+   * undefined behavior when accessing array elements directly. Use the
+   * array-specific versions instead.
+   *
+   * Example usage:
+   * ```
+   * struct container {
+   *   component part;
+   * };
+   *
+   * // Create a strong_ptr to the container
+   * auto container_ptr = make_strong_ptr<container>(allocator);
+   *
+   * // Create a strong_ptr to just the component
+   * auto component_ptr = strong_ptr<component>(container_ptr,
+   * &container::part);
+   * ```
+   *
+   * @tparam U Type of the parent object
+   * @tparam M Type of the member
+   * @param p_other The strong_ptr to the parent object
+   * @param p_member_ptr Pointer-to-member identifying which member to reference
+   */
+  template<typename U>
+  strong_ptr(strong_ptr<U> const& p_other,
+             // clang-format off
+              T U::* p_member_ptr
+             // clang-format on
+             ) noexcept
+
+    : m_ctrl(p_other.m_ctrl)
+    , m_ptr(&((*p_other).*p_member_ptr))
+  {
+    ptr_add_ref(m_ctrl);
+  }
+
+  /**
+   * @brief Safe aliasing constructor for std::array members
+   ** TODO(kammce): fix the comment
    * This constructor creates a strong_ptr that points to an element of an array
    * member in an object managed by another strong_ptr. It performs bounds
    * checking to ensure the index is valid.

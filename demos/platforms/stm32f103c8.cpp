@@ -58,11 +58,6 @@ void initialize_platform()
 namespace resources {
 using st_peripheral = hal::stm32f1::peripheral;
 
-void reset_device()
-{
-  hal::cortex_m::reset();
-}
-
 auto gpio_a()
 {
   static auto port =

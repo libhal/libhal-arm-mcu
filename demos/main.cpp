@@ -15,33 +15,31 @@
 #include <libhal-exceptions/control.hpp>
 #include <libhal-util/serial.hpp>
 #include <libhal-util/steady_clock.hpp>
+#include <libhal/steady_clock.hpp>
 
+#include <pointers.hpp>
 #include <resource_list.hpp>
 
 [[noreturn]] void terminate_handler() noexcept
 {
-#if 0
-  if (resources.console) {
-    hal::print(**resources.console, "☠️ APPLICATION TERMINATED ☠️\n\n");
+  if (resources::opt_console) {
+    hal::print(*resources::opt_console, "☠️ APPLICATION TERMINATED ☠️\n\n");
   }
 
-  if (resources.status_led && resources.clock) {
-    auto& led = **resources.status_led;
-    auto& clock = **resources.clock;
+  if (resources::opt_status_led && resources::opt_uptime_clock) {
 
     while (true) {
       using namespace std::chrono_literals;
-      led.level(false);
-      hal::delay(clock, 100ms);
-      led.level(true);
-      hal::delay(clock, 100ms);
-      led.level(false);
-      hal::delay(clock, 100ms);
-      led.level(true);
-      hal::delay(clock, 1000ms);
+      resources::opt_status_led->level(false);
+      hal::delay(*resources::opt_uptime_clock, 100ms);
+      resources::opt_status_led->level(true);
+      hal::delay(*resources::opt_uptime_clock, 100ms);
+      resources::opt_status_led->level(false);
+      hal::delay(*resources::opt_uptime_clock, 100ms);
+      resources::opt_status_led->level(true);
+      hal::delay(*resources::opt_uptime_clock, 1000ms);
     }
   }
-#endif
 
   // spin here forever
   while (true) {
@@ -52,7 +50,14 @@
 int main()
 {
   hal::set_terminate(terminate_handler);
+
   initialize_platform();
+
+  // Acquire resources for terminate
+  resources::opt_uptime_clock = resources::uptime_clock();
+  resources::opt_status_led = resources::status_led();
+  resources::opt_console = resources::console();
+
   application();
   std::terminate();
 }
@@ -68,18 +73,18 @@ extern "C"
 // Override global new operator
 void* operator new(std::size_t)
 {
-  throw std::bad_alloc();
+  std::terminate();
 }
 
 // Override global new[] operator
 void* operator new[](std::size_t)
 {
-  throw std::bad_alloc();
+  std::terminate();
 }
 
 void* operator new(unsigned int, std::align_val_t)
 {
-  throw std::bad_alloc();
+  std::terminate();
 }
 
 // Override global delete operator

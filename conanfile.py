@@ -64,6 +64,9 @@ class libhal_arm_mcu_conan(ConanFile):
             if self.options.use_picolibc:
                 compiler_version = str(self.settings.compiler.version)
                 self.requires("prebuilt-picolibc/" + compiler_version)
+        if str(self.options.platform).startswith("rp2"):
+            self.requires("picosdk/2.1.1")
+            self.tool_requires("pioasm/2.1.1")
 
     def handle_stm32f1_linker_scripts(self):
         linker_script_name = list(str(self.options.platform))

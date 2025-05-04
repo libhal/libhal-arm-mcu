@@ -14,12 +14,17 @@
 
 cmake_minimum_required(VERSION 3.15)
 
-project(libhal-arm-mcu LANGUAGES CXX)
+if(DEFINED ENV{PICO_SDK_PATH})
+include($ENV{PICO_SDK_PATH}/external/pico_sdk_import.cmake)
+endif()
 
-libhal_test_and_make_library(
-  LIBRARY_NAME libhal-arm-mcu
+project(libhal-arm-mcu LANGUAGES CXX C ASM)
 
-  SOURCES
+# Should probably refine this to actually not compile
+# drivers for all platforms all the time, but for now this
+# serves my purposes
+if(NOT DEFINED ENV{PICO_SDK_PATH})
+set(source_list
   src/system_controller.cpp
   src/dwt_counter.cpp
   src/interrupt.cpp
@@ -85,8 +90,10 @@ libhal_test_and_make_library(
 
   # stm32f40
   src/stm32f40/output_pin.cpp
+)
 
-  TEST_SOURCES
+set(
+  test_sources
   # cortex_m
   tests/dwt_counter.test.cpp
   tests/interrupt.test.cpp
@@ -116,6 +123,27 @@ libhal_test_and_make_library(
   # stm32f411
   tests/stm32f411/output_pin.test.cpp
   tests/stm32f411/spi.test.cpp
+)
+
+else()
+set(source_list
+  src/rp_generic/gpio.cpp
+)
+
+pico_sdk_init()
+
+set(pico_dep hardware_gpio)
+
+endif()
+
+libhal_test_and_make_library(
+  LIBRARY_NAME libhal-arm-mcu
+
+  SOURCES
+  ${source_list}
+
+  TEST_SOURCES
+  ${test_sources}
 
   PACKAGES
   libhal
@@ -128,4 +156,6 @@ libhal_test_and_make_library(
   libhal::util
   nonstd::ring-span-lite
   nonstd::scope-lite
+  ${pico_dep}
 )
+

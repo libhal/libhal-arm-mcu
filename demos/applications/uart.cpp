@@ -17,8 +17,23 @@
 #include <libhal-util/serial.hpp>
 #include <libhal-util/steady_clock.hpp>
 #include <libhal/timeout.hpp>
+#include <memory_resource>
 
+#include <awaitable.hpp>
 #include <resource_list.hpp>
+#include <task.hpp>
+
+int global_counter = 0;
+
+hal::v5::task<int> bar(std::pmr::polymorphic_allocator<>)
+{
+  co_return global_counter++;
+}
+
+hal::v5::task<int> foo(std::pmr::polymorphic_allocator<> p_allocator)
+{
+  co_return co_await bar(p_allocator);
+}
 
 void application()
 {
@@ -32,8 +47,16 @@ void application()
     using namespace std::chrono_literals;
     using namespace std::string_view_literals;
 
-    std::string_view message = "Hello, World!\n";
-    hal::print(*console, message);
+#if 0
+    std::string_view message = "Hello, World! %d\n";
+    hal::print<32>(*console,
+                   message.data(),  // NOLINT
+                   hal::v5::sync_wait(foo(resources::coroutine_allocator())));
+#endif
+    auto count_value =
+      hal::v5::sync_wait(foo(resources::coroutine_allocator()));
+    hal::print<32>(*console, "Hello, World! __[ %d ]__\n", count_value);
+
     // Echo anything received
     std::array<hal::byte, 64> read_buffer;
     console->write(console->read(read_buffer).data);

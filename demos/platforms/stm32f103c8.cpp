@@ -47,6 +47,7 @@
 constexpr bool use_bit_bang_spi = false;
 
 hal::monotonic_allocator<2048> mem{};
+hal::monotonic_allocator<2048> coro_mem{};
 
 void initialize_platform()
 {
@@ -57,6 +58,11 @@ void initialize_platform()
 
 namespace resources {
 using st_peripheral = hal::stm32f1::peripheral;
+
+std::pmr::polymorphic_allocator<> coroutine_allocator()
+{
+  return *coro_mem;
+}
 
 auto gpio_a()
 {

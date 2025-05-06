@@ -133,6 +133,7 @@ private:
 }  // namespace hal
 
 namespace resources {
+std::pmr::polymorphic_allocator<> coroutine_allocator();
 // The APIs below only allocate and construct their drivers once. They use the
 // global `opt_` objects to keep the objects alive and as a means for these APIs
 // to determine if their driver has already been constructed.

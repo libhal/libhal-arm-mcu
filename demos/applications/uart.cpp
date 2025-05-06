@@ -25,14 +25,15 @@
 
 int global_counter = 0;
 
-hal::v5::task<int> bar(std::pmr::polymorphic_allocator<>)
+hal::v5::task<int> bar(std::pmr::memory_resource* = {})
 {
   co_return global_counter++;
 }
 
-hal::v5::task<int> foo(std::pmr::polymorphic_allocator<> p_allocator)
+hal::v5::task<int> foo(std::pmr::memory_resource*)
 {
-  co_return co_await bar(p_allocator);
+  auto const value = co_await bar();
+  co_return value + 1;
 }
 
 void application()

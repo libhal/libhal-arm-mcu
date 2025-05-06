@@ -40,6 +40,7 @@
 #include <libhal/steady_clock.hpp>
 #include <libhal/units.hpp>
 
+#include <memory_resource>
 #include <pointers.hpp>
 #include <resource_list.hpp>
 #include <type_traits>
@@ -59,9 +60,9 @@ void initialize_platform()
 namespace resources {
 using st_peripheral = hal::stm32f1::peripheral;
 
-std::pmr::polymorphic_allocator<> coroutine_allocator()
+std::pmr::memory_resource* coroutine_allocator()
 {
-  return *coro_mem;
+  return &coro_mem.resource();
 }
 
 auto gpio_a()

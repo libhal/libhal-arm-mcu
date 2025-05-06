@@ -109,14 +109,19 @@ struct monotonic_allocator
   monotonic_allocator& operator=(monotonic_allocator&&) = default;
   ~monotonic_allocator() = default;
 
-  std::pmr::polymorphic_allocator<hal::byte> operator*()
+  std::pmr::polymorphic_allocator<> operator*()
   {
-    return { &m_resource };
+    return &m_resource;
   }
 
-  std::pmr::polymorphic_allocator<hal::byte> operator->()
+  std::pmr::polymorphic_allocator<> operator->()
   {
-    return { &m_resource };
+    return &m_resource;
+  }
+
+  std::pmr::memory_resource& resource()
+  {
+    return m_resource;
   }
 
   void release(hal::unsafe)
@@ -133,7 +138,7 @@ private:
 }  // namespace hal
 
 namespace resources {
-std::pmr::polymorphic_allocator<> coroutine_allocator();
+std::pmr::memory_resource* coroutine_allocator();
 // The APIs below only allocate and construct their drivers once. They use the
 // global `opt_` objects to keep the objects alive and as a means for these APIs
 // to determine if their driver has already been constructed.

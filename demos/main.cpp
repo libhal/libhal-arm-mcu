@@ -27,7 +27,6 @@
   }
 
   if (resources::opt_status_led && resources::opt_uptime_clock) {
-
     while (true) {
       using namespace std::chrono_literals;
       resources::opt_status_led->level(false);
@@ -50,14 +49,7 @@
 int main()
 {
   hal::set_terminate(terminate_handler);
-
   initialize_platform();
-
-  // Acquire resources for terminate
-  resources::opt_uptime_clock = resources::uptime_clock();
-  resources::opt_status_led = resources::status_led();
-  resources::opt_console = resources::console();
-
   application();
   std::terminate();
 }

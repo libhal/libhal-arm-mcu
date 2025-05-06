@@ -158,25 +158,13 @@ hal::v5::strong_ptr<hal::dac> dac();
 
 // optional_ptr default initializes to zero, meaning these variables will end up
 // in the BSS section, ensuring that they do not take up any space in ROM.
-hal::v5::optional_ptr<hal::serial> opt_console;
-hal::v5::optional_ptr<hal::zero_copy_serial> opt_zero_copy_serial;
-hal::v5::optional_ptr<hal::output_pin> opt_status_led;
-hal::v5::optional_ptr<hal::steady_clock> opt_uptime_clock;
-hal::v5::optional_ptr<hal::can_transceiver> opt_can_transceiver;
-hal::v5::optional_ptr<hal::can_mask_filter> opt_can_mask_filter;
-hal::v5::optional_ptr<hal::can_bus_manager> opt_can_bus_manager;
-hal::v5::optional_ptr<hal::can_interrupt> opt_can_interrupt;
-hal::v5::optional_ptr<hal::adc> opt_adc;
-hal::v5::optional_ptr<hal::input_pin> opt_input_pin;
-hal::v5::optional_ptr<hal::i2c> opt_i2c;
-hal::v5::optional_ptr<hal::interrupt_pin> opt_interrupt_pin;
-hal::v5::optional_ptr<hal::pwm> opt_pwm;
-hal::v5::optional_ptr<hal::pwm16_channel> opt_pwm_channel;
-hal::v5::optional_ptr<hal::pwm_group_manager> opt_pwm_frequency;
-hal::v5::optional_ptr<hal::spi> opt_spi;
-hal::v5::optional_ptr<hal::output_pin> opt_spi_chip_select;
-hal::v5::optional_ptr<hal::stream_dac_u8> opt_stream_dac;
-hal::v5::optional_ptr<hal::dac> opt_dac;
+//
+// These are used by the terminate handler and should be set by the appropriate
+// APIs above. `opt_console` is defined by `console()`, etc. Those APIs should
+// return the same instance of `console` for each call to the API.
+inline hal::v5::optional_ptr<hal::serial> opt_console;
+inline hal::v5::optional_ptr<hal::output_pin> opt_status_led;
+inline hal::v5::optional_ptr<hal::steady_clock> opt_uptime_clock;
 }  // namespace resources
 
 // Each application file should have this function implemented

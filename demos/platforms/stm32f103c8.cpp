@@ -81,8 +81,11 @@ auto gpio_c()
 
 hal::v5::strong_ptr<hal::serial> console()
 {
-  return hal::v5::make_strong_ptr<hal::stm32f1::uart>(
-    *mem, hal::port<1>, hal::buffer<128>);
+  if (not opt_console) {
+    opt_console = hal::v5::make_strong_ptr<hal::stm32f1::uart>(
+      *mem, hal::port<1>, hal::buffer<128>);
+  }
+  return opt_console.value();
 }
 
 hal::v5::strong_ptr<hal::zero_copy_serial> zero_copy_serial()
@@ -95,22 +98,21 @@ hal::v5::strong_ptr<hal::zero_copy_serial> zero_copy_serial()
 
 hal::v5::strong_ptr<hal::output_pin> status_led()
 {
-  auto gpio = gpio_c();
-  return hal::v5::make_strong_ptr(*mem, gpio->acquire_output_pin(13));
-}
-
-auto static_dwt_counter()
-{
-  static auto steady_clock =
-    hal::v5::make_strong_ptr<hal::cortex_m::dwt_counter>(
-      *mem, hal::stm32f1::frequency(hal::stm32f1::peripheral::cpu));
-  return steady_clock;
+  if (not opt_status_led) {
+    auto gpio = gpio_c();
+    opt_status_led =
+      hal::v5::make_strong_ptr(*mem, gpio->acquire_output_pin(13));
+  }
+  return opt_status_led.value();
 }
 
 hal::v5::strong_ptr<hal::steady_clock> uptime_clock()
 {
-  return hal::v5::make_strong_ptr<hal::cortex_m::dwt_counter>(
-    *mem, hal::stm32f1::frequency(hal::stm32f1::peripheral::cpu));
+  if (not opt_uptime_clock) {
+    opt_uptime_clock = hal::v5::make_strong_ptr<hal::cortex_m::dwt_counter>(
+      *mem, hal::stm32f1::frequency(hal::stm32f1::peripheral::cpu));
+  }
+  return opt_uptime_clock.value();
 }
 
 hal::v5::strong_ptr<hal::adc> adc()

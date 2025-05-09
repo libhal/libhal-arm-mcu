@@ -271,5 +271,4 @@ public:
     return m_completed;
   }
 };
-
 }  // namespace hal

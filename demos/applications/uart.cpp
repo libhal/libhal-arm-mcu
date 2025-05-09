@@ -23,14 +23,75 @@
 #include <resource_list.hpp>
 #include <task.hpp>
 
-int global_counter = 0;
+u8 global_counter = 0;
 
-hal::v5::task<int> bar(std::pmr::memory_resource* = {})
+// Awaiter for when this task is awaited
+template<typename T>
+struct awaiter
+{
+  std::coroutine_handle<hal::v5::hal_promise_type<T>> m_handle;
+
+  explicit awaiter() noexcept
+  {
+  }
+
+  [[nodiscard]] bool await_ready() const noexcept
+  {
+    return !m_handle || m_handle.done();
+  }
+
+  // Generic await_suspend for any promise type
+  template<typename Promise>
+  void await_suspend(std::coroutine_handle<Promise> continuation) noexcept
+  {
+    m_handle.promise().set_continuation(continuation);
+  }
+
+  // Specialized await_suspend for our promise type - propagates allocator
+  template<typename U>
+  void await_suspend(
+    std::coroutine_handle<hal::v5::hal_promise_type<U>> continuation) noexcept
+  {
+    // Get allocator from parent coroutine
+    auto* parent_allocator = continuation.promise().get_allocator();
+
+    // Propagate allocator to child coroutine
+    if (parent_allocator) {
+      m_handle.promise().set_allocator(parent_allocator);
+    }
+
+    // Store continuation for resumption
+    m_handle.promise().set_continuation(continuation);
+  }
+
+  T await_resume()
+  {
+    if (!m_handle) {
+      throw std::runtime_error("Awaiting a null task");
+    }
+
+    if constexpr (std::is_void_v<T>) {
+      m_handle.promise().result();
+    } else {
+      return m_handle.promise().result();
+    }
+  }
+};
+
+hal::v5::task<hal::u8> bar(hal::v5::coro_context& ctx)
 {
   co_return global_counter++;
 }
 
-hal::v5::task<int> foo(std::pmr::memory_resource*)
+awaiter<int> bar()
+{
+  // What should I put here?
+  awaiter<int> bar_runner;
+  return bar_runner;
+}
+
+// Add coro_context parameter to the top-level coroutine
+hal::v5::task<int> foo(hal::v5::coro_context& ctx)
 {
   auto const value = co_await bar();
   co_return value + 1;
@@ -54,8 +115,12 @@ void application()
                    message.data(),  // NOLINT
                    hal::v5::sync_wait(foo(resources::coroutine_allocator())));
 #endif
-    auto count_value =
-      hal::v5::sync_wait(foo(resources::coroutine_allocator()));
+
+    // Create the context with your memory resource
+    hal::v5::coro_context ctx(resources::coroutine_allocator());
+
+    // Call foo with the context
+    auto count_value = hal::v5::sync_wait(foo(ctx));
     hal::print<32>(*console, "Hello, World! __[ %d ]__\n", count_value);
 
     // Echo anything received

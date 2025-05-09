@@ -18,9 +18,27 @@ using void_to_placeholder_t =
   std::conditional_t<std::is_void_v<T>, void_placeholder, T>;
 }  // namespace detail
 
-// Forward declaration
+// Forward declarations
 template<typename T>
 class task;
+
+// CoroContext holds the allocator for coroutine frames
+class coro_context
+{
+public:
+  explicit coro_context(std::pmr::memory_resource* p_resource)
+    : m_resource(p_resource)
+  {
+  }
+
+  [[nodiscard]] std::pmr::memory_resource* resource() const
+  {
+    return m_resource;
+  }
+
+private:
+  std::pmr::memory_resource* m_resource;
+};
 
 // Primary promise type
 template<typename T>
@@ -29,17 +47,14 @@ class hal_promise_type
 private:
   using value_type = detail::void_to_placeholder_t<T>;
 
-  std::pmr::memory_resource* m_allocator;
+  std::pmr::memory_resource* m_allocator{};
   std::exception_ptr m_exception = nullptr;
   std::coroutine_handle<> m_continuation = nullptr;
   value_type m_result{};
 
 public:
-  // Constructor with explicit allocator
-  explicit hal_promise_type(std::pmr::memory_resource* p_allocator)
-    : m_allocator(p_allocator)
-  {
-  }
+  // Default constructor - allocator will be set via operator new
+  hal_promise_type() = default;
 
   // Create the task object
   task<T> get_return_object() noexcept;
@@ -63,6 +78,15 @@ public:
   {
     m_result = std::forward<U>(value);
   }
+
+#if 0
+  // For void coroutines
+  void return_void()
+    requires(std::is_void_v<T>)
+  {
+    // Nothing to do
+  }
+#endif
 
   // Handle exceptions
   void unhandled_exception() noexcept
@@ -111,17 +135,50 @@ public:
     return m_allocator;
   }
 
-  // Custom allocation using our allocator
+  // Set allocator for child coroutines (used during operator new and
+  // await_suspend)
+  void set_allocator(std::pmr::memory_resource* p_allocator) noexcept
+  {
+    m_allocator = p_allocator;
+  }
+
+#if 0
+  // Custom allocation using our allocator - for top-level coroutines with
+  // explicit context
+  static void* operator new(std::size_t size, coro_context& ctx)
+  {
+    return std::pmr::polymorphic_allocator<>(ctx.resource()).allocate(size);
+  }
+#else
+  // Custom allocation using our allocator - for top-level coroutines with
+  // explicit context
+  // This is specifically for the first parameter being coro_context&
+  static void* operator new(std::size_t size, hal::v5::coro_context& ctx)
+  {
+    return std::pmr::polymorphic_allocator<>(ctx.resource()).allocate(size);
+  }
+#endif
+
+  // For nested coroutines that don't have an explicit context
   static void* operator new(std::size_t size,
                             std::pmr::memory_resource* p_allocator)
   {
     return std::pmr::polymorphic_allocator<>(p_allocator).allocate(size);
   }
 
-  // Custom deletion
+#if 0
+  // Default operator new - will only be used if no allocator is available
+  static void* operator new(std::size_t)
+  {
+    // This should never happen in our design
+    throw std::bad_alloc();
+  }
+#endif
+
+  // Custom deletion - no-op as specified by the requirements
   static void operator delete(void*)
   {
-    // Deallocation is handled in destroy()
+    // Deallocation is handled elsewhere
   }
 };
 
@@ -174,18 +231,13 @@ public:
   }
 
   // Awaiter for when this task is awaited
-  struct basic_awaiter
+  struct awaiter
   {
     std::coroutine_handle<hal_promise_type<T>> m_handle;
 
-    // For allocator propagation
-    std::pmr::memory_resource* m_allocator;
-
-    // Constructor with allocator
-    basic_awaiter(std::coroutine_handle<hal_promise_type<T>> p_handle,
-                  std::pmr::memory_resource* p_allocator) noexcept
+    explicit awaiter(
+      std::coroutine_handle<hal_promise_type<T>> p_handle) noexcept
       : m_handle(p_handle)
-      , m_allocator(p_allocator)
     {
     }
 
@@ -194,25 +246,36 @@ public:
       return !m_handle || m_handle.done();
     }
 
-    // Generic await_suspend - captures continuation for resumption
+    // Generic await_suspend for any promise type
     template<typename Promise>
     void await_suspend(std::coroutine_handle<Promise> continuation) noexcept
     {
       m_handle.promise().set_continuation(continuation);
     }
 
-    // Specialized await_suspend for hal_promise_type - propagates allocator
-    template<typename V>
+    // Specialized await_suspend for our promise type - propagates allocator
+    template<typename U>
     void await_suspend(
-      std::coroutine_handle<hal_promise_type<V>> continuation) noexcept
+      std::coroutine_handle<hal_promise_type<U>> continuation) noexcept
     {
+      // Get allocator from parent coroutine
+      auto* parent_allocator = continuation.promise().get_allocator();
+
+      // Propagate allocator to child coroutine
+      if (parent_allocator) {
+        m_handle.promise().set_allocator(parent_allocator);
+      }
+
       // Store continuation for resumption
-      m_allocator = continuation.promise().get_allocator();
       m_handle.promise().set_continuation(continuation);
     }
 
     T await_resume()
     {
+      if (!m_handle) {
+        throw std::runtime_error("Awaiting a null task");
+      }
+
       if constexpr (std::is_void_v<T>) {
         m_handle.promise().result();
       } else {
@@ -221,15 +284,9 @@ public:
     }
   };
 
-  using awaiter = basic_awaiter;
-
-  // This is the key function that propagates the allocator during co_await
-  // When a task is awaited, this returns an awaiter that captures the caller's
-  // allocator
-  auto operator co_await() const noexcept
+  [[nodiscard]] awaiter operator co_await() const noexcept
   {
-    // No allocator available in this context
-    return awaiter{ m_handle, m_handle.promise().get_allocator() };
+    return awaiter{ m_handle };
   }
 
   // Run synchronously and return result
@@ -240,7 +297,7 @@ public:
     }
 
     while (!m_handle.done()) {
-      // Allow processing to continue
+      m_handle.resume();
     }
 
     if constexpr (std::is_void_v<T>) {
@@ -266,4 +323,12 @@ T sync_wait(task<T> p_task)
 {
   return p_task.get_result();
 }
+
+// Example usage of creating top-level tasks
+template<typename F>
+auto make_task(coro_context& ctx, F&& func) -> decltype(func())
+{
+  return func();  // Context will be passed to operator new automatically
+}
+
 }  // namespace hal::v5

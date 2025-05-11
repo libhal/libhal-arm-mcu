@@ -41,6 +41,7 @@ archives/
 # Artifacts
 build/
 tools/
+.archive/
 
 # lint artifacts
 compile_commands.json
@@ -57,4 +58,3 @@ conanbuildinfo.txt
 
 # CMake
 CMakeUserPresets.json
-

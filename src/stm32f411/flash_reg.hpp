@@ -14,11 +14,8 @@
 
 #pragma once
 
-#include <array>
-#include <cstddef>
-#include <cstdint>
-
 #include <libhal-util/bit.hpp>
+#include <libhal/units.hpp>
 
 namespace hal::stm32f411 {
 /// flash register map
@@ -27,23 +24,24 @@ struct flash_config_t
   /// Offset 0x00: The Flash access control register is used to enable/disable
   /// the acceleration features and control the Flash memory access time
   /// according to CPU frequency.
-  std::uint32_t volatile access_control_reg;
+  u32 volatile access_control_reg;
   /// Offset 0x04: The Flash key register is used to allow access to the Flash
   /// control register and so, to allow program and erase operations.
-  std::uint32_t volatile key_reg;
+  u32 volatile key_reg;
   /// Offset 0x08: The Flash option key register is used to allow program and
   /// erase operations in the user configuration sector.
-  std::uint32_t volatile option_key_reg;
+  u32 volatile option_key_reg;
   /// Offset 0x0C: The Flash status register gives information on ongoing
   /// program and erase operations.
-  std::uint32_t volatile status_reg;
+  u32 volatile status_reg;
   /// Offset 0x10: The Flash control register is used to configure and start
   /// Flash memory operations.
-  std::uint32_t volatile control_reg;
+  u32 volatile control_reg;
   /// Offset 0x14: The FLASH_OPTCR register is used to modify the user option
   /// bytes
-  std::uint32_t volatile optional_control_reg;
+  u32 volatile optional_control_reg;
 };
+
 struct flash_acess_control
 {
   static constexpr auto latency = bit_mask::from<3, 0>();
@@ -53,6 +51,6 @@ struct flash_acess_control
   static constexpr auto instruction_cache_reset = bit_mask::from<11>();
   static constexpr auto data_cache_reset = bit_mask::from<12>();
 };
-inline flash_config_t* flash_config =
-  reinterpret_cast<flash_config_t*>(0x4002'3C00);
+
+inline auto* flash_config = reinterpret_cast<flash_config_t*>(0x4002'3C00);
 }  // namespace hal::stm32f411

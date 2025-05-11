@@ -12,14 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include <array>
-#include <cstdint>
-
+#include <libhal/units.hpp>
 #include <resource_list.hpp>
 
-#include "resources/uniq-BOMBORA.u8.pcm.h"
-
-std::array<std::uint8_t, 128> samples{};
+#include "resources/uniq-BOMBORA.u8.pcm.hpp"
 
 void application(resource_list& p_map)
 {

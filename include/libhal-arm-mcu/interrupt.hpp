@@ -44,7 +44,8 @@ concept irq_enum =
  *
  * All core IRQs are enabled by default.
  */
-enum class irq : irq_t
+enum class irq : irq_t  // NOLINT(performance-enum-size): must fit ARM Cortex
+                        // 16-bit IRQ numbers
 {
   top_of_stack = -16,
   reset = -15,

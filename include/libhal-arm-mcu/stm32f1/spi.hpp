@@ -41,7 +41,7 @@ public:
   spi& operator=(spi& p_other) = delete;
   spi(spi&& p_other) noexcept = delete;
   spi& operator=(spi&& p_other) noexcept = delete;
-  ~spi();
+  ~spi() override;
 
 private:
   spi(std::uint8_t p_bus_number, spi::settings const& p_settings = {});

@@ -37,7 +37,7 @@ void application(resource_list& p_map)
     pwm.duty_cycle(0.5f);
 
     for (unsigned iteration = 1; iteration < 20; iteration++) {
-      auto const frequency = 100.0_Hz * iteration;
+      auto const frequency = static_cast<hal::hertz>(100_Hz * iteration);
       pwm.frequency(frequency);
       hal::delay(clock, 100ms);
     }

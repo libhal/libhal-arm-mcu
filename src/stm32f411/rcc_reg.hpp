@@ -263,10 +263,12 @@ struct rcc_ahb2
   static constexpr auto usb_otg_en = bit_mask::from<7>();
 };
 
+// NOLINTBEGIN(performance-no-int-to-ptr)
 /**
  * @return reset_and_clock_control_t& - return reset_and_clock_control_t
  * register.
  */
-inline reset_and_clock_control_t* rcc =
+inline auto* rcc =
   reinterpret_cast<reset_and_clock_control_t*>(0x40000000 + 0x20000 + 0x3800);
+// NOLINTEND(performance-no-int-to-ptr)
 }  // namespace hal::stm32f411

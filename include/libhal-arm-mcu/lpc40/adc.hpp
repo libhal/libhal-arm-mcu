@@ -14,8 +14,6 @@
 
 #pragma once
 
-#include <cstdint>
-
 #include <libhal/adc.hpp>
 #include <libhal/initializers.hpp>
 #include <libhal/units.hpp>
@@ -88,7 +86,7 @@ public:
   adc& operator=(adc const& p_other) = delete;
   adc(adc&& p_other) noexcept = delete;
   adc& operator=(adc&& p_other) noexcept = delete;
-  virtual ~adc() = default;
+  ~adc() override = default;
 
 private:
   channel get_predefined_channel_info(std::uint8_t p_channel);

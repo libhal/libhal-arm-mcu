@@ -16,42 +16,45 @@
 
 #include <array>
 
+#include <libhal/units.hpp>
+
 namespace hal::cortex_m {
 
 /// Structure type to access the Nested Vectored Interrupt Controller (NVIC)
 struct nvic_register_t
 {
   /// Offset: 0x000 (R/W)  Interrupt Set Enable Register
-  std::array<uint32_t volatile, 8U> iser;
+  std::array<u32 volatile, 8U> iser;
   /// Reserved 0
-  std::array<uint32_t, 24U> reserved0;
+  std::array<u32, 24U> reserved0;
   /// Offset: 0x080 (R/W)  Interrupt Clear Enable Register
-  std::array<uint32_t volatile, 8U> icer;
+  std::array<u32 volatile, 8U> icer;
   /// Reserved 1
-  std::array<uint32_t, 24U> reserved1;
+  std::array<u32, 24U> reserved1;
   /// Offset: 0x100 (R/W)  Interrupt Set Pending Register
-  std::array<uint32_t volatile, 8U> ispr;
+  std::array<u32 volatile, 8U> ispr;
   /// Reserved 2
-  std::array<uint32_t, 24U> reserved2;
+  std::array<u32, 24U> reserved2;
   /// Offset: 0x180 (R/W)  Interrupt Clear Pending Register
-  std::array<uint32_t volatile, 8U> icpr;
+  std::array<u32 volatile, 8U> icpr;
   /// Reserved 3
-  std::array<uint32_t, 24U> reserved3;
+  std::array<u32, 24U> reserved3;
   /// Offset: 0x200 (R/W)  Interrupt Active bit Register
-  std::array<uint32_t volatile, 8U> iabr;
+  std::array<u32 volatile, 8U> iabr;
   /// Reserved 4
-  std::array<uint32_t, 56U> reserved4;
+  std::array<u32, 56U> reserved4;
   /// Offset: 0x300 (R/W)  Interrupt Priority Register (8Bit wide)
   std::array<uint8_t volatile, 240U> ip;
   /// Reserved 5
-  std::array<uint32_t, 644U> reserved5;
+  std::array<u32, 644U> reserved5;
   /// Offset: 0xE00 ( /W)  Software Trigger Interrupt Register
-  uint32_t volatile stir;
+  u32 volatile stir;
 };
 
 /// NVIC address
-inline constexpr intptr_t nvic_address = 0xE000'E100UL;
+inline constexpr auto nvic_address = static_cast<uptr>(0xE000'E100UL);
 
+// NOLINTNEXTLINE(performance-no-int-to-ptr)
 inline auto* nvic = reinterpret_cast<nvic_register_t*>(nvic_address);
 
 /// Place holder interrupt that performs no work

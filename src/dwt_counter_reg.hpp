@@ -15,73 +15,73 @@
 #pragma once
 
 #include <array>
-#include <cstdint>
 
 #include <libhal/steady_clock.hpp>
+#include <libhal/units.hpp>
 
 namespace hal::cortex_m {
 /// Structure type to access the Data Watchpoint and Trace Register (DWT).
 struct dwt_register_t
 {
   /// Offset: 0x000 (R/W)  Control Register
-  uint32_t volatile ctrl;
+  u32 volatile ctrl;
   /// Offset: 0x004 (R/W)  Cycle Count Register
-  uint32_t volatile cyccnt;
+  u32 volatile cyccnt;
   /// Offset: 0x008 (R/W)  CPI Count Register
-  uint32_t volatile cpicnt;
+  u32 volatile cpicnt;
   /// Offset: 0x00C (R/W)  Exception Overhead Count Register
-  uint32_t volatile exccnt;
+  u32 volatile exccnt;
   /// Offset: 0x010 (R/W)  Sleep Count Register
-  uint32_t volatile sleepcnt;
+  u32 volatile sleepcnt;
   /// Offset: 0x014 (R/W)  LSU Count Register
-  uint32_t volatile lsucnt;
+  u32 volatile lsucnt;
   /// Offset: 0x018 (R/W)  Folded-instruction Count Register
-  uint32_t volatile foldcnt;
+  u32 volatile foldcnt;
   /// Offset: 0x01C (R/ )  Program Counter Sample Register
-  uint32_t const volatile pcsr;
+  u32 const volatile pcsr;
   /// Offset: 0x020 (R/W)  Comparator Register 0
-  uint32_t volatile comp0;
+  u32 volatile comp0;
   /// Offset: 0x024 (R/W)  Mask Register 0
-  uint32_t volatile mask0;
+  u32 volatile mask0;
   /// Offset: 0x028 (R/W)  Function Register 0
-  uint32_t volatile function0;
+  u32 volatile function0;
   /// Reserved 0
-  std::array<uint32_t, 1> reserved0;
+  std::array<u32, 1> reserved0;
   /// Offset: 0x030 (R/W)  Comparator Register 1
-  uint32_t volatile comp1;
+  u32 volatile comp1;
   /// Offset: 0x034 (R/W)  Mask Register 1
-  uint32_t volatile mask1;
+  u32 volatile mask1;
   /// Offset: 0x038 (R/W)  Function Register 1
-  uint32_t volatile function1;
+  u32 volatile function1;
   /// Reserved 1
-  std::array<uint32_t, 1> reserved1;
+  std::array<u32, 1> reserved1;
   /// Offset: 0x040 (R/W)  Comparator Register 2
-  uint32_t volatile comp2;
+  u32 volatile comp2;
   /// Offset: 0x044 (R/W)  Mask Register 2
-  uint32_t volatile mask2;
+  u32 volatile mask2;
   /// Offset: 0x048 (R/W)  Function Register 2
-  uint32_t volatile function2;
+  u32 volatile function2;
   /// Reserved 2
-  std::array<uint32_t, 1> reserved2;
+  std::array<u32, 1> reserved2;
   /// Offset: 0x050 (R/W)  Comparator Register 3
-  uint32_t volatile comp3;
+  u32 volatile comp3;
   /// Offset: 0x054 (R/W)  Mask Register 3
-  uint32_t volatile mask3;
+  u32 volatile mask3;
   /// Offset: 0x058 (R/W)  Function Register 3
-  uint32_t volatile function3;
+  u32 volatile function3;
 };
 
 /// Structure type to access the Core Debug Register (CoreDebug)
 struct core_debug_registers_t
 {
   /// Offset: 0x000 (R/W)  Debug Halting Control and Status Register
-  uint32_t volatile dhcsr;
+  u32 volatile dhcsr;
   /// Offset: 0x004 ( /W)  Debug Core Register Selector Register
-  uint32_t volatile dcrsr;
+  u32 volatile dcrsr;
   /// Offset: 0x008 (R/W)  Debug Core Register Data Register
-  uint32_t volatile dcrdr;
+  u32 volatile dcrdr;
   /// Offset: 0x00C (R/W)  Debug Exception and Monitor Control Register
-  uint32_t volatile demcr;
+  u32 volatile demcr;
 };
 
 /**
@@ -99,14 +99,15 @@ inline constexpr unsigned core_trace_enable = 1 << 24U;
 inline constexpr unsigned enable_cycle_count = 1 << 0;
 
 /// Address of the hardware DWT registers
-inline constexpr intptr_t dwt_address = 0xE0001000UL;
+inline constexpr auto dwt_address = static_cast<uptr>(0xE0001000UL);
 
 /// Address of the Cortex M CoreDebug module
-inline constexpr intptr_t core_debug_address = 0xE000EDF0UL;
+inline constexpr auto core_debug_address = static_cast<uptr>(0xE000EDF0UL);
 
+// NOLINTNEXTLINE(performance-no-int-to-ptr)
 inline auto* dwt = reinterpret_cast<dwt_register_t*>(dwt_address);
 
 inline auto* core =
+  // NOLINTNEXTLINE(performance-no-int-to-ptr)
   reinterpret_cast<core_debug_registers_t*>(core_debug_address);
-
 }  // namespace hal::cortex_m

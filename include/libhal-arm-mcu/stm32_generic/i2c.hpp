@@ -27,9 +27,9 @@ namespace hal::stm32_generic {
  * @brief A generic i2c implementation for all stm32 series MCUs
  *
  * This class is meant to only be used by platform libraries or drivers aiming
- * to be platform libraries for stm32 devices. As an application develop,
- * prefer to use the platform specific drivers instead as they handle all of
- * the initialization for you.
+ * to be platform libraries for stm32 devices. Application developers should
+ * use the driver specific to their platform instead of this class as they
+ * handle proper initialization for you.
  *
  */
 class i2c

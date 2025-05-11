@@ -343,8 +343,9 @@ void i2c::handle_i2c_event() noexcept
   auto& status = i2c_reg->sr1;
   auto& data = i2c_reg->data_reg;
 
-  /// @warning SOMETIMES STM32 I2C peripheral enable will just self reset, we
-  /// need it to not
+  // [ ⚠️ WARNING] SOMETIMES STM32 I2C peripheral enable will just self reset.
+  // This will cause the i2c peripheral to misbehave, so the code enables the
+  // peripheral at each interrupt call to ensure this never happens.
   bit_modify(i2c_reg->cr1).set(i2c_cr1::peripheral_enable);
   if (bit_extract<i2c_sr1::start>(status)) {
     if (!m_data_out.empty()) {

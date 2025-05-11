@@ -45,6 +45,7 @@ libhal_test_and_make_library(
   src/lpc40/uart.cpp
 
   # stm32_generic
+  src/stm32_generic/i2c
   src/stm32_generic/pwm.cpp
   src/stm32_generic/spi.cpp
   src/stm32_generic/uart.cpp
@@ -68,6 +69,7 @@ libhal_test_and_make_library(
   # stm32f411
   src/stm32f411/clock.cpp
   src/stm32f411/dma.cpp
+  src/stm32f411/i2c.cpp
   src/stm32f411/input_pin.cpp
   src/stm32f411/interrupt.cpp
   src/stm32f411/output_pin.cpp

@@ -2,9 +2,8 @@
 
 #include <libhal/serial.hpp>
 
-namespace hal::rp::generic {
-inline int fake_serial = 0;
-inline namespace v1 {
+
+namespace hal::rp::inline v1 {
 /*
 The RP series chips use a native ROM USB bootloader,
 meaning most setups use USB directly, necessitating
@@ -32,5 +31,4 @@ private:
   void driver_flush() override;
 };
 
-}  // namespace v1
-}  // namespace hal::rp::generic
+} // namespace hal::rp::inline v1

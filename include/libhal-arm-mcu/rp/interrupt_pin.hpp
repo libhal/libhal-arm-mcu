@@ -3,7 +3,7 @@
 #include <libhal/interrupt_pin.hpp>
 #include <libhal/units.hpp>
 
-namespace hal::rp::generic::inline v1 {
+namespace hal::rp::inline v1 {
 /*
 Interrupt pin uses hidden globals to implement interrupts because
 the interrupt callback function doesn't quite match the hal::handler type.

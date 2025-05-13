@@ -4,7 +4,7 @@
 #include <libhal/output_pin.hpp>
 
 
-namespace hal::rp::generic::inline v1 {
+namespace hal::rp::inline v1 {
 struct output_pin final : public hal::output_pin
 {
   output_pin(u8, settings const&);

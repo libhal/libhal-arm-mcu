@@ -3,7 +3,7 @@
 #include <pico/stdio.h>
 #include <pico/time.h>
 
-namespace hal::rp::generic {
+namespace hal::rp {
 v1::stdio_serial::stdio_serial()
 {
   stdio_init_all();

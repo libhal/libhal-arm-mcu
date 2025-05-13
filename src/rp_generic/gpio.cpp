@@ -120,7 +120,7 @@ private:
 
 }  // namespace
 
-namespace hal::rp::generic {
+namespace hal::rp {
 void v1::sleep_ms(uint32_t ms)
 {
   ::sleep_ms(ms);

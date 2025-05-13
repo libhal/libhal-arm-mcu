@@ -132,6 +132,10 @@ set(
 else()
 set(source_list
   src/rp_generic/gpio.cpp
+  src/system_controller.cpp
+  src/dwt_counter.cpp
+  src/interrupt.cpp
+  src/systick_timer.cpp
 )
 
 pico_sdk_init()

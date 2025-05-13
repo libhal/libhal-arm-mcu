@@ -1,13 +1,18 @@
-#include "libhal-arm-mcu/rp_generic/input_pin.hpp"
-#include "libhal-arm-mcu/rp_generic/output_pin.hpp"
+#include "libhal-arm-mcu/rp/generic/input_pin.hpp"
+#include "libhal-arm-mcu/rp/generic/output_pin.hpp"
 #include "libhal/error.hpp"
 
 #include <hardware/gpio.h>
 #include <hardware/structs/io_bank0.h>
+#include <pico/time.h>
 
 namespace hal::rp::generic {
+void v1::sleep_ms(uint32_t ms)
+{
+  ::sleep_ms(ms);
+}
 
-v1::input_pin::input_pin(u8 pin, settings const& settings)
+v1::input_pin::input_pin(u8 pin, settings const& options)
   : m_pin(pin)
 {
   if (pin >= NUM_BANK0_GPIOS) {
@@ -18,7 +23,7 @@ v1::input_pin::input_pin(u8 pin, settings const& settings)
   gpio_set_function(pin, gpio_function_t::GPIO_FUNC_SIO);
   gpio_set_dir(pin, GPIO_IN);
 
-  driver_configure(settings);
+  driver_configure(options);
 }
 
 void v1::input_pin::driver_configure(settings const& p_settings)
@@ -44,6 +49,7 @@ bool v1::input_pin::driver_level()
 }
 
 v1::output_pin::output_pin(u8 pin, settings const& options)
+  : m_pin(pin)
 {
   if (pin >= NUM_BANK0_GPIOS) {
     hal::safe_throw(hal::argument_out_of_domain(this));

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <libhal/output_pin.hpp>
 
 namespace hal::rp::generic {
@@ -18,6 +19,9 @@ private:
 
   u8 m_pin{};
 };
+
+// temporary remove later
+void sleep_ms(uint32_t);
 }  // namespace v1
 
 }  // namespace hal::rp::generic

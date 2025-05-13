@@ -15,6 +15,10 @@
 cmake_minimum_required(VERSION 3.15)
 
 if(DEFINED ENV{PICO_SDK_PATH})
+set(PICO_CXX_ENABLE_EXCEPTIONS 1)
+set(PICO_BOARD adafruit_feather_rp2350)
+set(CMAKE_ASM_FLAGS_INIT "-mcpu=cortex-m33 -mfloat-abi=soft")
+set(PICO_NO_PICOTOOL 1)
 include($ENV{PICO_SDK_PATH}/external/pico_sdk_import.cmake)
 endif()
 
@@ -132,7 +136,7 @@ set(source_list
 
 pico_sdk_init()
 
-set(pico_dep hardware_gpio)
+set(pico_dep hardware_gpio_headers pico_time_headers)
 
 endif()
 

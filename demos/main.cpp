@@ -12,68 +12,88 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include <libhal-exceptions/control.hpp>
-#include <libhal-util/serial.hpp>
-#include <libhal-util/steady_clock.hpp>
+// #include <libhal-exceptions/control.hpp>
+// #include <libhal-util/serial.hpp>
+// #include <libhal-util/steady_clock.hpp>
 
-#include <resource_list.hpp>
+// #include <resource_list.hpp>
+#include "hardware/gpio.h"
+#include "libhal-arm-mcu/rp/generic/output_pin.hpp"
+#include "pico/stdio.h"
+#include "pico/time.h"
+#include <cstdio>
+#include <libhal/units.hpp>
 
 int main()
 {
-  initialize_platform();
-  application();
-  std::terminate();
-}
+  namespace rp = hal::rp::generic;
+  stdio_init_all();
+  rp::output_pin led(7, { .resistor = hal::pin_resistor::none });
 
-// libhal-arm-mcu specific APIs defined to reduce code size
-extern "C"
-{
-  // This gets rid of an issue with libhal-exceptions in Debug mode.
-  void __assert_func()  // NOLINT
-  {
+  while (true) {
+    printf("On!\n");
+    led.level(true);
+    rp::sleep_ms(500);
+    printf("Off!\n");
+    led.level(false);
+    rp::sleep_ms(500);
   }
 }
 
-// Override global new operator
-void* operator new(std::size_t)
-{
-  throw std::bad_alloc();
-}
+// resource_list resources{};
 
-// Override global new[] operator
-void* operator new[](std::size_t)
-{
-  throw std::bad_alloc();
-}
+// [[noreturn]] void terminate_handler() noexcept
+// {
+//   if (resources.console) {
+//     hal::print(*resources.console.value(), "☠️ APPLICATION TERMINATED ☠️\n\n");
+//   }
 
-void* operator new(unsigned int, std::align_val_t)
-{
-  throw std::bad_alloc();
-}
+//   if (resources.status_led && resources.clock) {
+//     auto& led = *resources.status_led.value();
+//     auto& clock = *resources.clock.value();
 
-// Override global delete operator
-void operator delete(void*) noexcept
-{
-}
+//     while (true) {
+//       using namespace std::chrono_literals;
+//       led.level(false);
+//       hal::delay(clock, 100ms);
+//       led.level(true);
+//       hal::delay(clock, 100ms);
+//       led.level(false);
+//       hal::delay(clock, 100ms);
+//       led.level(true);
+//       hal::delay(clock, 1000ms);
+//     }
+//   }
 
-// Override global delete[] operator
-void operator delete[](void*) noexcept
-{
-}
+//   // spin here forever
+//   while (true) {
+//     continue;
+//   }
+// }
 
-// Optional: Override sized delete operators (C++14 and later)
-void operator delete(void*, std::size_t) noexcept
-{
-}
+// int main()
+// {
+//   hal::set_terminate(terminate_handler);
 
-void operator delete[](void*, std::size_t) noexcept
-{
-}
+//   initialize_platform(resources);
 
-void operator delete[](void*, std::align_val_t) noexcept
-{
-}
+//   try {
+//     application(resources);
+//   } catch (std::bad_optional_access const& e) {
+//     if (resources.console) {
+//       hal::print(*resources.console.value(),
+//                  "A resource required by the application was not
+//                  available!\n" "Calling terminate!\n");
+//     }
+//   }  // Allow any other exceptions to terminate the application
 
-void operator delete(void*, std::align_val_t) noexcept
-{
-}
+//   std::terminate();
+// }
+
+// extern "C"
+// {
+//   // This gets rid of an issue with libhal-exceptions in Debug mode.
+//   void __assert_func()  // NOLINT
+//   {
+//   }
+// }

@@ -14,33 +14,50 @@
 
 cmake_minimum_required(VERSION 3.20)
 
-project(demos LANGUAGES CXX)
+if(DEFINED ENV{PICO_SDK_PATH})
+include($ENV{PICO_SDK_PATH}/external/pico_sdk_import.cmake)
+endif()
 
-libhal_build_demos(
-  DEMOS
-  adc
-  blinker
-  can
-  dac
-  gpio
-  i2c
-  interrupt_pin
-  uart
-  pwm
-  pwm16
-  spi
-  blank
-  watchdog
-  # stream_dac
-  timer
-  usb_cdc_raw
+set(CMAKE_EXECUTABLE_SUFFIX_ASM .elf)
+set(CMAKE_EXECUTABLE_SUFFIX_C .elf)
+set(CMAKE_EXECUTABLE_SUFFIX_CXX .elf)
 
-  PACKAGES
-  minimp3
+project(demos LANGUAGES CXX C ASM)
 
-  INCLUDES
-  .
+find_package(libhal-arm-mcu CONFIG REQUIRED)
 
-  LINK_LIBRARIES
-  minimp3::minimp3
-)
+pico_sdk_init()
+
+add_executable(test_package main.cpp)
+target_link_libraries(test_package PRIVATE libhal::arm-mcu pico_stdlib)
+pico_add_extra_outputs(test_package)
+pico_enable_stdio_usb(test_package 1)
+pico_enable_stdio_uart(test_package 0)
+
+# set(ENV{LIBHAL_PLATFORM_LIBRARY} arm-mcu)
+
+# libhal_build_demos(
+#   DEMOS
+#   adc
+#   blinker
+#   can
+#   dac
+#   gpio
+#   i2c
+#   interrupt_pin
+#   uart
+#   pwm
+#   pwm16
+#   spi
+#   blank
+#   # stream_dac
+
+#   PACKAGES
+#   minimp3
+
+#   INCLUDES
+#   .
+
+#   LINK_LIBRARIES
+#   minimp3::minimp3
+# )

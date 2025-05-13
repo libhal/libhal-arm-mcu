@@ -1,4 +1,4 @@
-#include "libhal-arm-mcu/rp/generic/serial.hpp"
+#include "libhal-arm-mcu/rp/serial.hpp"
 
 #include <pico/stdio.h>
 #include <pico/time.h>

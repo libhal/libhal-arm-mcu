@@ -1,6 +1,6 @@
-#include "libhal-arm-mcu/rp/generic/input_pin.hpp"
-#include "libhal-arm-mcu/rp/generic/interrupt_pin.hpp"
-#include "libhal-arm-mcu/rp/generic/output_pin.hpp"
+#include "libhal-arm-mcu/rp/input_pin.hpp"
+#include "libhal-arm-mcu/rp/interrupt_pin.hpp"
+#include "libhal-arm-mcu/rp/output_pin.hpp"
 #include "libhal/error.hpp"
 
 #include <algorithm>

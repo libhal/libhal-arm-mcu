@@ -132,6 +132,7 @@ set(
 else()
 set(source_list
   src/rp_generic/gpio.cpp
+  src/rp_generic/serial.cpp
   src/system_controller.cpp
   src/dwt_counter.cpp
   src/interrupt.cpp
@@ -140,7 +141,7 @@ set(source_list
 
 pico_sdk_init()
 
-set(pico_dep hardware_gpio_headers pico_time_headers)
+set(pico_dep hardware_gpio_headers pico_time_headers pico_stdio_headers)
 
 endif()
 

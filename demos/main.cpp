@@ -17,24 +17,23 @@
 // #include <libhal-util/steady_clock.hpp>
 
 // #include <resource_list.hpp>
-#include "hardware/gpio.h"
 #include "libhal-arm-mcu/rp/generic/output_pin.hpp"
-#include "pico/stdio.h"
-#include "pico/time.h"
+#include "libhal-arm-mcu/rp/generic/serial.hpp"
+#include <libhal-util/serial.hpp>
 #include <cstdio>
 #include <libhal/units.hpp>
 
 int main()
 {
   namespace rp = hal::rp::generic;
-  stdio_init_all();
   rp::output_pin led(7, { .resistor = hal::pin_resistor::none });
+  rp::stdio_serial console;
 
   while (true) {
-    printf("On!\n");
+    hal::print(console, "On!\n");
     led.level(true);
     rp::sleep_ms(500);
-    printf("Off!\n");
+    hal::print(console, "Off!\n");
     led.level(false);
     rp::sleep_ms(500);
   }

@@ -22,16 +22,15 @@ using void_to_placeholder_t =
 template<typename T>
 class task;
 
-// CoroContext holds the allocator for coroutine frames
-class coro_context
+class coroutine_context
 {
 public:
-  explicit coro_context(std::pmr::memory_resource* p_resource)
+  explicit coroutine_context(std::pmr::memory_resource* p_resource)
     : m_resource(p_resource)
   {
   }
 
-  [[nodiscard]] std::pmr::memory_resource* resource() const
+  [[nodiscard]] auto* resource() const
   {
     return m_resource;
   }

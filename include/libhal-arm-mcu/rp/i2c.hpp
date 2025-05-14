@@ -6,12 +6,15 @@
 namespace hal::rp::inline v1 {
 
 // might be better to place in another header file if this gets reused
-#ifdef PICO_RP2350A
+#if defined(PICO_RP2040) || defined(PICO_RP2350A)
 constexpr u8 pin_max = 30;
 #else
 constexpr u8 pin_max = 48;
 #endif
 
+/*
+RP2350 supports a baud rate of up to 1 MHz
+*/
 struct i2c final : public hal::i2c
 {
 
@@ -25,15 +28,15 @@ struct i2c final : public hal::i2c
   {
     u8 const sda_pin;
     u8 const scl_pin;
-    i2c_channel const chan_pin;
+    i2c_channel const chan;
 
   protected:
     // clang lint does not know that this constructor is purposefully obstructed
     // to prevent misuse
-    constexpr i2c_config_data(u8 sda, u8 scl, i2c_channel chan)  // NOLINT
+    constexpr i2c_config_data(u8 sda, u8 scl, i2c_channel c)  // NOLINT
       : sda_pin(sda)
       , scl_pin(scl)
-      , chan_pin(chan)
+      , chan(c)
     {
     }
   };
@@ -65,16 +68,23 @@ struct i2c final : public hal::i2c
     static_assert(check());
   };
 
-  i2c(i2c_config_data);
+  i2c(i2c_config_data, settings const&);
   ~i2c() override;
 
 private:
   void driver_configure(settings const&) override;
 
-  void driver_transaction(hal::byte,
-                          std::span<hal::byte const>,
-                          std::span<hal::byte>,
+  /*
+  This function does not correctly use the timeout function, and will
+  throw it's own timeout exceptions if a transaction takes any longer
+  than 10 ms.
+  */
+  void driver_transaction(hal::byte addr,
+                          std::span<hal::byte const> out,
+                          std::span<hal::byte> in,
                           hal::function_ref<hal::timeout_function>) override;
+
+  i2c_config_data m_config;
 };
 
 }  // namespace hal::rp::inline v1

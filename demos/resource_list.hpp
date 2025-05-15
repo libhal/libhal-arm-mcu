@@ -54,7 +54,8 @@ struct resource_list
   std::optional<hal::interrupt_pin*> interrupt_pin;
   std::optional<hal::pwm*> pwm;
   std::optional<hal::timer*> callback_timer;
-  std::optional<hal::pwm16_channel*> pwm_channel;
+  std::optional<hal::pwm16_channel*> pwm_channel_1;
+  std::optional<hal::pwm16_channel*> pwm_channel_2;
   std::optional<hal::pwm_group_manager*> pwm_frequency;
   std::optional<hal::spi*> spi;
   std::optional<hal::output_pin*> spi_chip_select;

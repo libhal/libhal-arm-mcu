@@ -212,6 +212,43 @@ consteval auto get_pwm_timer_type()
     return std::type_identity<void>();
   }
 }
+/**
+ * @brief Used to store the state of the timer assigned to the manager.
+ *
+ * m_timer_usage - Indicates what kind of usage the timer is currently
+ * configured for.
+ * m_resource_count - Tracks what channels are currently being used with the
+ * timer.
+ * m_id - Indicates which timer is assigned to this manager.
+ */
+struct manager_data
+{
+private:
+  friend class timer;
+  friend class pwm_group_frequency;
+  friend class pwm16_channel;
+  friend class pwm;
+  friend class advanced_timer_manager;
+  friend class general_purpose_timer_manager;
+
+  enum class timer_usage
+  {
+    uninitialized,
+    old_pwm,
+    pwm_generator,
+    callback_timer
+  };
+  timer_usage m_timer_usage{};
+  std::atomic<u32> m_resource_count;
+  peripheral m_id;
+
+  manager_data(peripheral p_id)
+    : m_timer_usage(timer_usage::uninitialized)
+    , m_resource_count(0)
+    , m_id(p_id)
+  {
+  }
+};
 
 class advanced_timer_manager;
 
@@ -235,7 +272,7 @@ public:
   timer(timer&& p_other) noexcept = delete;
   timer& operator=(timer&& p_other) noexcept = delete;
 
-  //~timer() override;
+  ~timer() override;
 
 private:
   /**
@@ -254,9 +291,9 @@ private:
    * able to access this timer is through one of the timer classes.
    *
    * @param p_reg - The address of the selected timer.
-   * @param p_select - The selected timer.
+   * @param p_manager_data - Pointer to access the managers state information.
    */
-  timer(void* p_reg, stm32f1::peripheral p_select);
+  timer(void* p_reg, manager_data* p_manager_data_ptr);
 
   bool driver_is_running() override;
   void driver_cancel() override;
@@ -277,7 +314,7 @@ private:
    */
   void handle_interrupt();
   /**
-   * @brief The function used as the handler for the ISR.
+   * @brief The function that is used as the handler for the ISR.
    *
    */
   void interrupt();
@@ -285,13 +322,59 @@ private:
   /// The stm32_generic timer object which is used to actually control the
   /// timer.
   hal::stm32_generic::timer m_timer;
-  /// The selected timer to be used.
-  peripheral m_select;
+  // Pointer to access the managers state information.
+  manager_data* m_manager_data_ptr;
   /// The function to be used in the handler for the callback.
   std::optional<hal::callback<void(void)>> m_callback;
+};
 
-  // Add pointer to manager object. This replaces m_select member variable. make
-  // resource objects (pwm, timer) friends with manager
+/**
+ * @brief This class is a wrapper for the pwm class.
+ *
+ * It manages the pwm availability of the various different pins, and keeps
+ * track of whether a pwm is available or not. It inherits hal::pwm because this
+ * object is returned to the timer instance and can be used as an hal::pwm in
+ * any application.
+ */
+class pwm_group_frequency : public hal::pwm_group_manager
+{
+public:
+  friend class hal::stm32f1::advanced_timer_manager;
+  friend class hal::stm32f1::general_purpose_timer_manager;
+
+  pwm_group_frequency(pwm_group_frequency const& p_other) = delete;
+  pwm_group_frequency& operator=(pwm_group_frequency const& p_other) = delete;
+  pwm_group_frequency(pwm_group_frequency&& p_other) noexcept = default;
+  pwm_group_frequency& operator=(pwm_group_frequency&& p_other) noexcept =
+    default;
+  ~pwm_group_frequency() override;
+
+private:
+  /**
+   * @brief The pwm constructor is private because the only way one should be
+   * able to access pwm is through the timer class
+   *
+   * @param p_reg is a void pointer that points to the beginning of a timer
+   * peripheral
+   * @param p_manager_data_ptr is a pointer to access the managers state
+   * information.
+   * @param p_is_advanced whether the current peripheral is advanced or not
+   * @param p_pins This number is used to update the an internal bitmap
+   * containing which PWM pins have already been acquired as well as configure
+   * the pins and their channels. On construction the bit indicated by this
+   * value is checked to see if it is set. If it is set, an exception is thrown
+   * indicating that this resource has already been acquired. Otherwise, this
+   * driver sets that bit. On destruction that bit is cleared to allow another
+   * driver to utilize that pin in the future.
+   *
+   * @throws device_or_resource_busy when a pwm is already being used on a pin.
+   */
+  pwm_group_frequency(void* p_reg, manager_data* p_manager_data_ptr);
+
+  void driver_frequency(u32 p_hertz) override;
+
+  hal::stm32_generic::pwm_group_frequency m_pwm_frequency;
+  manager_data* m_manager_data_ptr;
 };
 
 /**
@@ -321,7 +404,8 @@ private:
    *
    * @param p_reg is a void pointer that points to the beginning of a timer
    * peripheral
-   * @param p_select is the timer peripheral that this instance is using.
+   * @param p_manager_data_ptr is a pointer to access the managers state
+   * information.
    * @param p_is_advanced whether the current peripheral is advanced or not
    * @param p_pins This number is used to update the an internal bitmap
    * containing which PWM pins have already been acquired as well as configure
@@ -331,10 +415,11 @@ private:
    * driver sets that bit. On destruction that bit is cleared to allow another
    * driver to utilize that pin in the future.
    *
-   * @throws device_or_resource_busy when a pwm is already being used on a pin.
+   * @throws device_or_resource_busy when a pwm is already being used on a pin,
+   * or that pins channel is already being used.
    */
   pwm16_channel(void* p_reg,
-                stm32f1::peripheral p_select,
+                manager_data* p_manager_data_ptr,
                 bool p_is_advanced,
                 timer_pins p_pin);
 
@@ -343,55 +428,7 @@ private:
 
   hal::stm32_generic::pwm m_pwm;
   hal::u16 m_pin_num;
-  stm32f1::peripheral m_select;
-};
-
-/**
- * @brief This class is a wrapper for the pwm class.
- *
- * It manages the pwm availability of the various different pins, and keeps
- * track of whether a pwm is available or not. It inherits hal::pwm because this
- * object is returned to the timer instance and can be used as an hal::pwm in
- * any application.
- */
-class pwm_group_frequency : public hal::pwm_group_manager
-{
-public:
-  friend class hal::stm32f1::advanced_timer_manager;
-  friend class hal::stm32f1::general_purpose_timer_manager;
-
-  pwm_group_frequency(pwm_group_frequency const& p_other) = delete;
-  pwm_group_frequency& operator=(pwm_group_frequency const& p_other) = delete;
-  pwm_group_frequency(pwm_group_frequency&& p_other) noexcept = default;
-  pwm_group_frequency& operator=(pwm_group_frequency&& p_other) noexcept =
-    default;
-  ~pwm_group_frequency() override = default;
-
-private:
-  /**
-   * @brief The pwm constructor is private because the only way one should be
-   * able to access pwm is through the timer class
-   *
-   * @param p_reg is a void pointer that points to the beginning of a timer
-   * peripheral
-   * @param p_select is the timer peripheral that this instance is using.
-   * @param p_is_advanced whether the current peripheral is advanced or not
-   * @param p_pins This number is used to update the an internal bitmap
-   * containing which PWM pins have already been acquired as well as configure
-   * the pins and their channels. On construction the bit indicated by this
-   * value is checked to see if it is set. If it is set, an exception is thrown
-   * indicating that this resource has already been acquired. Otherwise, this
-   * driver sets that bit. On destruction that bit is cleared to allow another
-   * driver to utilize that pin in the future.
-   *
-   * @throws device_or_resource_busy when a pwm is already being used on a pin.
-   */
-  pwm_group_frequency(void* p_reg, stm32f1::peripheral p_select);
-
-  void driver_frequency(u32 p_hertz) override;
-
-  hal::stm32_generic::pwm_group_frequency m_pwm_frequency;
-  stm32f1::peripheral m_select;
+  manager_data* m_manager_data_ptr;
 };
 
 /**
@@ -423,7 +460,8 @@ private:
    *
    * @param p_reg is a void pointer that points to the beginning of a timer
    * peripheral
-   * @param p_select is the timer peripheral that this instance is using.
+   * @param p_manager_data_ptr is a pointer to access the managers state
+   * information.
    * @param p_is_advanced whether the current peripheral is advanced or not
    * @param p_pins This number is used to update the an internal bitmap
    * containing which PWM pins have already been acquired as well as configure
@@ -436,7 +474,7 @@ private:
    * @throws device_or_resource_busy when a pwm is already being used on a pin.
    */
   pwm(void* p_reg,
-      stm32f1::peripheral p_select,
+      manager_data* p_manager_data_ptr,
       bool p_is_advanced,
       stm32f1::timer_pins p_pin);
 
@@ -446,7 +484,7 @@ private:
   hal::stm32_generic::pwm m_pwm;
   hal::stm32_generic::pwm_group_frequency m_pwm_frequency;
   hal::u16 m_pin_num;
-  stm32f1::peripheral m_select;
+  manager_data* m_manager_data_ptr;
 };
 
 /**
@@ -472,8 +510,7 @@ public:
 
   ~advanced_timer_manager();
 
-  [[nodiscard]] hal::stm32f1::timer
-  acquire_timer();  // do to general timer as well
+  [[nodiscard]] hal::stm32f1::timer acquire_timer();
   [[nodiscard]] hal::stm32f1::pwm_group_frequency acquire_pwm_group_frequency();
 
 protected:
@@ -483,23 +520,14 @@ protected:
   [[nodiscard]] hal::stm32f1::pwm16_channel acquire_pwm16_channel(
     timer_pins p_pin);
 
-  peripheral m_id;
-
 private:
-  enum class timer_usage
-  {
-    uninitialized,
-    pwm_generator,
-    callback_timer
-  };
-
-  timer_usage m_timer_usage = timer_usage::uninitialized;
-  std::atomic<int> resource_count = 0;
+  manager_data m_manager_data;
 };
 
 template<peripheral select>
 class advanced_timer final : public advanced_timer_manager
 {
+public:
   static_assert(
     select == peripheral::timer1 or select == peripheral::timer8,
     "Only timer 1 or 8 is allowed as advanced timers for this driver.");
@@ -583,17 +611,8 @@ protected:
   [[nodiscard]] hal::stm32f1::pwm16_channel acquire_pwm16_channel(
     timer_pins p_pin);
 
-  peripheral m_id;
-
 private:
-  enum class timer_usage
-  {
-    uninitialized,
-    pwm_generator,
-    callback_timer
-  };
-
-  timer_usage m_timer_usage = timer_usage::uninitialized;
+  manager_data m_manager_data;
 };
 
 template<peripheral select>

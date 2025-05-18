@@ -1,17 +1,10 @@
 #pragma once
 
+#include "rp.hpp"
 #include <libhal/i2c.hpp>
 #include <libhal/units.hpp>
 
 namespace hal::rp::inline v1 {
-
-// might be better to place in another header file if this gets reused
-#if defined(PICO_RP2040) || defined(PICO_RP2350A)
-constexpr u8 pin_max = 30;
-#else
-constexpr u8 pin_max = 48;
-#endif
-
 /*
 RP2350 supports a baud rate of up to 1 MHz
 */
@@ -53,14 +46,14 @@ struct i2c final : public hal::i2c
     static consteval bool check()
     {
       if constexpr (channel == i2c0) {
-        static_assert(sda % 4 == 0 && sda < pin_max,
+        static_assert(sda % 4 == 0 && sda < internal::pin_max,
                       "SDA pin for I2C0 is invalid!");
-        static_assert(scl % 4 == 1 && scl < pin_max,
+        static_assert(scl % 4 == 1 && scl < internal::pin_max,
                       "SCL pin for I2C0 is invalid!");
       } else if constexpr (channel == i2c1) {
-        static_assert(sda % 4 == 2 && sda < pin_max,
+        static_assert(sda % 4 == 2 && sda < internal::pin_max,
                       "SDA pin for I2C1 is invalid!");
-        static_assert(scl % 4 == 3 && scl < pin_max,
+        static_assert(scl % 4 == 3 && scl < internal::pin_max,
                       "SCL pin for I2C1 is invalid!");
       }
       return true;

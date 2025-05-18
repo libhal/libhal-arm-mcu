@@ -135,6 +135,7 @@ set(source_list
   src/rp/serial.cpp
   src/rp/i2c.cpp
   src/rp/pwm.cpp
+  src/rp/adc.cpp
   src/system_controller.cpp
   src/dwt_counter.cpp
   src/interrupt.cpp
@@ -150,6 +151,7 @@ set(pico_dep
   hardware_sync_headers
   hardware_i2c_headers
   hardware_pwm_headers
+  hardware_adc_headers
   )
 
 endif()

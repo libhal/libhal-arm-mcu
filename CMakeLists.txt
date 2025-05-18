@@ -134,6 +134,7 @@ set(source_list
   src/rp/gpio.cpp
   src/rp/serial.cpp
   src/rp/i2c.cpp
+  src/rp/pwm.cpp
   src/system_controller.cpp
   src/dwt_counter.cpp
   src/interrupt.cpp
@@ -148,6 +149,7 @@ set(pico_dep
   pico_stdio_headers 
   hardware_sync_headers
   hardware_i2c_headers
+  hardware_pwm_headers
   )
 
 endif()

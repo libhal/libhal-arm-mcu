@@ -30,18 +30,18 @@ i2c::i2c(u8 sda, u8 scl, u8 chan, settings const& options)  // NOLINT
   , m_scl(scl)
   , m_chan(chan)
 {
+  i2c_init(inst(chan, this), static_cast<uint>(options.clock_rate));
   gpio_pull_up(sda);
   gpio_pull_up(scl);
   gpio_set_function(sda, gpio_function_t::GPIO_FUNC_I2C);
   gpio_set_function(scl, gpio_function_t::GPIO_FUNC_I2C);
-  i2c_init(inst(chan, this), static_cast<uint>(options.clock_rate));
 }
 
 i2c::~i2c()
 {
+  i2c_deinit(inst(m_chan, this));
   gpio_deinit(m_sda);
   gpio_deinit(m_scl);
-  i2c_deinit(inst(m_chan, this));
 }
 
 void i2c::driver_configure(settings const& options)

@@ -67,17 +67,16 @@ uart::uart(u8 bus, u8 tx, u8 rx, settings const& options)  // NOLINT
 
   auto func = (bus == 0) ? GPIO_FUNC_UART : GPIO_FUNC_UART_AUX;
 
+  driver_configure(options);
   gpio_set_function(tx, func);
   gpio_set_function(rx, func);
-
-  driver_configure(options);
 }
 
 uart::~uart()
 {
-  uart_deinit(get_uart(m_bus));
   gpio_deinit(m_tx);
   gpio_deinit(m_rx);
+  uart_deinit(get_uart(m_bus));
 }
 
 void uart::driver_configure(settings const& options)

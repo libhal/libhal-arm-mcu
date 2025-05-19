@@ -27,13 +27,13 @@ spi::spi(u8 bus, u8 tx, u8 rx, u8 sck, u8 cs, spi::settings const& s)  // NOLINT
   , m_sck(sck)
   , m_cs(cs)
 {
+  driver_configure(s);
   gpio_set_function(tx, GPIO_FUNC_SPI);
   gpio_set_function(rx, GPIO_FUNC_SPI);
   gpio_set_function(sck, GPIO_FUNC_SPI);
   gpio_init(cs);
   gpio_set_dir(cs, GPIO_OUT);
   gpio_put(cs, true);
-  driver_configure(s);
 }
 
 void spi::driver_configure(spi::settings const& s)
@@ -101,11 +101,11 @@ void spi::driver_transfer(std::span<byte const> out,
 
 spi::~spi()
 {
-  spi_deinit(spi_bus(m_bus));
   gpio_deinit(m_tx);
   gpio_deinit(m_rx);
   gpio_deinit(m_sck);
   gpio_deinit(m_cs);
+  spi_deinit(spi_bus(m_bus));
 }
 
 }  // namespace hal::rp::inline v1

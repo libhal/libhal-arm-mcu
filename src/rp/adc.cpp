@@ -2,6 +2,7 @@
 
 #include "hardware/adc.h"
 #include <hardware/address_mapped.h>
+#include <hardware/gpio.h>
 #include <hardware/platform_defs.h>
 #include <libhal/error.hpp>
 
@@ -15,6 +16,11 @@ adc::adc(u8 pin)
     hal::safe_throw(hal::argument_out_of_domain(this));
   }
   adc_gpio_init(pin);
+}
+
+adc::~adc()
+{
+  gpio_deinit(m_pin);
 }
 
 u16 adc::driver_read()

@@ -55,14 +55,14 @@ void pwm_slice::driver_frequency(u32 f)
   pwm_set_clkdiv(m_number, clock_div);
 }
 
-pwm_pin pwm_slice::get_pin(configuration c)
+pwm_pin pwm_slice::get_pin_raw(u8 pin, configuration const& c)
 {
-  return { m_number, c };
+  return { pin, c };
 }
 
-pwm_pin::pwm_pin(u8 number, pwm_slice::configuration c)
-  : m_pin(c.pin)
-  , m_slice(number)
+pwm_pin::pwm_pin(u8 pin, pwm_slice::configuration const& c)
+  : m_pin(pin)
+  , m_slice(pwm_gpio_to_slice_num(pin))
   , m_autostart(c.autostart)
 {
   driver_duty_cycle(c.duty_cycle);
@@ -70,16 +70,16 @@ pwm_pin::pwm_pin(u8 number, pwm_slice::configuration c)
 
 void pwm_pin::driver_duty_cycle(u16 duty)
 {
+  auto channel = pwm_gpio_to_channel(m_pin);
   if (duty == 0) {
-    pwm_set_chan_level(m_slice, pwm_gpio_to_channel(m_pin), 0);
+    pwm_set_chan_level(m_slice, channel, 0);
     pwm_set_enabled(m_slice, false);
     return;
   }
 
   float percentage = float(duty) / std::numeric_limits<u16>::max();
   u16 top = pwm_hw->slice[m_slice].top;
-  pwm_set_chan_level(
-    m_slice, pwm_gpio_to_channel(m_pin), u16(float(top) * percentage));
+  pwm_set_chan_level(m_slice, channel, u16(float(top) * percentage));
   if (m_autostart) {
     pwm_set_enabled(m_slice, true);
   }

@@ -120,13 +120,13 @@ private:
 
 }  // namespace
 
-namespace hal::rp {
-void v1::sleep_ms(uint32_t ms)
+namespace hal::rp::inline v1 {
+void sleep_ms(uint32_t ms)
 {
   ::sleep_ms(ms);
 }
 
-v1::input_pin::input_pin(u8 pin, settings const& options)
+input_pin::input_pin(u8 pin, settings const& options)
   : m_pin(pin)
 {
   if (pin >= NUM_BANK0_GPIOS) {
@@ -140,7 +140,7 @@ v1::input_pin::input_pin(u8 pin, settings const& options)
   driver_configure(options);
 }
 
-void v1::input_pin::driver_configure(settings const& p_settings)
+void input_pin::driver_configure(settings const& p_settings)
 {
   switch (p_settings.resistor) {
     case pin_resistor::pull_down:
@@ -157,12 +157,12 @@ void v1::input_pin::driver_configure(settings const& p_settings)
   }
 }
 
-bool v1::input_pin::driver_level()
+bool input_pin::driver_level()
 {
   return gpio_get(m_pin);
 }
 
-v1::output_pin::output_pin(u8 pin, settings const& options)
+output_pin::output_pin(u8 pin, settings const& options)
   : m_pin(pin)
 {
   if (pin >= NUM_BANK0_GPIOS) {
@@ -176,7 +176,7 @@ v1::output_pin::output_pin(u8 pin, settings const& options)
   driver_configure(options);
 }
 
-void v1::output_pin::driver_configure(settings const& options)
+void output_pin::driver_configure(settings const& options)
 {
   // RP2* series chips don't seem to have any explicit support for
   // open drain mode, so we fail loud rather than silently
@@ -199,19 +199,19 @@ void v1::output_pin::driver_configure(settings const& options)
   }
 }
 
-void v1::output_pin::driver_level(bool level)
+void output_pin::driver_level(bool level)
 {
   gpio_put(m_pin, level);
 }
 
-bool v1::output_pin::driver_level()
+bool output_pin::driver_level()
 {
   return gpio_get(m_pin);
 }
 
-v1::interrupt_pin::interrupt_pin(u8 pin,
-                                 hal::callback<handler> callback,
-                                 settings const& options)
+interrupt_pin::interrupt_pin(u8 pin,
+                             hal::callback<handler> callback,
+                             settings const& options)
   : m_pin(pin)
 {
   gpio_init(pin);
@@ -240,13 +240,13 @@ v1::interrupt_pin::interrupt_pin(u8 pin,
   }
 }
 
-v1::interrupt_pin::~interrupt_pin()
+interrupt_pin::~interrupt_pin()
 {
   auto g = interrupt_manager::get();
   g->remove(m_pin);
 }
 
-void v1::interrupt_pin::driver_configure(settings const& options)
+void interrupt_pin::driver_configure(settings const& options)
 {
   auto g = interrupt_manager::get();
   switch (options.resistor) {
@@ -266,10 +266,10 @@ void v1::interrupt_pin::driver_configure(settings const& options)
   g->at(m_pin).edge = options.trigger;
 }
 
-void v1::interrupt_pin::driver_on_trigger(hal::callback<handler> callback)
+void interrupt_pin::driver_on_trigger(hal::callback<handler> callback)
 {
   auto g = interrupt_manager::get();
   std::swap(g->at(m_pin).callback, callback);
 }
 
-}  // namespace hal::rp::generic
+}  // namespace hal::rp::inline v1

@@ -1,6 +1,8 @@
 #pragma once
 
 #include "rp.hpp"
+#include <libhal/error.hpp>
+#include <libhal/initializers.hpp>
 #include <libhal/pwm.hpp>
 
 namespace hal::rp::inline v1 {
@@ -22,17 +24,53 @@ but also allows for more independence between slices.
 */
 struct pwm_slice final : hal::pwm_group_manager
 {
-  pwm_slice(u8 slice_num);
+  static constexpr u8 max_slices()
+  {
+    using enum hal::rp::internal::processor_type;
+    if (hal::rp::internal::type == rp2040) {
+      return 8;
+    } else if (hal::rp::internal::type == rp2350) {
+      return 12;
+    }
+    return 0;
+  }
+
+  static constexpr u8 get_slice_number(pin_param auto pin)
+  {
+    if (pin() < 32) {
+      return (pin / 2) % 8;
+    } else {
+      return pin / 2 - 8;
+    }
+  }
+
+  pwm_slice(channel_param auto slice)
+    : pwm_slice(slice())
+  {
+    static_assert(slice() < max_slices(), "Invalid PWM slice!");
+  }
 
   struct configuration
   {
-    u8 pin;
     u16 duty_cycle = 0;
     bool autostart = true;
   };
-  pwm_pin get_pin(configuration);
+
+  pwm_pin get_pin(hal::runtime, pin_param auto pin, configuration const&);
+
+  // copied from pico sdk
+  static constexpr u8 pin_from_slice(u8 gpio)
+  {
+    if ((gpio) < 32) {
+      return ((gpio) >> 1u) & 7u;
+    } else {
+      return 8u + (((gpio) >> 1u) & 3u);
+    }
+  }
 
 private:
+  pwm_pin get_pin_raw(u8 pin, configuration const&);
+  pwm_slice(u8 slice_num);
   /*
   At frequencies above ~2288 Hz, the wrap counter
   begins to lose resolution, reducing the duty cycle resolution
@@ -63,7 +101,7 @@ private:
   */
   void driver_duty_cycle(u16 p_duty_cycle) override;
 
-  pwm_pin(u8 slice, pwm_slice::configuration);
+  pwm_pin(u8 pin, pwm_slice::configuration const&);
 
   u8 m_pin;
   u8 m_slice;
@@ -74,50 +112,15 @@ private:
 aligning their phases. Set argument to false to stop all of them at once */
 void enable_all_pwm(bool start = true);
 
-struct pwm_pin_config_data
+pwm_pin pwm_slice::get_pin(hal::runtime,
+                           pin_param auto pin,
+                           pwm_slice::configuration const&config)
 {
-  u8 const pin;
-  pwm_ch const channel;
-  u8 const slice_num;
-
-protected:
-  constexpr pwm_pin_config_data(u8 p, pwm_ch c, u8 slice)
-    : pin(p)
-    , channel(c)
-    , slice_num(slice)
-  {
+  u8 slice = get_slice_number(pin());
+  if (slice != m_number) {
+    hal::safe_throw(hal::argument_out_of_domain(this));
   }
-};
-
-constexpr pwm_ch get_channel(u8 pin_num)
-{
-  if (pin_num % 2 == 0) {
-    return pwm_ch::a;
-  } else {
-    return pwm_ch::b;
-  }
+  get_pin_raw(pin(), config);
 }
-
-constexpr u8 get_slice_number(u8 pin_num)
-{
-  // this snippet of code was copied from Pico SDK
-  if ((pin_num) < 32) {
-    return ((pin_num) >> 1u) & 7u;
-  } else {
-    return 8u + (((pin_num) >> 1u) & 3u);
-  }
-}
-/* Do not allocate two pwm's of the same slice. */
-template<u8 pin_num>
-struct pwm_pin_config : pwm_pin_config_data
-{
-  consteval pwm_pin_config()
-    : pwm_pin_config_data(pin_num,
-                          get_channel(pin_num),
-                          get_slice_number(pin_num))
-  {
-  }
-  static_assert(pin_num < internal::pin_max, "Pin number is invalid!");
-};
 
 }  // namespace hal::rp::inline v1

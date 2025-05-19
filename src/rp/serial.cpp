@@ -3,22 +3,22 @@
 #include <pico/stdio.h>
 #include <pico/time.h>
 
-namespace hal::rp {
-v1::stdio_serial::stdio_serial()
+namespace hal::rp::inline v1 {
+stdio_serial::stdio_serial()
 {
   stdio_init_all();
 }
 
-void v1::stdio_serial::driver_configure(settings const&)
+void stdio_serial::driver_configure(settings const&)
 {
 }
 
-void v1::stdio_serial::driver_flush()
+void stdio_serial::driver_flush()
 {
   stdio_flush();
 }
 
-serial::write_t v1::stdio_serial::driver_write(std::span<byte const> in)
+serial::write_t stdio_serial::driver_write(std::span<byte const> in)
 {
   int write_length = stdio_put_string(reinterpret_cast<char const*>(in.data()),
                                       static_cast<int>(in.size_bytes()),
@@ -27,7 +27,7 @@ serial::write_t v1::stdio_serial::driver_write(std::span<byte const> in)
   return write_t{ in.subspan(0, write_length) };
 }
 
-serial::read_t v1::stdio_serial::driver_read(std::span<byte> output)
+serial::read_t stdio_serial::driver_read(std::span<byte> output)
 {
   // time in microseconds
   auto now = get_absolute_time();
@@ -40,4 +40,4 @@ serial::read_t v1::stdio_serial::driver_read(std::span<byte> output)
                  .capacity = 1 };
 }
 
-}  // namespace hal::rp::generic
+}  // namespace hal::rp::inline v1

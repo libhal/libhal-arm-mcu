@@ -140,6 +140,11 @@ input_pin::input_pin(u8 pin, settings const& options)
   driver_configure(options);
 }
 
+input_pin::~input_pin()
+{
+  gpio_deinit(m_pin);
+}
+
 void input_pin::driver_configure(settings const& p_settings)
 {
   switch (p_settings.resistor) {
@@ -174,6 +179,11 @@ output_pin::output_pin(u8 pin, settings const& options)
   gpio_set_dir(pin, GPIO_OUT);
 
   driver_configure(options);
+}
+
+output_pin::~output_pin()
+{
+  gpio_deinit(m_pin);
 }
 
 void output_pin::driver_configure(settings const& options)

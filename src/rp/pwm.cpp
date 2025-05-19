@@ -1,5 +1,6 @@
 #include "libhal-arm-mcu/rp/pwm.hpp"
 
+#include <hardware/gpio.h>
 #include <hardware/pwm.h>
 #include <libhal-util/bit.hpp>
 #include <libhal/error.hpp>
@@ -20,6 +21,8 @@ pwm_slice::pwm_slice(u8 num)
   if (num >= NUM_PWM_SLICES) {
     hal::safe_throw(argument_out_of_domain(this));
   }
+  auto config = pwm_get_default_config();
+  pwm_init(num, &config, false);
 }
 
 void pwm_slice::driver_frequency(u32 f)
@@ -64,7 +67,14 @@ pwm_pin::pwm_pin(u8 pin, pwm_slice::configuration const& c)
   , m_slice(pwm_gpio_to_slice_num(pin))
   , m_autostart(c.autostart)
 {
+  gpio_set_function(m_pin, GPIO_FUNC_PWM);
   driver_duty_cycle(c.duty_cycle);
+}
+
+pwm_pin::~pwm_pin()
+{
+  pwm_set_enabled(m_slice, false);
+  gpio_deinit(m_pin);
 }
 
 void pwm_pin::driver_duty_cycle(u16 duty)

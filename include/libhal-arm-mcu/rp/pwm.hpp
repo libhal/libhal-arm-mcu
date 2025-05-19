@@ -87,6 +87,8 @@ if somebody needs it.
 */
 struct pwm_pin final : hal::pwm16_channel
 {
+
+  ~pwm_pin() override;
   // A false disables the timer.
   void enable(bool = true);
 

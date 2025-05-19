@@ -11,6 +11,7 @@ struct input_pin final : public hal::input_pin
     : input_pin(pin())
   {
   }
+  ~input_pin() override;
 
 private:
   input_pin(u8, settings const&);

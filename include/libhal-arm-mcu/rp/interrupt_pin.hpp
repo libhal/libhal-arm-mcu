@@ -1,6 +1,6 @@
 #pragma once
 
-#include <libhal-arm-mcu/rp/rp.hpp>
+#include "rp.hpp"
 #include <libhal/interrupt_pin.hpp>
 #include <libhal/units.hpp>
 

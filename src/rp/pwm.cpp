@@ -1,5 +1,4 @@
 #include "libhal-arm-mcu/rp/pwm.hpp"
-#include "libhal-arm-mcu/rp/rp.hpp"
 
 #include <hardware/pwm.h>
 #include <libhal-util/bit.hpp>

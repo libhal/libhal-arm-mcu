@@ -1,6 +1,6 @@
 #pragma once
 
-#include "libhal-arm-mcu/rp/rp.hpp"
+#include "rp.hpp"
 #include <libhal/output_pin.hpp>
 
 namespace hal::rp::inline v1 {

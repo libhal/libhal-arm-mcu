@@ -1,15 +1,18 @@
 #include "libhal-arm-mcu/rp/input_pin.hpp"
 #include "libhal-arm-mcu/rp/interrupt_pin.hpp"
 #include "libhal-arm-mcu/rp/output_pin.hpp"
+#include "libhal-arm-mcu/rp/rp.hpp"
 #include "libhal/error.hpp"
 
 #include <algorithm>
+#include <array>
 #include <cstdint>
 #include <hardware/gpio.h>
 #include <hardware/sync.h>
 #include <libhal/functional.hpp>
 #include <libhal/interrupt_pin.hpp>
 #include <libhal/units.hpp>
+#include <optional>
 #include <pico/sync.h>
 #include <pico/time.h>
 #include <unordered_map>
@@ -55,8 +58,8 @@ struct interrupt_manager
 
   struct interrupt
   {
-    hal::callback<void(bool)> callback;
     hal::interrupt_pin::trigger_edge edge;
+    hal::callback<void(bool)> callback;
   };
 
   static lock get()
@@ -70,17 +73,17 @@ struct interrupt_manager
 
   void insert(hal::u8 pin, interrupt handler)
   {
-    m_handlers.insert({ pin, std::move(handler) });
+    m_interrupts[pin] = std::move(handler);
   }
 
   interrupt& at(hal::u8 pin)
   {
-    return m_handlers.at(pin);
+    return m_interrupts[pin].value();
   }
 
   void remove(hal::u8 pin)
   {
-    m_handlers.erase(pin);
+    m_interrupts[pin].reset();
   }
 
   // I don't control the callback types clang-tidy
@@ -89,7 +92,12 @@ struct interrupt_manager
     using enum hal::interrupt_pin::trigger_edge;
     auto g = get();
 
-    auto& handler = g->m_handlers.at(gpio);
+    // If there is no handler then we don't do anything
+    if (!g->m_interrupts[gpio].has_value()) {
+      return;
+    }
+
+    auto& handler = *g->m_interrupts[gpio];
 
     bool should_activate = false;
     switch (handler.edge) {
@@ -110,8 +118,9 @@ struct interrupt_manager
   }
 
 private:
-  // I would use std::hive but that doesn't exist yet
-  std::unordered_map<hal::u8, interrupt> m_handlers;
+  // yes I could save 8 * 48 bytes by doing union stuff instead of
+  // std::optional no I'm too lazy to do that
+  std::array<std::optional<interrupt>, hal::rp::internal::pin_max> m_interrupts;
   interrupt_manager() = default;
   ~interrupt_manager() = default;
   // todo check if this should be thread_local
@@ -191,7 +200,7 @@ void output_pin::driver_configure(settings const& options)
   // RP2* series chips don't seem to have any explicit support for
   // open drain mode, so we fail loud rather than silently
   if (options.open_drain) {
-    hal::safe_throw(hal::argument_out_of_domain(this));
+    hal::safe_throw(hal::operation_not_supported(this));
   }
 
   switch (options.resistor) {
@@ -230,7 +239,7 @@ interrupt_pin::interrupt_pin(u8 pin,
 
   auto g = interrupt_manager::get();
   g->insert(m_pin,
-            { .callback = std::move(callback), .edge = options.trigger });
+            { .edge = options.trigger, .callback = std::move(callback) });
 
   // can't use driver_configure because it would cause the lock to be taken
   // twice

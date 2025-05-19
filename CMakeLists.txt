@@ -154,6 +154,7 @@ set(pico_dep
   hardware_pwm_headers
   hardware_adc_headers
   hardware_spi_headers
+  hardware_uart_headers
   )
 
 endif()

@@ -127,34 +127,49 @@ void initialize_platform(resource_list& p_resources)
   p_resources.spi = spi;
 
   hal::timer* callback_timer = nullptr;
-  static hal::stm32f1::advanced_timer<hal::stm32f1::peripheral::timer1>
-    timer1;
-  static auto timer_callback_timer = timer1.acquire_timer();
+  static hal::stm32f1::general_purpose_timer<hal::stm32f1::peripheral::timer2>
+    timer2;
+  static auto timer_callback_timer = timer2.acquire_timer();
   callback_timer = &timer_callback_timer;
   p_resources.callback_timer = callback_timer;
 
-  // hal::pwm16_channel* pwm_channel_1 = nullptr;
-  // // hal::pwm16_channel* pwm_channel_2 = nullptr;
-  // hal::pwm_group_manager* pwm_frequency = nullptr;
+  hal::pwm* old_pwm = nullptr;
+  hal::pwm16_channel* pwm_channel = nullptr;
+  hal::pwm_group_manager* pwm_frequency = nullptr;
 
-  // if constexpr (use_libhal_4_pwm) {
-  //   // Use old PWM
-  // } else {
-  //   static hal::stm32f1::advanced_timer<hal::stm32f1::peripheral::timer1>
-  //     timer;
-  //   static auto timer_pwm_channel_1 =
-  //     timer.acquire_pwm16_channel(hal::stm32f1::timer1_pin::pa8);
-  //   // static auto timer_pwm_channel_2 =
-  //   //   timer.acquire_pwm16_channel(hal::stm32f1::timer3_pin::pb1);
-  //   pwm_channel_1 = &timer_pwm_channel_1;
-  //   // pwm_channel_2 = &timer_pwm_channel_2;
-  //   static auto timer1_pwm_frequency = timer.acquire_pwm_group_frequency();
-  //   pwm_frequency = &timer1_pwm_frequency;
-  // }
+  static hal::stm32f1::advanced_timer<hal::stm32f1::peripheral::timer1>
+    pwm_timer;
 
-  // p_resources.pwm_channel_1 = pwm_channel_1;
-  // // p_resources.pwm_channel_2 = pwm_channel_2;
-  // p_resources.pwm_frequency = pwm_frequency;
+  if constexpr (use_libhal_4_pwm) {
+    static auto timer_old_pwm =
+      pwm_timer.acquire_pwm(hal::stm32f1::timer1_pin::pa8);
+    old_pwm = &timer_old_pwm;
+
+    // second channel stuff grouped for easy commenting out
+    // static auto timer_old_pwm2 =
+    //   pwm_timer.acquire_pwm(hal::stm32f1::timer3_pin::pb1);
+    // hal::pwm* old_pwm2 = &timer_old_pwm2;
+    // p_resources.pwm2 = old_pwm2;
+  } else {
+    static auto timer_pwm_channel =
+      pwm_timer.acquire_pwm16_channel(hal::stm32f1::timer1_pin::pa8);
+
+    pwm_channel = &timer_pwm_channel;
+
+    static auto timer_pwm_frequency = pwm_timer.acquire_pwm_group_frequency();
+    pwm_frequency = &timer_pwm_frequency;
+
+    // second channel stuff grouped for easy commenting out
+    // hal::pwm16_channel* pwm_channel_2 = nullptr;
+    // static auto timer_pwm_channel_2 =
+    //   pwm_timer.acquire_pwm16_channel(hal::stm32f1::timer3_pin::pb1);
+    // pwm_channel_2 = &timer_pwm_channel_2;
+    // p_resources.pwm_channel_2 = pwm_channel_2;
+  }
+
+  p_resources.pwm = old_pwm;
+  p_resources.pwm_channel = pwm_channel;
+  p_resources.pwm_frequency = pwm_frequency;
 
   // TODO(#125): Initializing the can peripheral without it connected to a can
   // transceiver causes it to stall on occasion.

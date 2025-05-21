@@ -98,13 +98,14 @@ timer::timer(void* p_reg, manager_data* p_manager_data_ptr)
                      &stm32f1::initialize_interrupts,
                      peripheral_interrupt_params.irq,
                      peripheral_interrupt_params.handler);
+
+  m_manager_data_ptr->m_timer_usage = manager_data::timer_usage::callback_timer;
 }
 
 timer::~timer()
 {
   m_manager_data_ptr->m_timer_usage = manager_data::timer_usage::uninitialized;
-  power_off(m_manager_data_ptr->m_id);
-  power_on(m_manager_data_ptr->m_id);
+  reset_peripheral(m_manager_data_ptr->m_id);
 }
 
 bool timer::driver_is_running()
@@ -130,9 +131,10 @@ timer::interrupt_params timer::setup_interrupt()
   // Create a lambda to call the interrupt() method
   auto isr = [this]() { interrupt(); };
 
-  // A pointer to save the static_callable isr address to.
+  // A pointer to save the static_callable isr address to
   interrupt_params peripheral_interrupt_params;
 
+  // Determines IRQ and handler to use
   switch (m_manager_data_ptr->m_id) {
     case peripheral::timer1:
       peripheral_interrupt_params.irq =
@@ -271,7 +273,6 @@ hal::stm32f1::timer advanced_timer_manager::acquire_timer()
     safe_throw(hal::device_or_resource_busy(this));
   }
 
-  m_manager_data.m_timer_usage = manager_data::timer_usage::callback_timer;
   return { peripheral_to_advanced_register(m_manager_data.m_id),
            &m_manager_data };
 }
@@ -283,7 +284,6 @@ hal::stm32f1::timer general_purpose_timer_manager::acquire_timer()
     safe_throw(hal::device_or_resource_busy(this));
   }
 
-  m_manager_data.m_timer_usage = manager_data::timer_usage::callback_timer;
   return { peripheral_to_general_register(m_manager_data.m_id),
            &m_manager_data };
 }
@@ -291,24 +291,12 @@ hal::stm32f1::timer general_purpose_timer_manager::acquire_timer()
 hal::stm32f1::pwm_group_frequency
 advanced_timer_manager::acquire_pwm_group_frequency()
 {
-  // Uses MSB to track if group frequency object exists for this peripheral
-  // already. Only one is needed as it sets the frequency for all channels.
-  static constexpr u32 frequency_is_set = (0b1 << 31);
-
   if (m_manager_data.m_timer_usage !=
         manager_data::timer_usage::uninitialized &&
       m_manager_data.m_timer_usage !=
         manager_data::timer_usage::pwm_generator) {
     safe_throw(hal::device_or_resource_busy(this));
   }
-
-  if (m_manager_data.m_resource_count.load() & frequency_is_set) {
-    safe_throw(hal::device_or_resource_busy(this));
-  }
-
-  m_manager_data.m_timer_usage = manager_data::timer_usage::pwm_generator;
-  m_manager_data.m_resource_count.store(
-    (m_manager_data.m_resource_count.load()) | frequency_is_set);
 
   return { peripheral_to_advanced_register(m_manager_data.m_id),
            &m_manager_data };
@@ -317,24 +305,12 @@ advanced_timer_manager::acquire_pwm_group_frequency()
 hal::stm32f1::pwm_group_frequency
 general_purpose_timer_manager::acquire_pwm_group_frequency()
 {
-  // Uses MSB to track if group frequency object exists for this peripheral
-  // already. Only one is needed as it sets the frequency for all channels.
-  static constexpr u32 frequency_is_set = (0b1 << 31);
-
   if (m_manager_data.m_timer_usage !=
         manager_data::timer_usage::uninitialized &&
       m_manager_data.m_timer_usage !=
         manager_data::timer_usage::pwm_generator) {
     safe_throw(hal::device_or_resource_busy(this));
   }
-
-  if (m_manager_data.m_resource_count.load() & frequency_is_set) {
-    safe_throw(hal::device_or_resource_busy(this));
-  }
-
-  m_manager_data.m_timer_usage = manager_data::timer_usage::pwm_generator;
-  m_manager_data.m_resource_count.store(
-    (m_manager_data.m_resource_count.load()) | frequency_is_set);
 
   return { peripheral_to_general_register(m_manager_data.m_id),
            &m_manager_data };
@@ -349,7 +325,7 @@ hal::stm32f1::pwm16_channel advanced_timer_manager::acquire_pwm16_channel(
         manager_data::timer_usage::pwm_generator) {
     safe_throw(hal::device_or_resource_busy(this));
   }
-  
+
   return { peripheral_to_advanced_register(m_manager_data.m_id),
            &m_manager_data,
            true,
@@ -376,8 +352,7 @@ hal::stm32f1::pwm advanced_timer_manager::acquire_pwm(timer_pins p_pin)
 {
   if (m_manager_data.m_timer_usage !=
         manager_data::timer_usage::uninitialized &&
-      m_manager_data.m_timer_usage !=
-        manager_data::timer_usage::old_pwm) {
+      m_manager_data.m_timer_usage != manager_data::timer_usage::old_pwm) {
     safe_throw(hal::device_or_resource_busy(this));
   }
 
@@ -391,8 +366,7 @@ hal::stm32f1::pwm general_purpose_timer_manager::acquire_pwm(timer_pins p_pin)
 {
   if (m_manager_data.m_timer_usage !=
         manager_data::timer_usage::uninitialized &&
-      m_manager_data.m_timer_usage !=
-        manager_data::timer_usage::old_pwm) {
+      m_manager_data.m_timer_usage != manager_data::timer_usage::old_pwm) {
     safe_throw(hal::device_or_resource_busy(this));
   }
 

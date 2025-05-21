@@ -24,20 +24,14 @@
 #include <libhal/pwm.hpp>
 #include <libhal/units.hpp>
 
-#include "interrupt_reg.hpp"
 #include "pin.hpp"
 #include "power.hpp"
 
 namespace {
-/**
- * @brief Static variable to track PWM availability.
- */
-hal::u32 availability = 0;
-
 struct pin_information
 {
   hal::u8 channel;
-  hal::stm32f1::pin_select pin_select;  
+  hal::stm32f1::pin_select pin_select;
 };
 
 constexpr pin_information determine_pin_info(
@@ -175,20 +169,18 @@ pwm_group_frequency::pwm_group_frequency(void* p_reg,
   : m_pwm_frequency(unsafe{}, p_reg)
   , m_manager_data_ptr(p_manager_data_ptr)
 {
+  m_manager_data_ptr->m_timer_usage = manager_data::timer_usage::pwm_generator;
+  m_manager_data_ptr->m_resource_count++;
 }
 
 pwm_group_frequency::~pwm_group_frequency()
 {
-  static constexpr u32 frequency_mask = ~(1 << 31);
-
-  m_manager_data_ptr->m_resource_count.store(
-    (m_manager_data_ptr->m_resource_count.load()) & frequency_mask);
+  m_manager_data_ptr->m_resource_count--;
 
   if (m_manager_data_ptr->m_resource_count.load() == 0) {
     m_manager_data_ptr->m_timer_usage =
       manager_data::timer_usage::uninitialized;
-    power_off(m_manager_data_ptr->m_id);
-    power_on(m_manager_data_ptr->m_id);
+    reset_peripheral(m_manager_data_ptr->m_id);
   }
 }
 
@@ -206,26 +198,12 @@ pwm16_channel::pwm16_channel(void* p_reg,
                              bool p_is_advanced,
                              timer_pins p_pin)
   : m_pwm(unsafe{})
-  , m_pin_num(hal::value(p_pin))
+  , m_pin(p_pin)
   , m_manager_data_ptr(p_manager_data_ptr)
 {
-  pin_information pin_info = determine_pin_info(p_pin, m_manager_data_ptr->m_id);
+  pin_information pin_info =
+    determine_pin_info(m_pin, m_manager_data_ptr->m_id);
   configure_pin(pin_info.pin_select, push_pull_alternative_output);
-
-  u32 const channel_mask = 1 << (pin_info.channel - 1);
-  if ((m_manager_data_ptr->m_resource_count.load()) & channel_mask) {
-    hal::safe_throw(hal::device_or_resource_busy(nullptr));
-  }
-  m_manager_data_ptr->m_timer_usage = manager_data::timer_usage::pwm_generator;
-  m_manager_data_ptr->m_resource_count.store(
-    (m_manager_data_ptr->m_resource_count.load()) | channel_mask);
-
-  auto const pwm_pin_mask = bit_mask::from(m_pin_num);
-  if (not hal::bit_extract(pwm_pin_mask, availability)) {
-    bit_modify(availability).set(pwm_pin_mask);
-  } else {
-    hal::safe_throw(hal::device_or_resource_busy(nullptr));
-  }
 
   // a generic pwm class requires a pin and a channel in order to use the right
   // registers, therefore we pass in the channel as an argument in the generic
@@ -236,24 +214,23 @@ pwm16_channel::pwm16_channel(void* p_reg,
                      .channel = pin_info.channel,
                      .is_advanced = p_is_advanced,
                    });
+
+  m_manager_data_ptr->m_timer_usage = manager_data::timer_usage::pwm_generator;
+  m_manager_data_ptr->m_resource_count++;
 }
 
 pwm16_channel::~pwm16_channel()
 {
-  auto const pwm_pin_mask = bit_mask::from(m_pin_num);
-  bit_modify(availability).clear(pwm_pin_mask);
+  pin_information pin_info =
+    determine_pin_info(m_pin, m_manager_data_ptr->m_id);
+  reset_pin(pin_info.pin_select);
 
-  pin_information pin_info = determine_pin_info(static_cast<timer_pins>(m_pin_num), m_manager_data_ptr->m_id);
-  u32 const channel_mask = ~(1 << (pin_info.channel - 1));
-
-  m_manager_data_ptr->m_resource_count.store(
-    (m_manager_data_ptr->m_resource_count.load()) & channel_mask);
+  m_manager_data_ptr->m_resource_count--;
 
   if (m_manager_data_ptr->m_resource_count.load() == 0) {
     m_manager_data_ptr->m_timer_usage =
       manager_data::timer_usage::uninitialized;
-    power_off(m_manager_data_ptr->m_id);
-    power_on(m_manager_data_ptr->m_id);
+    reset_peripheral(m_manager_data_ptr->m_id);
   }
 }
 
@@ -274,26 +251,12 @@ pwm::pwm(void* p_reg,
          stm32f1::timer_pins p_pin)
   : m_pwm(unsafe{})
   , m_pwm_frequency(unsafe{}, p_reg)
-  , m_pin_num(hal::value(p_pin))
+  , m_pin(p_pin)
   , m_manager_data_ptr(p_manager_data_ptr)
 {
-  auto const pwm_pin_mask = bit_mask::from(m_pin_num);
-  if (not hal::bit_extract(pwm_pin_mask, availability)) {
-    bit_modify(availability).set(pwm_pin_mask);
-  } else {
-    hal::safe_throw(hal::device_or_resource_busy(nullptr));
-  }
-
-  pin_information pin_info = determine_pin_info(p_pin, m_manager_data_ptr->m_id);
-  u32 const channel_mask = 1 << (pin_info.channel - 1);
-  if ((m_manager_data_ptr->m_resource_count.load()) & channel_mask) {
-    hal::safe_throw(hal::device_or_resource_busy(nullptr));
-  }
+  pin_information pin_info =
+    determine_pin_info(m_pin, m_manager_data_ptr->m_id);
   configure_pin(pin_info.pin_select, push_pull_alternative_output);
-
-  m_manager_data_ptr->m_timer_usage = manager_data::timer_usage::old_pwm;
-  m_manager_data_ptr->m_resource_count.store(
-    (m_manager_data_ptr->m_resource_count.load()) | channel_mask);
 
   // a generic pwm class requires a pin and a channel in order to use the right
   // registers, therefore we pass in the channel as an argument in the generic
@@ -304,24 +267,23 @@ pwm::pwm(void* p_reg,
                      .channel = pin_info.channel,
                      .is_advanced = p_is_advanced,
                    });
+
+  m_manager_data_ptr->m_timer_usage = manager_data::timer_usage::old_pwm;
+  m_manager_data_ptr->m_resource_count++;
 }
 
 pwm::~pwm()
 {
-  auto const pwm_pin_mask = bit_mask::from(m_pin_num);
-  bit_modify(availability).clear(pwm_pin_mask);
+  pin_information pin_info =
+    determine_pin_info(m_pin, m_manager_data_ptr->m_id);
+  reset_pin(pin_info.pin_select);
 
-  pin_information pin_info = determine_pin_info(static_cast<timer_pins>(m_pin_num), m_manager_data_ptr->m_id);
-  u32 const channel_mask = ~(1 << (pin_info.channel - 1));
-
-  m_manager_data_ptr->m_resource_count.store(
-    (m_manager_data_ptr->m_resource_count.load()) & channel_mask);
+  m_manager_data_ptr->m_resource_count--;
 
   if (m_manager_data_ptr->m_resource_count.load() == 0) {
     m_manager_data_ptr->m_timer_usage =
       manager_data::timer_usage::uninitialized;
-    power_off(m_manager_data_ptr->m_id);
-    power_on(m_manager_data_ptr->m_id);
+    reset_peripheral(m_manager_data_ptr->m_id);
   }
 }
 

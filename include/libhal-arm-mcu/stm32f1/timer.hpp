@@ -214,12 +214,6 @@ consteval auto get_pwm_timer_type()
 }
 /**
  * @brief Used to store the state of the timer assigned to the manager.
- *
- * m_timer_usage - Indicates what kind of usage the timer is currently
- * configured for.
- * m_resource_count - Tracks what channels are currently being used with the
- * timer.
- * m_id - Indicates which timer is assigned to this manager.
  */
 struct manager_data
 {
@@ -238,8 +232,11 @@ private:
     pwm_generator,
     callback_timer
   };
+  /// Indicates what kind of usage the timer is currently configured for.
   timer_usage m_timer_usage{};
-  std::atomic<u32> m_resource_count;
+  /// Tracks how many resources are currently tied to the
+  std::atomic<u8> m_resource_count;
+  /// Indicates which timer is assigned to this manager.
   peripheral m_id;
 
   manager_data(peripheral p_id)
@@ -288,7 +285,7 @@ private:
 
   /**
    * @brief This constructor is private because the only way one should be
-   * able to access this timer is through one of the timer classes.
+   * able to access this timer is through one of the timer manager classes.
    *
    * @param p_reg - The address of the selected timer.
    * @param p_manager_data - Pointer to access the managers state information.
@@ -301,7 +298,7 @@ private:
                        hal::time_duration p_delay) override;
 
   /**
-   * @brief Does the configuration required and returns the necessary data to
+   * @brief Creates a static callable object and returns the necessary data to
    * enable the interrupt.
    *
    * @return interrupt_params - the data necessary to enable the interrupt in
@@ -322,19 +319,18 @@ private:
   /// The stm32_generic timer object which is used to actually control the
   /// timer.
   hal::stm32_generic::timer m_timer;
-  // Pointer to access the managers state information.
+  /// Pointer to access the managers state information.
   manager_data* m_manager_data_ptr;
-  /// The function to be used in the handler for the callback.
+  /// The function to be used inside the ISR handler for the callback.
   std::optional<hal::callback<void(void)>> m_callback;
 };
 
 /**
- * @brief This class is a wrapper for the pwm class.
+ * @brief This class sets the frequency for a group of pwm pins
  *
- * It manages the pwm availability of the various different pins, and keeps
- * track of whether a pwm is available or not. It inherits hal::pwm because this
- * object is returned to the timer instance and can be used as an hal::pwm in
- * any application.
+ * Since all the pwm channels for each timer peripheral have to share the same
+ * frequency, this class is used to set that frequency for the whole group of
+ * channels.
  */
 class pwm_group_frequency : public hal::pwm_group_manager
 {
@@ -351,39 +347,33 @@ public:
 
 private:
   /**
-   * @brief The pwm constructor is private because the only way one should be
-   * able to access pwm is through the timer class
+   * @brief The constructor is private because the only way one should be
+   * able to access pwm_group_frequency is through one of the timer manager
+   * classes.
    *
    * @param p_reg is a void pointer that points to the beginning of a timer
    * peripheral
    * @param p_manager_data_ptr is a pointer to access the managers state
    * information.
-   * @param p_is_advanced whether the current peripheral is advanced or not
-   * @param p_pins This number is used to update the an internal bitmap
-   * containing which PWM pins have already been acquired as well as configure
-   * the pins and their channels. On construction the bit indicated by this
-   * value is checked to see if it is set. If it is set, an exception is thrown
-   * indicating that this resource has already been acquired. Otherwise, this
-   * driver sets that bit. On destruction that bit is cleared to allow another
-   * driver to utilize that pin in the future.
-   *
-   * @throws device_or_resource_busy when a pwm is already being used on a pin.
    */
   pwm_group_frequency(void* p_reg, manager_data* p_manager_data_ptr);
 
   void driver_frequency(u32 p_hertz) override;
 
+  /// The stm32_generic pwm_group_frequency object which is used to actually
+  /// control the timer.
   hal::stm32_generic::pwm_group_frequency m_pwm_frequency;
+  /// Pointer to access the managers state information.
   manager_data* m_manager_data_ptr;
 };
 
 /**
- * @brief This class is a wrapper for the pwm class.
+ * @brief This class is used to control a pwm channel
  *
- * It manages the pwm availability of the various different pins, and keeps
- * track of whether a pwm is available or not. It inherits hal::pwm because this
- * object is returned to the timer instance and can be used as an hal::pwm in
- * any application.
+ * This is to be used in conjunction with pwm_group_frequency. You create your
+ * pwm channel(s) with this class, where each channel can set its own unique
+ * duty cycle. Then you set the frequency to be used by all the configured
+ * channels for the specific timer peripheral through the pwm_group_frequency.
  */
 class pwm16_channel : public hal::pwm16_channel
 {
@@ -399,24 +389,15 @@ public:
 
 private:
   /**
-   * @brief The pwm constructor is private because the only way one should be
-   * able to access pwm is through the timer class
+   * @brief The constructor is private because the only way one should be
+   * able to access pwm16_channel is through one of the timer manager classes.
    *
    * @param p_reg is a void pointer that points to the beginning of a timer
    * peripheral
    * @param p_manager_data_ptr is a pointer to access the managers state
    * information.
    * @param p_is_advanced whether the current peripheral is advanced or not
-   * @param p_pins This number is used to update the an internal bitmap
-   * containing which PWM pins have already been acquired as well as configure
-   * the pins and their channels. On construction the bit indicated by this
-   * value is checked to see if it is set. If it is set, an exception is thrown
-   * indicating that this resource has already been acquired. Otherwise, this
-   * driver sets that bit. On destruction that bit is cleared to allow another
-   * driver to utilize that pin in the future.
-   *
-   * @throws device_or_resource_busy when a pwm is already being used on a pin,
-   * or that pins channel is already being used.
+   * @param p_pin is the pin to be used for the pwm channel.
    */
   pwm16_channel(void* p_reg,
                 manager_data* p_manager_data_ptr,
@@ -426,20 +407,21 @@ private:
   u32 driver_frequency() override;
   void driver_duty_cycle(u16 p_duty_cycle) override;
 
+  /// The stm32_generic pwm object which is used to actually control the timer.
   hal::stm32_generic::pwm m_pwm;
-  hal::u16 m_pin_num;
+  /// The pin being used for the channel.
+  timer_pins m_pin;
+  /// Pointer to access the managers state information.
   manager_data* m_manager_data_ptr;
 };
 
 /**
- * @brief This class is a wrapper for the pwm class.
+ * @brief This class implements the `hal::pwm` interface
+ *
+ * Can create pwm objects which can output pwm signals on a chosen pin
+ *
  * @deprecated Please use pwm16_channel and/or pwm_group_frequency. This class
  * implements the `hal::pwm` interface which will be deprecated in libhal 5.
- *
- * It manages the pwm availability of the various different pins, and keeps
- * track of whether a pwm is available or not. It inherits hal::pwm because this
- * object is returned to the timer instance and can be used as an hal::pwm in
- * any application.
  */
 class pwm : public hal::pwm
 {
@@ -455,45 +437,42 @@ public:
 
 private:
   /**
-   * @brief The pwm constructor is private because the only way one should be
-   * able to access pwm is through the timer class
+   * @brief The constructor is private because the only way one should be
+   * able to access pwm is through one of the timer manager classes.
    *
    * @param p_reg is a void pointer that points to the beginning of a timer
    * peripheral
    * @param p_manager_data_ptr is a pointer to access the managers state
    * information.
    * @param p_is_advanced whether the current peripheral is advanced or not
-   * @param p_pins This number is used to update the an internal bitmap
-   * containing which PWM pins have already been acquired as well as configure
-   * the pins and their channels. On construction the bit indicated by this
-   * value is checked to see if it is set. If it is set, an exception is thrown
-   * indicating that this resource has already been acquired. Otherwise, this
-   * driver sets that bit. On destruction that bit is cleared to allow another
-   * driver to utilize that pin in the future.
-   *
-   * @throws device_or_resource_busy when a pwm is already being used on a pin.
+   * @param p_pin is the pin to be used for the pwm channel.
    */
   pwm(void* p_reg,
       manager_data* p_manager_data_ptr,
       bool p_is_advanced,
-      stm32f1::timer_pins p_pin);
+      timer_pins p_pin);
 
   void driver_frequency(hertz p_frequency) override;
   void driver_duty_cycle(float p_duty_cycle) override;
 
+  /// The stm32_generic pwm object which is used to actually control the
+  /// channel.
   hal::stm32_generic::pwm m_pwm;
+  /// The stm32_generic group frequency object which is used to actually control
+  /// the frequency for the group of channels.
   hal::stm32_generic::pwm_group_frequency m_pwm_frequency;
-  hal::u16 m_pin_num;
+  /// The pin being used for the channel.
+  timer_pins m_pin;
+  /// Pointer to access the managers state information.
   manager_data* m_manager_data_ptr;
 };
 
 /**
- * @brief This template class takes can do any timer operation for timers 1
- * and 8.
+ * @brief This class is used to do any timer operations for timers 1 and 8.
  *
- * The peripheral ID is the template argument, in order to ensure
- * that the pins used correspond to the correct timer instantiation as well as
- * the correct corresponding pins at compile time.
+ * This is the non-templated version that implements all the core functionality.
+ * It is designed to be inherited by the templated version, helping to reduce
+ * code bloat and duplication caused by template instantiations.
  *
  * These timers can be used to do PWM generation, as well as other advanced
  * timer specific tasks
@@ -510,20 +489,77 @@ public:
 
   ~advanced_timer_manager();
 
+  /**
+   * @brief Creates a timer object to be used for scheduling function callbacks
+   * via interrupts.
+   *
+   * @return hal::stm32f1::timer - the timer object
+   *
+   * @throws hal::device_or_resource_busy - if timer is already being used with
+   * a conflicting resource
+   */
   [[nodiscard]] hal::stm32f1::timer acquire_timer();
+  /**
+   * @brief Creates a pwm object to be used for setting the frequency of the
+   * group of pwm channels for the acquired timer.
+   *
+   * @return hal::stm32f1::pwm_group_frequency - the pwm frequency object.
+   *
+   * @throws hal::device_or_resource_busy - if timer is already being used with
+   * a conflicting resource
+   */
   [[nodiscard]] hal::stm32f1::pwm_group_frequency acquire_pwm_group_frequency();
 
 protected:
+  /**
+   * @brief The constructor is protected because it gets inherited and used by
+   * the templated advanced_timer class.
+   *
+   * @param p_id the id of the timer that will be used by the manager.
+   */
   advanced_timer_manager(peripheral p_id);
 
-  [[nodiscard]] hal::stm32f1::pwm acquire_pwm(timer_pins p_pin);
+  /**
+   * @brief Creates a pwm channel to be used for generating pulse-widths through
+   * configuring of its duty-cycle.
+   *
+   * @return hal::stm32f1::pwm16_channel - the pwm channel object.
+   *
+   * @throws hal::device_or_resource_busy - if timer is already being used with
+   * a conflicting resource
+   */
   [[nodiscard]] hal::stm32f1::pwm16_channel acquire_pwm16_channel(
     timer_pins p_pin);
 
+  /**
+   * @brief Creates a pwm object to be used for generating pulse-widths through
+   * setting of frequency and duty-cycle.
+   * @deprecated Please use pwm16_channel and pwm_group_frequency. This class
+   * implements the `hal::pwm` interface which will be deprecated in libhal 5.
+   *
+   * @return hal::stm32f1::pwm - the pwm object.
+   *
+   * @throws hal::device_or_resource_busy - if timer is already being used with
+   * a conflicting resource
+   */
+  [[nodiscard]] hal::stm32f1::pwm acquire_pwm(timer_pins p_pin);
+
 private:
+  /// Stores the state information about the timer thats assigned to this
+  /// manager.
   manager_data m_manager_data;
 };
 
+/**
+ * @brief This class is used to do any timer operations for timers 1 and 8.
+ *
+ * This templated version inherits the core functionality and minimizes code
+ * bloat by only instantiating templates for the required functions. Since they
+ * are also inlined, it allows for additional compiler optimizations.
+ *
+ * These timers can be used to do pwm generation, as well as other advanced
+ * timer specific tasks
+ */
 template<peripheral select>
 class advanced_timer final : public advanced_timer_manager
 {
@@ -532,41 +568,24 @@ public:
     select == peripheral::timer1 or select == peripheral::timer8,
     "Only timer 1 or 8 is allowed as advanced timers for this driver.");
   using pin_type = decltype(get_pwm_timer_type<select>())::type;
-
+  /**
+   * @brief Construct a advanced_timer_manager object using the passed template
+   * argument.
+   *
+   */
   advanced_timer()
     : advanced_timer_manager(select)
   {
   }
 
   /**
-   * @brief Acquire a PWM channel from this timer
-   * @deprecated Use the `acquire_pwm16_channel` and
-   * `acquire_pwm_group_frequency` functions instead. This function will be
-   * removed in libhal 5.
+   * @brief Creates a pwm channel to be used for generating pulse-widths through
+   * configuring of its duty-cycle.
    *
-   * Only one PWM channel is allowed to exist per timer.
-   * If a PWM channel object is destroyed, then another PWM channel can be
-   * acquired from this timer.
+   * @return hal::stm32f1::pwm16_channel - the pwm channel object.
    *
-   * @throws hal::device_or_resource_busy - If the application attempts to
-   * acquire a pwm channel while a pwm channel bound to this timer already
-   * exists.
-   */
-  [[nodiscard]] hal::stm32f1::pwm acquire_pwm(pin_type p_pin)
-  {
-    return advanced_timer_manager::acquire_pwm(static_cast<timer_pins>(p_pin));
-  }
-
-  /**
-   * @brief Acquire a PWM channel from this timer
-   *
-   * Only one PWM channel is allowed to exist per timer.
-   * If a PWM channel object is destroyed, then another PWM channel can be
-   * acquired from this timer.
-   *
-   * @throws hal::device_or_resource_busy - If the application attempts to
-   * acquire a pwm channel while a pwm channel bound to this timer already
-   * exists.
+   * @throws hal::device_or_resource_busy - if timer is already being used with
+   * a conflicting resource
    */
   [[nodiscard]] hal::stm32f1::pwm16_channel acquire_pwm16_channel(
     pin_type p_pin)
@@ -574,18 +593,34 @@ public:
     return advanced_timer_manager::acquire_pwm16_channel(
       static_cast<timer_pins>(p_pin));
   }
+
+  /**
+   * @brief Creates a pwm object to be used for generating pulse-widths through
+   * setting of frequency and duty-cycle.
+   * @deprecated Please use pwm16_channel and pwm_group_frequency. This class
+   * implements the `hal::pwm` interface which will be deprecated in libhal 5.
+   *
+   * @return hal::stm32f1::pwm - the pwm object.
+   *
+   * @throws hal::device_or_resource_busy - if timer is already being used with
+   * a conflicting resource
+   */
+  [[nodiscard]] hal::stm32f1::pwm acquire_pwm(pin_type p_pin)
+  {
+    return advanced_timer_manager::acquire_pwm(static_cast<timer_pins>(p_pin));
+  }
 };
 
 /**
- * @brief This template class takes can do any timer operation for timers 2
- * through 15 and excluding timers 6 and 7
+ * @brief This class is used to do any timer operations for the general purpose
+ * timers: 2, 3, 4, 5, 9, 10, 11, 12, 13, 14.
  *
- * The peripheral ID is the template argument, in order to ensure that the pins
- * used correspond to the correct timer instantiation as well as the correct
- * corresponding pins at compile time.
+ * This is the non-templated version that implements all the core functionality.
+ * It is designed to be inherited by the templated version, helping to reduce
+ * code bloat and duplication caused by template instantiations.
  *
- * These timers can be used to do PWM generation, as well as other general
- * timer tasks
+ * These timers can be used to do pwm generation, as well as other general
+ * purpose timer tasks
  */
 class general_purpose_timer_manager
 {
@@ -601,20 +636,79 @@ public:
 
   ~general_purpose_timer_manager();
 
+  /**
+   * @brief Creates a timer object to be used for scheduling function callbacks
+   * via interrupts.
+   *
+   * @return hal::stm32f1::timer - the timer object
+   *
+   * @throws hal::device_or_resource_busy - if timer is already being used with
+   * a conflicting resource
+   */
   [[nodiscard]] hal::stm32f1::timer acquire_timer();
+
+  /**
+   * @brief Creates a pwm object to be used for setting the frequency of the
+   * group of pwm channels for the acquired timer.
+   *
+   * @return hal::stm32f1::pwm_group_frequency - the pwm frequency object.
+   *
+   * @throws hal::device_or_resource_busy - if timer is already being used with
+   * a conflicting resource
+   */
   [[nodiscard]] hal::stm32f1::pwm_group_frequency acquire_pwm_group_frequency();
 
 protected:
+  /**
+   * @brief The constructor is protected because it gets inherited and used by
+   * the templated general_purpose_timer class.
+   *
+   * @param p_id the id of the timer that will be used by the manager.
+   */
   general_purpose_timer_manager(peripheral p_id);
 
+  /**
+   * @brief Creates a pwm object to be used for generating pulse-widths through
+   * setting of frequency and duty-cycle.
+   * @deprecated Please use pwm16_channel and pwm_group_frequency. This class
+   * implements the `hal::pwm` interface which will be deprecated in libhal 5.
+   *
+   * @return hal::stm32f1::pwm - the pwm object.
+   *
+   * @throws hal::device_or_resource_busy - if timer is already being used with
+   * a conflicting resource
+   */
   [[nodiscard]] hal::stm32f1::pwm acquire_pwm(timer_pins p_pin);
+
+  /**
+   * @brief Creates a pwm channel to be used for generating pulse-widths through
+   * configuring of its duty-cycle.
+   *
+   * @return hal::stm32f1::pwm16_channel - the pwm channel object.
+   *
+   * @throws hal::device_or_resource_busy - if timer is already being used with
+   * a conflicting resource
+   */
   [[nodiscard]] hal::stm32f1::pwm16_channel acquire_pwm16_channel(
     timer_pins p_pin);
 
 private:
+  /// Stores the state information about the timer thats assigned to this
+  /// manager.
   manager_data m_manager_data;
 };
 
+/**
+ * @brief This class is used to do any timer operations for the general purpose
+ * timers: 2, 3, 4, 5, 9, 10, 11, 12, 13, 14.
+ *
+ * This templated version inherits the core functionality and minimizes code
+ * bloat by only instantiating templates for the required functions. Since they
+ * are also inlined, it allows for additional compiler optimizations.
+ *
+ * These timers can be used to do pwm generation, as well as other general
+ * purpose timer tasks
+ */
 template<peripheral select>
 class general_purpose_timer : public general_purpose_timer_manager
 {
@@ -629,46 +723,46 @@ public:
     "purpose timers for this driver.");
   using pin_type = decltype(get_pwm_timer_type<select>())::type;
 
+  /**
+   * @brief Construct a general_purpose_timer_manager object using the passed
+   * template argument.
+   *
+   */
   general_purpose_timer()
     : general_purpose_timer_manager(select)
   {
   }
 
   /**
-   * @brief Acquire a PWM channel from this timer
-   * @deprecated Use the `acquire_pwm16_channel` and
-   * `acquire_pwm_group_frequency` functions instead. This function will be
-   * removed in libhal 5.
+   * @brief Creates a pwm channel to be used for generating pulse-widths through
+   * configuring of its duty-cycle.
    *
-   * Only one PWM channel is allowed to exist per timer.
-   * If a PWM channel object is destroyed, then another PWM channel can be
-   * acquired from this timer.
+   * @return hal::stm32f1::pwm16_channel - the pwm channel object.
    *
-   * @throws hal::device_or_resource_busy - If the application attempts to
-   * acquire a pwm channel while a pwm channel bound to this timer already
-   * exists.
-   */
-  [[nodiscard]] hal::stm32f1::pwm acquire_pwm(pin_type p_pin)
-  {
-    return general_purpose_timer_manager::acquire_pwm(
-      static_cast<timer_pins>(p_pin));
-  }
-
-  /**
-   * @brief Acquire a PWM channel from this timer
-   *
-   * Only one PWM channel is allowed to exist per timer.
-   * If a PWM channel object is destroyed, then another PWM channel can be
-   * acquired from this timer.
-   *
-   * @throws hal::device_or_resource_busy - If the application attempts to
-   * acquire a pwm channel while a pwm channel bound to this timer already
-   * exists.
+   * @throws hal::device_or_resource_busy - if timer is already being used with
+   * a conflicting resource
    */
   [[nodiscard]] hal::stm32f1::pwm16_channel acquire_pwm16_channel(
     pin_type p_pin)
   {
     return general_purpose_timer_manager::acquire_pwm16_channel(
+      static_cast<timer_pins>(p_pin));
+  }
+
+  /**
+   * @brief Creates a pwm object to be used for generating pulse-widths through
+   * setting of frequency and duty-cycle.
+   * @deprecated Please use pwm16_channel and pwm_group_frequency. This class
+   * implements the `hal::pwm` interface which will be deprecated in libhal 5.
+   *
+   * @return hal::stm32f1::pwm - the pwm object.
+   *
+   * @throws hal::device_or_resource_busy - if timer is already being used with
+   * a conflicting resource
+   */
+  [[nodiscard]] hal::stm32f1::pwm acquire_pwm(pin_type p_pin)
+  {
+    return general_purpose_timer_manager::acquire_pwm(
       static_cast<timer_pins>(p_pin));
   }
 };

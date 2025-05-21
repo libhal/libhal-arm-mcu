@@ -65,8 +65,8 @@ public:
    *
    * Note that there must be sufficient time between the this call finishing and
    * the scheduled event's termination. If this call is too close to when the
-   * schedule event expires, this function may not complete before the hardware
-   * calls the callback.
+   * schedule event expires, this function may not complete before the timer
+   * interrupt is triggered.
    */
   void cancel();
 
@@ -97,13 +97,15 @@ public:
    * all the series-specific settings passed to it that it needs, and it
    * handles them appropriately.
    *
-   * @param p_peripheral_address - the address of the chosen timer
+   * @param p_peripheral_address - the address of the chosen timer peripheral
    * @param initialize_interrupts_function - the function needed to initialize
-   * interrupts for the specific series stm32
+   * interrupts for the specific series stm32. For example, for the stm32f1
+   * series, the function passed would be
+   * `hal::stm32f1::initialize_interrupts()`.
    * @param p_irq - the irq number for the chosen timer
-   * @param p_handler - the configured ISR handler for the specific series stm32
-   * @throws hal::device_or_resource_busy - if the current interrupt vector is
-   * already being used.
+   * @param p_handler - the platform specific interrupt handler to be installed
+   * @throws hal::device_or_resource_busy - if the timer interrupt vector is
+   * already in use.
    */
   void initialize(hal::unsafe,
                   void* p_peripheral_address,

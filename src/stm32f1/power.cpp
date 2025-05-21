@@ -22,13 +22,13 @@
 
 namespace hal::stm32f1 {
 namespace {
-struct enable_register_info
+struct rcc_register_info
 {
   u32 volatile* reg;
   hal::bit_mask mask;
 };
 
-enable_register_info get_enable_register_info(peripheral p_peripheral)
+rcc_register_info get_enable_register_info(peripheral p_peripheral)
 {
   auto const peripheral_value = hal::value(p_peripheral);
   auto const bus_number = peripheral_value / bus_id_offset;
@@ -42,6 +42,23 @@ enable_register_info get_enable_register_info(peripheral p_peripheral)
       return { .reg = &rcc->apb2enr, .mask = mask };
     default:
       hal::safe_throw(hal::argument_out_of_domain(nullptr));
+  }
+}
+
+rcc_register_info get_reset_register_info(peripheral p_peripheral)
+{
+  auto const peripheral_value = hal::value(p_peripheral);
+  auto const bus_number = peripheral_value / bus_id_offset;
+  auto const mask = bit_mask::from(peripheral_value % bus_id_offset);
+  switch (bus_number) {
+    case 0:
+      return { .reg = &rcc->ahbrstr, .mask = mask };
+    case 1:
+      return { .reg = &rcc->apb1rstr, .mask = mask };
+    case 2:
+      [[fallthrough]];
+    default:
+      return { .reg = &rcc->apb2rstr, .mask = mask };
   }
 }
 }  // namespace
@@ -68,4 +85,12 @@ bool is_on(peripheral p_peripheral)
   auto const info = get_enable_register_info(p_peripheral);
   return hal::bit_extract(info.mask, *info.reg);
 }
+
+void reset_peripheral(peripheral p_peripheral)
+{
+  auto const info = get_reset_register_info(p_peripheral);
+  hal::bit_modify(*info.reg).set(info.mask);
+  hal::bit_modify(*info.reg).clear(info.mask);
+}
+
 }  // namespace hal::stm32f1

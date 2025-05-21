@@ -49,4 +49,12 @@ void power_off(peripheral p_peripheral);
  * @return false - peripheral is off
  */
 [[nodiscard]] bool is_on(peripheral p_peripheral);
+
+/**
+ * @brief Resets the peripheral
+ *
+ * This will reset all the peripheral's registers to their reset/default values.
+ *
+ */
+void reset_peripheral(peripheral p_peripheral);
 }  // namespace hal::stm32f1

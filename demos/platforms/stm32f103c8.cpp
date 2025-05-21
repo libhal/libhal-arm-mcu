@@ -75,20 +75,20 @@ void initialize_platform(resource_list& p_resources)
   static hal::stm32f1::input_pin input_pin('B', 4);
   p_resources.input_pin = &input_pin;
 
-  // static hal::atomic_spin_lock adc_lock;
-  // static hal::stm32f1::adc<st_peripheral::adc1> adc(adc_lock);
-  // static auto pb0 = adc.acquire_channel(hal::stm32f1::adc_pins::pb0);
-  // p_resources.adc = &pb0;
+  static hal::atomic_spin_lock adc_lock;
+  static hal::stm32f1::adc<st_peripheral::adc1> adc(adc_lock);
+  static auto pb0 = adc.acquire_channel(hal::stm32f1::adc_pins::pb0);
+  p_resources.adc = &pb0;
 
-  // static hal::stm32f1::output_pin sda_output_pin('B', 7);
-  // static hal::stm32f1::output_pin scl_output_pin('B', 6);
-  // static hal::bit_bang_i2c bit_bang_i2c(
-  //   hal::bit_bang_i2c::pins{
-  //     .sda = &sda_output_pin,
-  //     .scl = &scl_output_pin,
-  //   },
-  //   steady_clock);
-  // p_resources.i2c = &bit_bang_i2c;
+  static hal::stm32f1::output_pin sda_output_pin('B', 7);
+  static hal::stm32f1::output_pin scl_output_pin('B', 6);
+  static hal::bit_bang_i2c bit_bang_i2c(
+    hal::bit_bang_i2c::pins{
+      .sda = &sda_output_pin,
+      .scl = &scl_output_pin,
+    },
+    steady_clock);
+  p_resources.i2c = &bit_bang_i2c;
 
   static hal::stm32f1::output_pin spi_chip_select('A', 4);
   p_resources.spi_chip_select = &spi_chip_select;
@@ -126,35 +126,23 @@ void initialize_platform(resource_list& p_resources)
   }
   p_resources.spi = spi;
 
-  hal::timer* callback_timer = nullptr;
-  static hal::stm32f1::advanced_timer<hal::stm32f1::peripheral::timer1>
-    timer1;
-  static auto timer_callback_timer = timer1.acquire_timer();
-  callback_timer = &timer_callback_timer;
-  p_resources.callback_timer = callback_timer;
+  hal::pwm16_channel* pwm_channel = nullptr;
+  hal::pwm_group_manager* pwm_frequency = nullptr;
 
-  // hal::pwm16_channel* pwm_channel_1 = nullptr;
-  // // hal::pwm16_channel* pwm_channel_2 = nullptr;
-  // hal::pwm_group_manager* pwm_frequency = nullptr;
+  if constexpr (use_libhal_4_pwm) {
+    // Use old PWM
+  } else {
+    static hal::stm32f1::general_purpose_timer<hal::stm32f1::peripheral::timer2>
+      timer;
+    static auto timer_pwm_channel =
+      timer.acquire_pwm16_channel(hal::stm32f1::timer2_pin::pa1);
+    pwm_channel = &timer_pwm_channel;
+    static auto timer1_pwm_frequency = timer.acquire_pwm_group_frequency();
+    pwm_frequency = &timer1_pwm_frequency;
+  }
 
-  // if constexpr (use_libhal_4_pwm) {
-  //   // Use old PWM
-  // } else {
-  //   static hal::stm32f1::advanced_timer<hal::stm32f1::peripheral::timer1>
-  //     timer;
-  //   static auto timer_pwm_channel_1 =
-  //     timer.acquire_pwm16_channel(hal::stm32f1::timer1_pin::pa8);
-  //   // static auto timer_pwm_channel_2 =
-  //   //   timer.acquire_pwm16_channel(hal::stm32f1::timer3_pin::pb1);
-  //   pwm_channel_1 = &timer_pwm_channel_1;
-  //   // pwm_channel_2 = &timer_pwm_channel_2;
-  //   static auto timer1_pwm_frequency = timer.acquire_pwm_group_frequency();
-  //   pwm_frequency = &timer1_pwm_frequency;
-  // }
-
-  // p_resources.pwm_channel_1 = pwm_channel_1;
-  // // p_resources.pwm_channel_2 = pwm_channel_2;
-  // p_resources.pwm_frequency = pwm_frequency;
+  p_resources.pwm_channel = pwm_channel;
+  p_resources.pwm_frequency = pwm_frequency;
 
   // TODO(#125): Initializing the can peripheral without it connected to a can
   // transceiver causes it to stall on occasion.

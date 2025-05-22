@@ -34,7 +34,7 @@ class libhal_arm_mcu_conan(ConanFile):
               "stm32f1", "stm32f103")
     settings = "compiler", "build_type", "os", "arch"
 
-    python_requires = "libhal-bootstrap/[^4.1.0]"
+    python_requires = "libhal-bootstrap/[^4.2.1]"
     python_requires_extend = "libhal-bootstrap.library"
 
     options = {
@@ -60,7 +60,7 @@ class libhal_arm_mcu_conan(ConanFile):
         if self.settings.os == "baremetal" and self.settings.compiler == "gcc":
             if self.options.use_libhal_exceptions:
                 self.requires(
-                    "libhal-exceptions/[^1.1.0]", transitive_headers=True)
+                    "libhal-exceptions/[^1.1.1]", transitive_headers=True)
             if self.options.use_picolibc:
                 compiler_version = str(self.settings.compiler.version)
                 self.requires("prebuilt-picolibc/" + compiler_version)

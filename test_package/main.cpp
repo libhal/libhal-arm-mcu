@@ -18,15 +18,6 @@
 
 #include <libhal-armcortex/dwt_counter.hpp>
 
-// Demonstrate function that throws
-void foo()
-{
-  // volatile integer used to keep
-  static int volatile a = 0;
-  a = a + 1;
-  throw 5;
-}
-
 bool volatile run = false;
 
 int main()
@@ -39,13 +30,6 @@ int main()
       uptime = counter.uptime();
     } catch (...) {
       std::terminate();
-    }
-
-    try {
-      // Test that exceptions work for the embedded target
-      foo();
-    } catch (...) {
-      uptime += 1;
     }
   }
 

@@ -25,43 +25,39 @@ find_package(libhal-arm-mcu CONFIG REQUIRED)
 if(DEFINED ENV{PICO_SDK_PATH})
 pico_sdk_init()
 
-add_executable(test_package main.cpp)
 target_link_libraries(libhal::arm-mcu INTERFACE
   pico_stdlib
   hardware_gpio
   pico_stdio
 )
-target_link_libraries(test_package
-  libhal::arm-mcu
-)
-pico_enable_stdio_usb(test_package 1)
-pico_enable_stdio_uart(test_package 0)
+pico_enable_stdio_usb(libhal::arm-mcu 1)
+pico_enable_stdio_uart(libhal::arm-mcu 0)
 endif()
 
 set(ENV{LIBHAL_PLATFORM_LIBRARY} arm-mcu)
 
-# libhal_build_demos(
-#   DEMOS
-#   adc
-#   blinker
-#   can
-#   dac
-#   gpio
-#   i2c
-#   interrupt_pin
-#   uart
-#   pwm
-#   pwm16
-#   spi
-#   blank
-#   # stream_dac
+libhal_build_demos(
+  DEMOS
+  # adc
+  blinker
+  # can
+  # dac
+  # gpio
+  # i2c
+  # interrupt_pin
+  # uart
+  # pwm
+  # pwm16
+  # spi
+  # blank
+  # # stream_dac
 
-#   PACKAGES
-#   minimp3
+  # PACKAGES
+  # minimp3
 
-#   INCLUDES
-#   .
+  INCLUDES
+  .
 
-#   LINK_LIBRARIES
-#   minimp3::minimp3
-# )
+  # LINK_LIBRARIES
+  # minimp3::minimp3
+)

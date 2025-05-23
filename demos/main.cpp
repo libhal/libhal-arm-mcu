@@ -12,101 +12,67 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// #include <libhal-exceptions/control.hpp>
-// #include <libhal-util/serial.hpp>
-// #include <libhal-util/steady_clock.hpp>
-
-// #include <resource_list.hpp>
-#include "libhal-arm-mcu/rp/output_pin.hpp"
-#include "libhal-arm-mcu/rp/serial.hpp"
-#include <array>
-#include <cstdio>
-#include <libhal-arm-mcu/rp/time.hpp>
+#include <libhal-exceptions/control.hpp>
 #include <libhal-util/serial.hpp>
 #include <libhal-util/steady_clock.hpp>
-#include <libhal/initializers.hpp>
-#include <libhal/units.hpp>
-#include <pico/time.h>
 
-int main()
+#include "resource_list.hpp"
+
+resource_list resources{};
+
+[[noreturn]] void terminate_handler() noexcept
 {
-  namespace rp = hal::rp;
-  using namespace std::chrono_literals;
+  if (resources.console) {
+    hal::print(*resources.console.value(), "☠️ APPLICATION TERMINATED ☠️\n\n");
+  }
 
-  rp::output_pin led(hal::pin<7>, { .resistor = hal::pin_resistor::none });
-  rp::stdio_serial console;
-  static auto clock = rp::clock();
+  if (resources.status_led && resources.clock) {
+    auto& led = *resources.status_led.value();
+    auto& clock = *resources.clock.value();
 
-  std::array<char, 50> strbuf = {};
+    while (true) {
+      using namespace std::chrono_literals;
+      led.level(false);
+      hal::delay(clock, 100ms);
+      led.level(true);
+      hal::delay(clock, 100ms);
+      led.level(false);
+      hal::delay(clock, 100ms);
+      led.level(true);
+      hal::delay(clock, 1000ms);
+    }
+  }
 
+  // spin here forever
   while (true) {
-    snprintf(
-      strbuf.data(), 49, "On! Current timestamp: %llu\n", clock.uptime());
-    hal::print(console, std::string_view(strbuf));
-    led.level(true);
-    hal::delay(clock, 500ms);
-    snprintf(
-      strbuf.data(), 49, "Off! Current timestamp: %llu\n", clock.uptime());
-    hal::print(console, std::string_view(strbuf));
-    led.level(false);
-    hal::delay(clock, 500ms);
+    continue;
   }
 }
 
-// resource_list resources{};
+int main()
+{
+  hal::set_terminate(terminate_handler);
 
-// [[noreturn]] void terminate_handler() noexcept
-// {
-//   if (resources.console) {
-//     hal::print(*resources.console.value(), "☠️ APPLICATION TERMINATED ☠️\n\n");
-//   }
+  initialize_platform(resources);
 
-//   if (resources.status_led && resources.clock) {
-//     auto& led = *resources.status_led.value();
-//     auto& clock = *resources.clock.value();
+  try {
+    application(resources);
+  } catch (std::bad_optional_access const& e) {
+    if (resources.console) {
+      hal::print(*resources.console.value(),
+                 "A resource required by the application was not"
+                 "available!\n"
+                 "Calling terminate!\n");
+    }
+  }  // Allow any other exceptions to terminate the application
 
-//     while (true) {
-//       using namespace std::chrono_literals;
-//       led.level(false);
-//       hal::delay(clock, 100ms);
-//       led.level(true);
-//       hal::delay(clock, 100ms);
-//       led.level(false);
-//       hal::delay(clock, 100ms);
-//       led.level(true);
-//       hal::delay(clock, 1000ms);
-//     }
-//   }
+  std::terminate();
+}
 
-//   // spin here forever
-//   while (true) {
-//     continue;
-//   }
-// }
-
-// int main()
-// {
-//   hal::set_terminate(terminate_handler);
-
-//   initialize_platform(resources);
-
-//   try {
-//     application(resources);
-//   } catch (std::bad_optional_access const& e) {
-//     if (resources.console) {
-//       hal::print(*resources.console.value(),
-//                  "A resource required by the application was not
-//                  available!\n" "Calling terminate!\n");
-//     }
-//   }  // Allow any other exceptions to terminate the application
-
-//   std::terminate();
-// }
-
-// extern "C"
-// {
-//   // This gets rid of an issue with libhal-exceptions in Debug mode.
-//   void __assert_func()  // NOLINT
-//   {
-//   }
-// }
+extern "C"
+{
+  // This gets rid of an issue with libhal-exceptions in Debug mode.
+  void __assert_func()  // NOLINT
+  {
+  }
+}

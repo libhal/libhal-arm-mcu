@@ -18,23 +18,27 @@ if(DEFINED ENV{PICO_SDK_PATH})
 include($ENV{PICO_SDK_PATH}/external/pico_sdk_import.cmake)
 endif()
 
-set(CMAKE_EXECUTABLE_SUFFIX_ASM .elf)
-set(CMAKE_EXECUTABLE_SUFFIX_C .elf)
-set(CMAKE_EXECUTABLE_SUFFIX_CXX .elf)
-
 project(demos LANGUAGES CXX C ASM)
 
 find_package(libhal-arm-mcu CONFIG REQUIRED)
 
+if(DEFINED ENV{PICO_SDK_PATH})
 pico_sdk_init()
 
 add_executable(test_package main.cpp)
-target_link_libraries(test_package PRIVATE libhal::arm-mcu pico_stdlib)
-pico_add_extra_outputs(test_package)
+target_link_libraries(libhal::arm-mcu INTERFACE
+  pico_stdlib
+  hardware_gpio
+  pico_stdio
+)
+target_link_libraries(test_package
+  libhal::arm-mcu
+)
 pico_enable_stdio_usb(test_package 1)
 pico_enable_stdio_uart(test_package 0)
+endif()
 
-# set(ENV{LIBHAL_PLATFORM_LIBRARY} arm-mcu)
+set(ENV{LIBHAL_PLATFORM_LIBRARY} arm-mcu)
 
 # libhal_build_demos(
 #   DEMOS

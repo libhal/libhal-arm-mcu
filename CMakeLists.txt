@@ -137,10 +137,10 @@ set(source_list
   src/rp/pwm.cpp
   src/rp/adc.cpp
   src/rp/spi.cpp
+  src/rp/time.cpp
   src/system_controller.cpp
   src/dwt_counter.cpp
   src/interrupt.cpp
-  src/systick_timer.cpp
 )
 
 pico_sdk_init()
@@ -155,7 +155,8 @@ set(pico_dep
   hardware_adc_headers
   hardware_spi_headers
   hardware_uart_headers
-  )
+  hardware_timer_headers
+)
 
 endif()
 

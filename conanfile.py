@@ -15,7 +15,9 @@
 # limitations under the License.
 
 from conan import ConanFile
-from conan.tools.cmake import CMake
+from conan.tools.cmake import CMakeDeps, CMakeToolchain
+from conan.tools.env import VirtualBuildEnv
+from conan.errors import ConanInvalidConfiguration
 import os
 
 
@@ -43,6 +45,7 @@ class libhal_arm_mcu_conan(ConanFile):
         "use_picolibc": [True, False],
         "platform": ["ANY"],
         "use_default_linker_script": [True, False],
+        "variant": [None, "ANY"]
     }
 
     default_options = {
@@ -50,6 +53,7 @@ class libhal_arm_mcu_conan(ConanFile):
         "use_picolibc": True,
         "platform": "ANY",
         "use_default_linker_script": True,
+        "variant": None
     }
 
     def requirements(self):
@@ -82,6 +86,32 @@ class libhal_arm_mcu_conan(ConanFile):
             "-T" + os.path.join("libhal-stm32f1", linker_script_name + ".ld"),
         ]
 
+    def _macro(self, string):
+        return string.upper().replace("-", "_")
+
+    # I don't really feel like exposing picosdk macros to consumers, so we do this
+    # to replace certain macros
+    # TODO: modify libhal-conan-bootstrap to inject variables instead of this jank
+    def generate(self):
+        virt = VirtualBuildEnv(self)
+        virt.generate()
+        tc = CMakeToolchain(self)
+        if self.options.variant:
+            tc.preprocessor_definitions["LIBHAL_VARIANT_" + self._macro(str(self.options.variant))] = "1"
+        tc.preprocessor_definitions["LIBHAL_PLATFORM_" + self._macro(str(self.options.platform))] = "1"
+        tc.generate()
+        cmake = CMakeDeps(self)
+        cmake.generate()
+
+    def validate(self):
+        if str(self.options.platform).startswith("rp2"):
+            if "rp2350" in str(self.options.platform):
+                if not self.options.variant:
+                    raise ConanInvalidConfiguration("RP2350 variant not specified")
+                if self.options.variant not in ["rp2350a", "rp2350b"]:
+                    raise ConanInvalidConfiguration("Invalid RP2350 variant specified")
+        super().validate()
+
     def package_info(self):
         self.cpp_info.libs = ["libhal-arm-mcu"]
         self.cpp_info.set_property("cmake_target_name", "libhal::arm-mcu")
@@ -95,6 +125,12 @@ class libhal_arm_mcu_conan(ConanFile):
         platform = str(self.options.platform)
         self.buildenv_info.define("LIBHAL_PLATFORM", platform)
         self.buildenv_info.define("LIBHAL_PLATFORM_LIBRARY", "arm-mcu")
+        if str(self.options.platform).startswith("rp2"):
+            defines = []
+            if self.options.variant:
+                defines.append("LIBHAL_VARIANT_" + self._macro(str(self.options.variant)) + "=1")
+            defines.append("LIBHAL_PLATFORM_" + self._macro(str(self.options.platform)) + "=1")
+            self.cpp_info.defines = defines
 
         if (self.settings.os == "baremetal" and
                 self.options.use_default_linker_script):

@@ -17,25 +17,39 @@
 // #include <libhal-util/steady_clock.hpp>
 
 // #include <resource_list.hpp>
-#include "libhal-arm-mcu/rp/generic/output_pin.hpp"
-#include "libhal-arm-mcu/rp/generic/serial.hpp"
-#include <libhal-util/serial.hpp>
+#include "libhal-arm-mcu/rp/output_pin.hpp"
+#include "libhal-arm-mcu/rp/serial.hpp"
+#include <array>
 #include <cstdio>
+#include <libhal-arm-mcu/rp/time.hpp>
+#include <libhal-util/serial.hpp>
+#include <libhal-util/steady_clock.hpp>
+#include <libhal/initializers.hpp>
 #include <libhal/units.hpp>
+#include <pico/time.h>
 
 int main()
 {
-  namespace rp = hal::rp::generic;
-  rp::output_pin led(7, { .resistor = hal::pin_resistor::none });
+  namespace rp = hal::rp;
+  using namespace std::chrono_literals;
+
+  rp::output_pin led(hal::pin<7>, { .resistor = hal::pin_resistor::none });
   rp::stdio_serial console;
+  static auto clock = rp::clock();
+
+  std::array<char, 50> strbuf = {};
 
   while (true) {
-    hal::print(console, "On!\n");
+    snprintf(
+      strbuf.data(), 49, "On! Current timestamp: %llu\n", clock.uptime());
+    hal::print(console, std::string_view(strbuf));
     led.level(true);
-    rp::sleep_ms(500);
-    hal::print(console, "Off!\n");
+    hal::delay(clock, 500ms);
+    snprintf(
+      strbuf.data(), 49, "Off! Current timestamp: %llu\n", clock.uptime());
+    hal::print(console, std::string_view(strbuf));
     led.level(false);
-    rp::sleep_ms(500);
+    hal::delay(clock, 500ms);
   }
 }
 

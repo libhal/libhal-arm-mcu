@@ -7,10 +7,12 @@ namespace hal::rp {
 
 namespace internal {
 
-#if defined(PICO_RP2040) || defined(PICO_RP2350A)
+#if defined(LIBHAL_PLATFORM_RP2040) || defined(LIBHAL_VARIANT_RP2350A)
 constexpr u8 pin_max = 30;
-#else
+#elif defined(LIBHAL_VARIANT_RP2350B)
 constexpr u8 pin_max = 48;
+#else
+#error "Unknown pico variant"
 #endif
 
 enum struct processor_type : uint8_t
@@ -19,9 +21,9 @@ enum struct processor_type : uint8_t
   rp2350
 };
 
-#if defined(PICO_RP2040)
+#if defined(LIBHAL_PLATFORM_RP2040)
 constexpr inline type t = type::rp2040;
-#elif defined(PICO_RP2350A) || defined(PICO_RP2350B) || defined(PICO_RP2350)
+#elif defined(LIBHAL_PLATFORM_RP2350_ARM_S)
 constexpr inline processor_type type = processor_type::rp2350;
 #else
 #error "Unknown Pico model"

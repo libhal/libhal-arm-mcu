@@ -43,7 +43,7 @@ void initialize_platform(resource_list& resource)
 
   static auto slice = rp::pwm_slice(hal::channel<1>);
   resource.pwm_frequency = &slice;
-  static auto chan = slice.get_pin({}, hal::pin<2>);
+  static auto chan = slice.get_pin(hal::pin<2>);
   resource.pwm_channel = &chan;
 
   // I wrote spi as spi_channel. Maybe rewrite to support multi-peripheral

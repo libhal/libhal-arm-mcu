@@ -15,7 +15,7 @@ frequency it should run at
 
 namespace hal::rp::inline v1 {
 
-pwm_slice::pwm_slice(u8 num)
+pwm_slice_runtime::pwm_slice_runtime(u8 num)
   : m_number(num)
 {
   if (num >= NUM_PWM_SLICES) {
@@ -25,7 +25,7 @@ pwm_slice::pwm_slice(u8 num)
   pwm_init(num, &config, false);
 }
 
-void pwm_slice::driver_frequency(u32 f)
+void pwm_slice_runtime::driver_frequency(u32 f)
 {
   // frequency too high
   if (f > SYS_CLK_HZ) {
@@ -57,12 +57,12 @@ void pwm_slice::driver_frequency(u32 f)
   pwm_set_clkdiv(m_number, clock_div);
 }
 
-pwm_pin pwm_slice::get_pin_raw(u8 pin, configuration const& c)
+pwm_pin pwm_slice_runtime::get_pin_raw(u8 pin, configuration const& c)
 {
   return { pin, c };
 }
 
-pwm_pin::pwm_pin(u8 pin, pwm_slice::configuration const& c)
+pwm_pin::pwm_pin(u8 pin, pwm_slice_runtime::configuration const& c)
   : m_pin(pin)
   , m_slice(pwm_gpio_to_slice_num(pin))
   , m_autostart(c.autostart)

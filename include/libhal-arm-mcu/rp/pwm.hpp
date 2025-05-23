@@ -4,6 +4,7 @@
 #include <libhal/error.hpp>
 #include <libhal/initializers.hpp>
 #include <libhal/pwm.hpp>
+#include <libhal/units.hpp>
 
 namespace hal::rp::inline v1 {
 
@@ -30,7 +31,7 @@ are called slices, and are actually very independent
 of one other. This slightly complicates synchronization,
 but also allows for more independence between slices.
 */
-struct pwm_slice final : hal::pwm_group_manager
+struct pwm_slice_runtime : hal::pwm_group_manager
 {
   static constexpr u8 max_slices()
   {
@@ -52,15 +53,13 @@ struct pwm_slice final : hal::pwm_group_manager
     }
   }
 
-  pwm_slice(channel_param auto slice)
-    : pwm_slice(slice())
+  pwm_slice_runtime(channel_param auto slice)
+    : pwm_slice_runtime(slice())
   {
     static_assert(slice() < max_slices(), "Invalid PWM slice!");
   }
 
   using configuration = pwm_pin_configuration;
-
-  pwm_pin get_pin(hal::runtime, pin_param auto pin, configuration const& = {});
 
   // copied from pico sdk
   static constexpr u8 pin_from_slice(u8 gpio)
@@ -72,15 +71,15 @@ struct pwm_slice final : hal::pwm_group_manager
     }
   }
 
-private:
+protected:
   pwm_pin get_pin_raw(u8 pin, configuration const&);
-  pwm_slice(u8 slice_num);
+  pwm_slice_runtime(u8 slice_num);
   /*
   At frequencies above ~2288 Hz, the wrap counter
   begins to lose resolution, reducing the duty cycle resolution
   down from its theoretical 16 bits of resolution.
   */
-  void driver_frequency(u32 p_frequency) override;
+  void driver_frequency(u32 p_frequency) final;
   u8 m_number;
 };
 
@@ -96,7 +95,7 @@ struct pwm_pin final : hal::pwm16_channel
   // A false disables the timer.
   void enable(bool = true);
 
-  friend pwm_slice;
+  friend pwm_slice_runtime;
 
 private:
   u32 driver_frequency() override;
@@ -107,7 +106,7 @@ private:
   */
   void driver_duty_cycle(u16 p_duty_cycle) override;
 
-  pwm_pin(u8 pin, pwm_slice::configuration const&);
+  pwm_pin(u8 pin, pwm_slice_runtime::configuration const&);
 
   u8 m_pin;
   u8 m_slice;
@@ -118,15 +117,30 @@ private:
 aligning their phases. Set argument to false to stop all of them at once */
 void enable_all_pwm(bool start = true);
 
-pwm_pin pwm_slice::get_pin(hal::runtime,
-                           pin_param auto pin,
-                           pwm_slice::configuration const& config)
+template<u64 chan>
+struct pwm_slice : pwm_slice_runtime
 {
-  u8 slice = get_slice_number(pin);
-  if (slice != m_number) {
-    hal::safe_throw(hal::argument_out_of_domain(this));
+
+  pwm_slice(channel_param auto ch)
+    : pwm_slice_runtime(ch())
+  {
+    using enum internal::processor_type;
+    static_assert(internal::type == rp2040 || internal::type == rp2350,
+                  "Update PWM channels for new RP!");
+    static_assert(ch() < 8 || internal::pin_max != 30,
+                  "PWM channel is invalid!");
+    static_assert(ch() < 11 || internal::pin_max != 48,
+                  "PWM channel is invalid!");
   }
-  return get_pin_raw(pin(), config);
-}
+
+  pwm_pin get_pin(pin_param auto pin,
+                  pwm_slice_runtime::configuration const& config = {})
+  {
+    static_assert(get_slice_number(pin) == chan, "Slice pin is incorrect!");
+    return get_pin_raw(pin(), config);
+  }
+};
+template<channel_param p>
+pwm_slice(p pin) -> pwm_slice<p::val>;
 
 }  // namespace hal::rp::inline v1

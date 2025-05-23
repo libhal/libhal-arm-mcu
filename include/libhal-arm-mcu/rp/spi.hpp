@@ -18,10 +18,11 @@ struct spi final : public hal::spi_channel
       spi::settings const& options = {})
     : spi(bus_from_tx_pin(copi()), copi(), cipo(), sck(), cs(), options)
   {
-    // CS is a normal chip select
     static_assert(cipo() % 4 == 0, "SPI RX pin is invalid");
-    static_assert(cs() % 4 == 1, "SPI CS pin is invalid");
+    // CS is a normal gpio
     static_assert(sck() % 4 == 2, "SPI SCK pin is invalid");
+    static_assert(copi() % 4 == 3, "SPI CS pin is invalid");
+
   }
   ~spi() override;
 

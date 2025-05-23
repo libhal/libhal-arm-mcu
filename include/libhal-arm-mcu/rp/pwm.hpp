@@ -15,6 +15,14 @@ enum struct pwm_ch : u8
 
 struct pwm_pin;
 
+// See https://gcc.gnu.org/bugzilla/show_bug.cgi?id=88165
+
+  struct pwm_pin_configuration
+  {
+    u16 duty_cycle = 0;
+    bool autostart = true;
+  };
+
 /*
 Somewhat unusually, the pico contains 12 pwm
 "groups" with 2 input pins each. These "groups"
@@ -50,13 +58,9 @@ struct pwm_slice final : hal::pwm_group_manager
     static_assert(slice() < max_slices(), "Invalid PWM slice!");
   }
 
-  struct configuration
-  {
-    u16 duty_cycle = 0;
-    bool autostart = true;
-  };
+  using configuration = pwm_pin_configuration;
 
-  pwm_pin get_pin(hal::runtime, pin_param auto pin, configuration const&);
+  pwm_pin get_pin(hal::runtime, pin_param auto pin, configuration const& = {});
 
   // copied from pico sdk
   static constexpr u8 pin_from_slice(u8 gpio)

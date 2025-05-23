@@ -15,7 +15,7 @@ struct spi final : public hal::spi_channel
       pin_param auto cipo,
       pin_param auto sck,
       pin_param auto cs,
-      spi::settings const& options)
+      spi::settings const& options = {})
     : spi(bus_from_tx_pin(copi()), copi(), cipo(), sck(), cs(), options)
   {
     // CS is a normal chip select

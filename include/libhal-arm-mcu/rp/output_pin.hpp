@@ -7,7 +7,7 @@ namespace hal::rp::inline v1 {
 struct output_pin final : public hal::output_pin
 {
 
-  output_pin(pin_param auto pin, settings const& options)
+  output_pin(pin_param auto pin, settings const& options = {})
     : output_pin(pin(), options)
   {
   }

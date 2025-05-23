@@ -14,7 +14,7 @@ struct i2c final : public hal::i2c
   i2c(pin_param auto sda,
       pin_param auto scl,
       bus_param auto bus,
-      settings const& s)
+      settings const& s = {})
     : i2c(sda(), scl(), bus(), s)
   {
     static_assert(bus() == 0 || bus() == 1, "Invalid bus selected!");

@@ -7,8 +7,8 @@ namespace hal::rp::inline v1 {
 struct input_pin final : public hal::input_pin
 {
 
-  input_pin(pin_param auto pin, settings const&)
-    : input_pin(pin())
+  input_pin(pin_param auto pin, settings const& s = {})
+    : input_pin(pin(), s)
   {
   }
   ~input_pin() override;

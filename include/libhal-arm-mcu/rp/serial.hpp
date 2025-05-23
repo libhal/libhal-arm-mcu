@@ -39,7 +39,7 @@ struct uart final : public hal::serial
   uart(bus_param auto bus,
        pin_param auto tx,
        pin_param auto rx,
-       settings const& options)
+       settings const& options = {})
     : uart(bus(), tx(), rx(), options)
   {
     static_assert(bus() == 0 || bus() == 1, "Invalid UART bus selected!");

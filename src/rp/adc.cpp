@@ -31,6 +31,9 @@ u16 adc::driver_read()
   if (adc_hw->cs & ADC_CS_ERR_BITS) {
     hal::safe_throw(hal::io_error(this));
   }
+  // TODO: Use hal::upscale to actually make this 16 bit
+  // for some reason the docs reference a function that
+  // doesn't exist yet
   return result;
 }
 

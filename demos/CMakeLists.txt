@@ -25,39 +25,71 @@ find_package(libhal-arm-mcu CONFIG REQUIRED)
 if(DEFINED ENV{PICO_SDK_PATH})
 pico_sdk_init()
 
-target_link_libraries(libhal::arm-mcu INTERFACE
+pico_enable_stdio_usb(libhal::arm-mcu 1)
+pico_enable_stdio_uart(libhal::arm-mcu 0)
+
+set(demo_deps
   pico_stdlib
   hardware_gpio
   pico_stdio
+  hardware_i2c
+  hardware_adc
+  hardware_spi
 )
-pico_enable_stdio_usb(libhal::arm-mcu 1)
-pico_enable_stdio_uart(libhal::arm-mcu 0)
+
+# not all of the demos work at the moment
+set(demos
+  # ADC demo needs to be updated to ADC16
+  # adc
+  blinker
+  # No canbus until I can figure out software can
+  # can
+  gpio
+  i2c
+  interrupt_pin
+  uart
+  pwm16
+  spi
+  blank
+  # stream_dac
+
+)
+
+else()
+
+set(demos
+  adc
+  blinker
+  can
+  dac
+  gpio
+  i2c
+  interrupt_pin
+  uart
+  pwm
+  pwm16
+  spi
+  blank
+  stream_dac
+)
+
+set(demo_deps
+  minimp3::minimp3
+)
 endif()
 
 set(ENV{LIBHAL_PLATFORM_LIBRARY} arm-mcu)
 
 libhal_build_demos(
   DEMOS
-  # adc
-  blinker
-  # can
-  # dac
-  # gpio
-  # i2c
-  # interrupt_pin
-  # uart
-  # pwm
-  # pwm16
-  # spi
-  # blank
-  # # stream_dac
+  ${demos}
 
-  # PACKAGES
-  # minimp3
+  PACKAGES
+  minimp3
 
   INCLUDES
   .
 
-  # LINK_LIBRARIES
-  # minimp3::minimp3
+  LINK_LIBRARIES
+  ${demo_deps}
 )

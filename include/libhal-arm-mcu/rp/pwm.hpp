@@ -17,11 +17,11 @@ struct pwm_pin;
 
 // See https://gcc.gnu.org/bugzilla/show_bug.cgi?id=88165
 
-  struct pwm_pin_configuration
-  {
-    u16 duty_cycle = 0;
-    bool autostart = true;
-  };
+struct pwm_pin_configuration
+{
+  u16 duty_cycle = 0;
+  bool autostart = true;
+};
 
 /*
 Somewhat unusually, the pico contains 12 pwm
@@ -46,9 +46,9 @@ struct pwm_slice final : hal::pwm_group_manager
   static constexpr u8 get_slice_number(pin_param auto pin)
   {
     if (pin() < 32) {
-      return (pin / 2) % 8;
+      return (pin() / 2) % 8;
     } else {
-      return pin / 2 - 8;
+      return pin() / 2 - 8;
     }
   }
 
@@ -120,13 +120,13 @@ void enable_all_pwm(bool start = true);
 
 pwm_pin pwm_slice::get_pin(hal::runtime,
                            pin_param auto pin,
-                           pwm_slice::configuration const&config)
+                           pwm_slice::configuration const& config)
 {
-  u8 slice = get_slice_number(pin());
+  u8 slice = get_slice_number(pin);
   if (slice != m_number) {
     hal::safe_throw(hal::argument_out_of_domain(this));
   }
-  get_pin_raw(pin(), config);
+  return get_pin_raw(pin(), config);
 }
 
 }  // namespace hal::rp::inline v1

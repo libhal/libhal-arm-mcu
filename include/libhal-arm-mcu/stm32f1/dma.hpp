@@ -1,4 +1,4 @@
-// Copyright 2024 Khalil Estell
+// Copyright 2024 - 2025 Khalil Estell and the libhal contributors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -14,10 +14,10 @@
 
 #pragma once
 
-#include <cstdint>
+#include <libhal/units.hpp>
 
 namespace hal::stm32f1 {
 /// Maximum length of a buffer that the stm32f1xxx series dma controller can
 /// handle.
-constexpr std::uint32_t max_dma_length = 65'535;
+constexpr u32 max_dma_length = 65'535;
 }  // namespace hal::stm32f1

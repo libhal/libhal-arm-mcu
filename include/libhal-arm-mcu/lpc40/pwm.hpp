@@ -1,4 +1,4 @@
-// Copyright 2024 Khalil Estell
+// Copyright 2024 - 2025 Khalil Estell and the libhal contributors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -14,9 +14,8 @@
 
 #pragma once
 
-#include <cstdint>
-
 #include <libhal/pwm.hpp>
+#include <libhal/units.hpp>
 
 #include "constants.hpp"
 #include "pin.hpp"
@@ -45,9 +44,9 @@ public:
     /// Pin to output pwm from
     pin pwm_pin;
     /// Channel index
-    uint8_t index;
+    u8 index;
     /// Pin function code
-    uint8_t pin_function;
+    u8 pin_function;
   };
 
   /**
@@ -57,13 +56,13 @@ public:
    * @param p_channel - PWM output channel within the peripheral block, from 1
    * to 6.
    */
-  pwm(std::uint8_t p_peripheral, std::uint8_t p_channel);
+  pwm(u8 p_peripheral, u8 p_channel);
 
   pwm(pwm const& p_other) = delete;
   pwm& operator=(pwm const& p_other) = delete;
   pwm(pwm&& p_other) noexcept = delete;
   pwm& operator=(pwm&& p_other) noexcept = delete;
-  virtual ~pwm() = default;
+  ~pwm() override = default;
 
 private:
   void driver_frequency(hertz p_frequency) override;

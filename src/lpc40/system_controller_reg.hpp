@@ -1,4 +1,4 @@
-// Copyright 2024 Khalil Estell
+// Copyright 2024 - 2025 Khalil Estell and the libhal contributors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -200,7 +200,9 @@ static constexpr auto select = bit_mask::from<8, 9>();
 constexpr intptr_t lpc_apb1_base = 0x40080000UL;
 constexpr intptr_t lpc_sc_base = lpc_apb1_base + 0x7C000;
 
+// NOLINTBEGIN(performance-no-int-to-ptr)
 /// @brief Pointer to system controller register
 inline system_controller_t* system_controller_reg =
   reinterpret_cast<system_controller_t*>(lpc_sc_base);
+// NOLINTEND(performance-no-int-to-ptr)
 }  // namespace hal::lpc40

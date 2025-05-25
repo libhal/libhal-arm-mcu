@@ -1,4 +1,4 @@
-// Copyright 2024 Khalil Estell
+// Copyright 2024 - 2025 Khalil Estell and the libhal contributors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -14,14 +14,14 @@
 
 #pragma once
 
-#include <cstdint>
+#include <limits>
 
 #include <libhal/units.hpp>
 
 #include "constants.hpp"
 
 namespace hal::stm32f411 {
-enum class dma : std::uint32_t
+enum class dma : u8
 {
   dma1 = static_cast<uint32_t>(peripheral::dma1),
   dma2 = static_cast<uint32_t>(peripheral::dma2),
@@ -38,5 +38,5 @@ void set_dma_memory_transfer(dma p_dma,
                              std::span<byte> const p_destination);
 /// Maximum length of a buffer that the stm32f411 series dma controller can
 /// handle.
-constexpr std::uint32_t max_dma_length = 65'535;
+constexpr auto max_dma_length = std::numeric_limits<u16>::max();
 }  // namespace hal::stm32f411

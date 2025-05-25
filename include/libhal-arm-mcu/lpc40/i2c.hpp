@@ -1,4 +1,4 @@
-// Copyright 2024 Khalil Estell
+// Copyright 2024 - 2025 Khalil Estell and the libhal contributors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -14,8 +14,6 @@
 
 #pragma once
 
-#include <cstdint>
-#include <libhal/io_waiter.hpp>
 #include <span>
 
 #include <libhal/i2c.hpp>
@@ -72,7 +70,7 @@ public:
    * @throws hal::operation_not_supported - if the settings or if the bus number
    * is not 0, 1, or 2.
    */
-  i2c(std::uint8_t p_bus,
+  i2c(u8 p_bus,
       i2c::settings const& p_settings = {},
       hal::io_waiter& p_waiter = hal::polling_io_waiter());
 
@@ -97,7 +95,7 @@ public:
   i2c& operator=(i2c const& p_other) = delete;
   i2c(i2c&& p_other) noexcept = delete;
   i2c& operator=(i2c&& p_other) noexcept = delete;
-  virtual ~i2c();
+  ~i2c() override;
 
 private:
   void driver_configure(settings const& p_settings) override;
@@ -109,7 +107,7 @@ private:
   void setup_interrupt();
   void interrupt();
 
-  enum class error_state
+  enum class error_state : u8
   {
     no_error = 0,
     no_such_device,

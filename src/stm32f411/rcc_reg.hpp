@@ -1,4 +1,4 @@
-// Copyright 2024 Khalil Estell
+// Copyright 2024 - 2025 Khalil Estell and the libhal contributors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -263,10 +263,12 @@ struct rcc_ahb2
   static constexpr auto usb_otg_en = bit_mask::from<7>();
 };
 
+// NOLINTBEGIN(performance-no-int-to-ptr)
 /**
  * @return reset_and_clock_control_t& - return reset_and_clock_control_t
  * register.
  */
-inline reset_and_clock_control_t* rcc =
+inline auto* rcc =
   reinterpret_cast<reset_and_clock_control_t*>(0x40000000 + 0x20000 + 0x3800);
+// NOLINTEND(performance-no-int-to-ptr)
 }  // namespace hal::stm32f411

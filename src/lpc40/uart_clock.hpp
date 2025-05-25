@@ -1,4 +1,4 @@
-// Copyright 2024 Khalil Estell
+// Copyright 2024 - 2025 Khalil Estell and the libhal contributors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -151,6 +151,7 @@ constexpr fractional_divider_t closest_fractional(int32_t p_ratio)
 
   return result;
 }
+// NOLINTBEGIN(bugprone-easily-swappable-parameters)
 /**
  * @brief Calculate the baud rate register values
  *
@@ -195,4 +196,5 @@ constexpr uart_baud_t calculate_baud(uint32_t p_baud_rate,
 
   return result;
 }
+// NOLINTEND(bugprone-easily-swappable-parameters)
 }  // namespace hal::lpc40

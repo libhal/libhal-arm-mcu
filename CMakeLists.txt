@@ -45,31 +45,31 @@ libhal_test_and_make_library(
   src/lpc40/uart.cpp
 
   # stm32_generic
+  src/stm32_generic/i2c
+  src/stm32_generic/pwm.cpp
   src/stm32_generic/spi.cpp
   src/stm32_generic/uart.cpp
 
   # stm32f1
-  src/stm32f1/can_reg.hpp
   src/stm32f1/can.cpp
   src/stm32f1/clock.cpp
-  src/stm32f1/dma.hpp
-  src/stm32f1/flash_reg.hpp
+  src/stm32f1/gpio.cpp
   src/stm32f1/input_pin.cpp
   src/stm32f1/interrupt.cpp
   src/stm32f1/output_pin.cpp
   src/stm32f1/pin.cpp
-  src/stm32f1/pin.hpp
   src/stm32f1/power.cpp
-  src/stm32f1/power.hpp
-  src/stm32f1/rcc_reg.hpp
-  src/stm32f1/uart_reg.hpp
+  src/stm32f1/pwm.cpp
+  src/stm32f1/timer.cpp
   src/stm32f1/uart.cpp
   src/stm32f1/spi.cpp
   src/stm32f1/adc.cpp
+  src/stm32f1/usart.cpp
 
   # stm32f411
   src/stm32f411/clock.cpp
   src/stm32f411/dma.cpp
+  src/stm32f411/i2c.cpp
   src/stm32f411/input_pin.cpp
   src/stm32f411/interrupt.cpp
   src/stm32f411/output_pin.cpp

@@ -1,4 +1,4 @@
-// Copyright 2024 Khalil Estell
+// Copyright 2024 - 2025 Khalil Estell and the libhal contributors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -16,7 +16,7 @@
 
 #include <libhal/output_pin.hpp>
 
-#include "pin.hpp"
+#include "constants.hpp"
 
 namespace hal::stm32f411 {
 class output_pin : public hal::output_pin
@@ -32,6 +32,7 @@ public:
   output_pin(hal::stm32f411::peripheral p_port,
              std::uint8_t p_pin,
              output_pin::settings p_settings = {});
+  ~output_pin() override = default;
 
 private:
   void driver_configure(settings const& p_settings) override;

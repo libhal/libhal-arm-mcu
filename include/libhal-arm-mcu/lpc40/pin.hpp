@@ -1,4 +1,4 @@
-// Copyright 2024 Khalil Estell
+// Copyright 2024 - 2025 Khalil Estell and the libhal contributors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -14,8 +14,6 @@
 
 #pragma once
 
-#include <cstdint>
-
 #include <libhal/units.hpp>
 
 namespace hal::lpc40 {
@@ -27,6 +25,8 @@ namespace hal::lpc40 {
 class pin
 {
 public:
+  // NOLINTBEGIN(bugprone-easily-swappable-parameters): This is an old API that
+  // should be updated later on the next breaking release.
   /**
    * @brief Construct a new pin mux and configuration driver
    *
@@ -35,15 +35,18 @@ public:
    * @param p_port - selects pin port to use
    * @param p_pin - selects pin within the port to use
    */
-  constexpr pin(std::uint8_t p_port, std::uint8_t p_pin)
+  constexpr pin(u8 p_port, u8 p_pin)
     : m_port(p_port)
     , m_pin(p_pin)
   {
   }
+  // NOLINTEND(bugprone-easily-swappable-parameters)
 
   /// Default constructor
   constexpr pin() = default;
 
+  // NOLINTBEGIN(modernize-use-nodiscard): Allow return values to be dropped if
+  // they are not needed.
   /**
    * @brief Change the function of the pin (mux the pins function)
    *
@@ -132,8 +135,9 @@ public:
    */
   pin const& dac(bool p_enable = true) const;
 
+  // NOLINTEND(modernize-use-nodiscard)
 private:
-  std::uint8_t m_port{};
-  std::uint8_t m_pin{};
+  u8 m_port{};
+  u8 m_pin{};
 };
 }  // namespace hal::lpc40

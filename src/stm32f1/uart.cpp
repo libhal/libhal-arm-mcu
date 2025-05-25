@@ -1,5 +1,20 @@
+// Copyright 2024 - 2025 Khalil Estell and the libhal contributors
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 #include <cmath>
 
+#include <libhal-arm-mcu/stm32f1/constants.hpp>
 #include <libhal-stm32f1/clock.hpp>
 #include <libhal-stm32f1/constants.hpp>
 #include <libhal-stm32f1/uart.hpp>
@@ -9,26 +24,10 @@
 #include "dma.hpp"
 #include "pin.hpp"
 #include "power.hpp"
-#include "uart_reg.hpp"
+#include "usart_reg.hpp"
 
 namespace hal::stm32f1 {
 namespace {
-static constexpr auto uart_dma_settings1 =
-  hal::bit_value()
-    .clear<dma::transfer_complete_interrupt_enable>()
-    .clear<dma::half_transfer_interrupt_enable>()
-    .clear<dma::transfer_error_interrupt_enable>()
-    .clear<dma::data_transfer_direction>()  // Read from peripheral
-    .set<dma::circular_mode>()
-    .clear<dma::peripheral_increment_enable>()
-    .set<dma::memory_increment_enable>()
-    .clear<dma::memory_to_memory>()
-    .set<dma::enable>()
-    .insert<dma::peripheral_size, 0b00U>()   // size = 8 bits
-    .insert<dma::memory_size, 0b00U>()       // size = 8 bits
-    .insert<dma::channel_priority, 0b10U>()  // Low Medium [High] Very_High
-    .to<std::uint32_t>();
-
 void configure_baud_rate(usart_t& p_usart,
                          peripheral p_peripheral,
                          serial::settings const& p_settings)
@@ -76,11 +75,6 @@ void configure_format(usart_t& p_usart, serial::settings const& p_settings)
 
   bit_modify(p_usart.control2).insert<stop>(stop_value);
 }
-
-inline usart_t* to_usart(void* p_uart)
-{
-  return reinterpret_cast<usart_t*>(p_uart);
-}
 }  // namespace
 
 uart::uart(hal::runtime,
@@ -104,51 +98,53 @@ uart::uart(std::uint8_t p_port,
     hal::safe_throw(hal::operation_not_supported(this));
   }
 
-  std::uint8_t port_tx = 'A';
-  std::uint8_t pin_tx = 9;
-  std::uint8_t port_rx = 'A';
-  std::uint8_t pin_rx = 10;
-
   switch (p_port) {
     case 1:
+      m_port_tx = 'A';
+      m_pin_tx = 9;
+      m_port_rx = 'A';
+      m_pin_rx = 10;
       m_id = peripheral::usart1;
       m_dma = 5;
-      m_uart = usart1;
       break;
     case 2:
-      port_tx = 'A';
-      pin_tx = 2;
-      port_rx = 'A';
-      pin_rx = 3;
+      m_port_tx = 'A';
+      m_pin_tx = 2;
+      m_port_rx = 'A';
+      m_pin_rx = 3;
       m_dma = 6;
       m_id = peripheral::usart2;
-      m_uart = usart2;
       break;
     case 3:
-      port_tx = 'B';
-      pin_tx = 10;
-      port_rx = 'B';
-      pin_rx = 11;
+      m_port_tx = 'B';
+      m_pin_tx = 10;
+      m_port_rx = 'B';
+      m_pin_rx = 11;
       m_dma = 3;
       m_id = peripheral::usart3;
-      m_uart = usart3;
       break;
     default:
       hal::safe_throw(hal::operation_not_supported(this));
   }
 
+  m_uart = reinterpret_cast<void*>(peripheral_to_register(m_id));  // NOLINT
+
   // Power on the usart/uart id
   power_on(m_id);
+
   // Power on dma1 which has the usart channels
-  power_on(peripheral::dma1);
+  // TODO(): DMA1 is shared across multiple peripherals
+  if (not is_on(peripheral::dma1)) {
+    power_on(peripheral::dma1);
+  }
 
   auto& uart_reg = *to_usart(m_uart);
 
   // Setup RX DMA channel
-  auto const data_address = reinterpret_cast<intptr_t>(&uart_reg.data);
-  auto const queue_address = reinterpret_cast<intptr_t>(p_buffer.data());
-  auto const data_address_int = static_cast<std::uint32_t>(data_address);
-  auto const queue_address_int = static_cast<std::uint32_t>(queue_address);
+  auto const data_address = reinterpret_cast<iptr>(&uart_reg.data);
+  auto const queue_address = reinterpret_cast<iptr>(p_buffer.data());
+  auto const data_address_int = static_cast<u32>(data_address);
+  auto const queue_address_int = static_cast<u32>(queue_address);
 
   dma::dma1->channel[m_dma - 1].transfer_amount = p_buffer.size();
   dma::dma1->channel[m_dma - 1].peripheral_address = data_address_int;
@@ -167,15 +163,21 @@ uart::uart(std::uint8_t p_port,
 
   uart::driver_configure(p_settings);
 
-  configure_pin({ .port = port_tx, .pin = pin_tx },
+  configure_pin({ .port = m_port_tx, .pin = m_pin_tx },
                 push_pull_alternative_output);
-  configure_pin({ .port = port_rx, .pin = pin_rx }, input_pull_up);
+  configure_pin({ .port = m_port_rx, .pin = m_pin_rx }, input_pull_up);
 }
 
-std::uint32_t uart::dma_cursor_position()
+uart::~uart()
 {
-  std::uint32_t receive_amount = dma::dma1->channel[m_dma - 1].transfer_amount;
-  std::uint32_t write_position = m_receive_buffer.size() - receive_amount;
+  reset_pin({ .port = m_port_tx, .pin = m_pin_tx });
+  reset_pin({ .port = m_port_rx, .pin = m_pin_rx });
+}
+
+u32 uart::dma_cursor_position()
+{
+  u32 receive_amount = dma::dma1->channel[m_dma - 1].transfer_amount;
+  u32 write_position = m_receive_buffer.size() - receive_amount;
   return write_position % m_receive_buffer.size();
 }
 

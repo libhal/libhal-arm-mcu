@@ -1,4 +1,4 @@
-// Copyright 2024 Khalil Estell
+// Copyright 2024 - 2025 Khalil Estell and the libhal contributors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -91,5 +91,6 @@ static constexpr auto done = hal::bit_mask::from<31>();
 
 constexpr std::intptr_t lpc_apb0_base = 0x40000000UL;
 constexpr std::intptr_t lpc_adc_addr = lpc_apb0_base + 0x34000;
+// NOLINTNEXTLINE(performance-no-int-to-ptr)
 inline auto* adc_reg = reinterpret_cast<adc_reg_t*>(lpc_adc_addr);
 }  // namespace hal::lpc40

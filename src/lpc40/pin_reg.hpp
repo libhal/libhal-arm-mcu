@@ -1,4 +1,4 @@
-// Copyright 2024 Khalil Estell
+// Copyright 2024 - 2025 Khalil Estell and the libhal contributors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -14,17 +14,18 @@
 
 #pragma once
 
-#include <cstdint>
+#include <array>
 #include <cstring>
 
 #include <libhal-util/bit.hpp>
+#include <libhal/units.hpp>
 
 namespace hal::lpc40 {
 /// Pin map table for maping pins and ports to registers.
 struct pin_map_t
 {
   /// Register matrix that maps against the 6 ports and the 32 pins per port
-  std::uint32_t volatile matrix[6][32];
+  std::array<std::array<u32 volatile, 32>, 6> matrix;
 };
 
 /// The address of the IO connect peripheral
@@ -70,6 +71,8 @@ static constexpr auto pin_open_drain = hal::bit_mask::from<10>();
 /// bit_mask for enabling/disabling digital to analog pin mode.
 static constexpr auto pin_dac_enable = hal::bit_mask::from<16>();
 
+// NOLINTBEGIN(performance-no-int-to-ptr)
 /// @return pin_map_t* -  Return the address of the pin map peripheral
 inline pin_map_t* pin_map = reinterpret_cast<pin_map_t*>(io_connect_address);
+// NOLINTEND(performance-no-int-to-ptr)
 }  // namespace hal::lpc40

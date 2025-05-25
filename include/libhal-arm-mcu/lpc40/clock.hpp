@@ -1,4 +1,4 @@
-// Copyright 2024 Khalil Estell
+// Copyright 2024 - 2025 Khalil Estell and the libhal contributors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -15,7 +15,6 @@
 #pragma once
 
 #include <array>
-#include <cstdint>
 
 #include <libhal-util/bit.hpp>
 #include <libhal-util/enum.hpp>
@@ -29,10 +28,10 @@ namespace hal::lpc40 {
 /// The frequency of the internal RC clock and the clock frequency at startup
 static constexpr hertz irc_frequency = 12'000'000.0f;
 /// The default clock divider for the peripheral clock
-static constexpr uint32_t default_peripheral_divider = 4;
+static constexpr u32 default_peripheral_divider = 4;
 
 /// USB oscillator source constants (not used)
-enum class usb_clock_source : uint8_t
+enum class usb_clock_source : u8
 {
   /// Use IRC or external oscillator directly
   system_clock = 0b00,
@@ -43,7 +42,7 @@ enum class usb_clock_source : uint8_t
 };
 
 /// USB Clock divider constants
-enum class usb_divider : uint8_t
+enum class usb_divider : u8
 {
   divide_by1 = 0,
   divide_by2,
@@ -52,7 +51,7 @@ enum class usb_divider : uint8_t
 };
 
 /// spifi clock options
-enum class spifi_clock_source : uint8_t
+enum class spifi_clock_source : u8
 {
   /// Use IRC or external oscillator directly
   system_clock = 0b00,
@@ -64,7 +63,7 @@ enum class spifi_clock_source : uint8_t
 
 /// Defines the codes for the flash access clock cycles required based on the
 /// CPU clocks speed.
-enum class flash_configuration : uint32_t
+enum class flash_configuration : u16
 {
   /// Flash accesses use 1 CPU clock. Use for up to 20 MHz CPU clock with
   /// power boost off.
@@ -100,7 +99,7 @@ struct clock_tree
     /// turn on/off a PLL
     bool enabled = false;
     /// increase the frequency of the PLL by the multiple
-    uint8_t multiply = 1;
+    u8 multiply = 1;
   };
   /// phase locked loops for both pll[0] and pll[1]
   std::array<pll_t, 2> pll = {};
@@ -111,7 +110,7 @@ struct clock_tree
     /// 12MHz
     bool use_pll0 = false;
     /// Divide the input clock from IRC or PLL0
-    uint8_t divider = 1;
+    u8 divider = 1;
   };
   /// cpu clock control
   cpu_t cpu = {};
@@ -133,13 +132,13 @@ struct clock_tree
     /// spifi clock source
     spifi_clock_source clock = spifi_clock_source::system_clock;
     /// spifi clock divider
-    uint8_t divider = 1;
+    u8 divider = 1;
   };
   /// spifi clock control
   spifi_t spifi = {};
 
   /// Defines the peripheral clock divider amount
-  uint8_t peripheral_divider = 4;
+  u8 peripheral_divider = 4;
 
   /// Set true to make the EMC divider half as slow as the CPU divider. Set to
   /// false to set it to equal that amount.

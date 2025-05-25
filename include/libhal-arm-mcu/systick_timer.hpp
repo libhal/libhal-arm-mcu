@@ -1,4 +1,4 @@
-// Copyright 2024 Khalil Estell
+// Copyright 2024 - 2025 Khalil Estell and the libhal contributors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -14,10 +14,8 @@
 
 #pragma once
 
-#include <cstdint>
-
-#include <libhal-util/units.hpp>
 #include <libhal/timer.hpp>
+#include <libhal/units.hpp>
 
 namespace hal::cortex_m {
 /**
@@ -80,7 +78,7 @@ public:
    *
    * Stop the timer and disable the interrupt service routine.
    */
-  ~systick_timer();
+  ~systick_timer() override;
 
 private:
   bool driver_is_running() override;

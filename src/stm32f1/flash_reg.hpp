@@ -1,4 +1,4 @@
-// Copyright 2024 Khalil Estell
+// Copyright 2024 - 2025 Khalil Estell and the libhal contributors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -15,26 +15,27 @@
 #pragma once
 
 #include <array>
-#include <cstdint>
+
+#include <libhal/units.hpp>
 
 namespace hal::stm32f1 {
 struct flash_t
 {
-  std::uint32_t volatile acr;
-  std::uint32_t volatile keyr;
-  std::uint32_t volatile optkeyr;
-  std::uint32_t volatile sr;
-  std::uint32_t volatile cr;
-  std::uint32_t volatile ar;
-  std::uint32_t volatile reserved;
-  std::uint32_t volatile obr;
-  std::uint32_t volatile wrpr;
-  std::array<uint32_t, 8> reserved1;
-  std::uint32_t volatile keyr2;
-  uint32_t reserved2;
-  std::uint32_t volatile sr2;
-  std::uint32_t volatile cr2;
-  std::uint32_t volatile ar2;
+  u32 volatile acr;
+  u32 volatile keyr;
+  u32 volatile optkeyr;
+  u32 volatile sr;
+  u32 volatile cr;
+  u32 volatile ar;
+  u32 volatile reserved;
+  u32 volatile obr;
+  u32 volatile wrpr;
+  std::array<u32, 8> reserved1;
+  u32 volatile keyr2;
+  u32 reserved2;
+  u32 volatile sr2;
+  u32 volatile cr2;
+  u32 volatile ar2;
 };
 
 /// Pointer to the flash control register

@@ -1,4 +1,4 @@
-// Copyright 2024 Khalil Estell
+// Copyright 2024 - 2025 Khalil Estell and the libhal contributors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,10 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include <cstdint>
-
 #include <libhal-arm-mcu/stm32f411/input_pin.hpp>
 #include <libhal-util/bit.hpp>
+#include <libhal/units.hpp>
 
 #include "gpio_reg.hpp"
 

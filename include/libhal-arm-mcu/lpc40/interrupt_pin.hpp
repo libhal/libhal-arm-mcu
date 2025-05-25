@@ -1,4 +1,4 @@
-// Copyright 2024 Khalil Estell
+// Copyright 2024 - 2025 Khalil Estell and the libhal contributors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -14,9 +14,8 @@
 
 #pragma once
 
-#include <cstdint>
-
 #include <libhal/interrupt_pin.hpp>
+#include <libhal/units.hpp>
 
 namespace hal::lpc40 {
 /**
@@ -33,20 +32,20 @@ public:
    * @param pin - selects pin within the port to use
    * @param p_settings - initial pin settings
    */
-  interrupt_pin(std::uint8_t port,  // NOLINT
-                std::uint8_t pin,
+  interrupt_pin(u8 port,  // NOLINT
+                u8 pin,
                 settings const& p_settings = {});
   interrupt_pin(interrupt_pin const& p_other) = delete;
   interrupt_pin& operator=(interrupt_pin const& p_other) = delete;
   interrupt_pin(interrupt_pin&& p_other) noexcept = delete;
   interrupt_pin& operator=(interrupt_pin&& p_other) noexcept = delete;
-  virtual ~interrupt_pin();
+  ~interrupt_pin() override;
 
 private:
   void driver_configure(settings const& p_settings) override;
   void driver_on_trigger(hal::callback<handler> p_callback) override;
 
-  uint8_t m_port;
-  uint8_t m_pin;
+  u8 m_port;
+  u8 m_pin;
 };
 }  // namespace hal::lpc40

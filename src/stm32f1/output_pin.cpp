@@ -1,4 +1,4 @@
-// Copyright 2024 Khalil Estell
+// Copyright 2024 - 2025 Khalil Estell and the libhal contributors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -14,16 +14,14 @@
 
 #include <libhal-stm32f1/output_pin.hpp>
 
-#include <cstdint>
-
 #include <libhal-util/bit.hpp>
 #include <libhal/error.hpp>
 
 #include "pin.hpp"
 
 namespace hal::stm32f1 {
-output_pin::output_pin(std::uint8_t p_port,  // NOLINT
-                       std::uint8_t p_pin,   // NOLINT
+output_pin::output_pin(u8 p_port,  // NOLINT
+                       u8 p_pin,   // NOLINT
                        output_pin::settings p_settings)
   : m_port(p_port)
   , m_pin(p_pin)
@@ -34,27 +32,31 @@ output_pin::output_pin(std::uint8_t p_port,  // NOLINT
 
 void output_pin::driver_configure(settings const& p_settings)
 {
-  if (!p_settings.open_drain) {
-    configure_pin({ .port = m_port, .pin = m_pin }, push_pull_gpio_output);
-  } else if (p_settings.open_drain) {
-    configure_pin({ .port = m_port, .pin = m_pin }, open_drain_gpio_output);
+  pin_select const pin = { .port = m_port, .pin = m_pin };
+  reset_pin(pin);
+  if (p_settings.open_drain) {
+    configure_pin(pin, open_drain_gpio_output);
+  } else {
+    configure_pin(pin, push_pull_gpio_output);
   }
+  // NOTE: The `resistor` field is ignored in this function
 }
 
 void output_pin::driver_level(bool p_high)
 {
   if (p_high) {
     // The first 16 bits of the register set the output state
-    gpio(m_port).bsrr = 1 << m_pin;
+    gpio_reg(m_port).bsrr = 1 << m_pin;
   } else {
     // The last 16 bits of the register reset the output state
-    gpio(m_port).bsrr = 1 << (16 + m_pin);
+    gpio_reg(m_port).bsrr = 1 << (16 + m_pin);
   }
 }
 
 bool output_pin::driver_level()
 {
-  auto pin_value = bit_extract(bit_mask::from(m_pin), gpio(m_port).idr);
+  auto const pin_value =
+    bit_extract(bit_mask::from(m_pin), gpio_reg(m_port).idr);
 
   return static_cast<bool>(pin_value);
 }

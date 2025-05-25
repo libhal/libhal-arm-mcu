@@ -1,4 +1,4 @@
-// Copyright 2024 Khalil Estell
+// Copyright 2024 - 2025 Khalil Estell and the libhal contributors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -14,43 +14,43 @@
 
 #pragma once
 
-#include <cstdint>
+#include <libhal/units.hpp>
 
 namespace hal::lpc40 {
 struct i2c_reg_t
 {
   /// Offset: 0x000 i2c control set register (r/w)
-  std::uint32_t volatile control_set;
+  u32 volatile control_set;
   /// offset: 0x004 i2c status register (r/ )
-  std::uint32_t const volatile stat;
+  u32 const volatile stat;
   /// offset: 0x008 i2c data register (r/w)
-  std::uint32_t volatile dat;
+  u32 volatile dat;
   /// offset: 0x00c i2c peripheral address register 0 (r/w)
-  std::uint32_t volatile address0;
+  u32 volatile address0;
   /// offset: 0x010 sch duty cycle register high half word (r/w)
-  std::uint32_t volatile duty_cycle_high;
+  u32 volatile duty_cycle_high;
   /// offset: 0x014 scl duty cycle register low half word (r/w)
-  std::uint32_t volatile duty_cycle_low;
+  u32 volatile duty_cycle_low;
   /// offset: 0x018 i2c control clear register ( /w)
-  std::uint32_t volatile control_clear;
+  u32 volatile control_clear;
   /// offset: 0x01c monitor mode control register (r/w)
-  std::uint32_t volatile monitor_mode_control;
+  u32 volatile monitor_mode_control;
   /// offset: 0x020 i2c peripheral address register 1 (r/w)
-  std::uint32_t volatile address1;
+  u32 volatile address1;
   /// offset: 0x024 i2c peripheral address register 2 (r/w)
-  std::uint32_t volatile address2;
+  u32 volatile address2;
   /// offset: 0x028 i2c peripheral address register 3 (r/w)
-  std::uint32_t volatile address3;
+  u32 volatile address3;
   /// offset: 0x02c data buffer register ( /w)
-  std::uint32_t const volatile data_buffer;
+  u32 const volatile data_buffer;
   /// offset: 0x030 i2c peripheral address mask register 0 (r/w)
-  std::uint32_t volatile mask0;
+  u32 volatile mask0;
   /// offset: 0x034 i2c peripheral address mask register 1 (r/w)
-  std::uint32_t volatile mask1;
+  u32 volatile mask1;
   /// offset: 0x038 i2c peripheral address mask register 2 (r/w)
-  std::uint32_t volatile mask2;
+  u32 volatile mask2;
   /// offset: 0x03c i2c peripheral address mask register 3 (r/w)
-  std::uint32_t volatile mask3;
+  u32 volatile mask3;
 };
 
 /// lpc40xx i2c peripheral control register flags
@@ -68,7 +68,7 @@ static constexpr auto interface_enable = 1 << 6;
 };  // namespace i2c_control
 
 /// lpc40xx i2c peripheral state numbers
-enum class i2c_host_state : std::uint32_t
+enum class i2c_host_state : u8
 {
   bus_error = 0x00,
   start_condition = 0x08,

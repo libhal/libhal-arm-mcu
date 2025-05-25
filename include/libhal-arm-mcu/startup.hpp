@@ -1,4 +1,4 @@
-// Copyright 2024 Khalil Estell
+// Copyright 2024 - 2025 Khalil Estell and the libhal contributors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -14,8 +14,9 @@
 
 #pragma once
 
-#include <cstdint>
 #include <cstring>
+
+#include <libhal/units.hpp>
 
 // These need to be supplied by the linker script if the application developer
 // in order to call hal::cortex::initialize_data_section()
@@ -25,29 +26,29 @@ extern "C"
    * @brief this symbol is placed at the start of the data section in RAM.
    *
    */
-  extern uint32_t __data_start;
+  extern hal::u32 __data_start;  // NOLINT: needed for linker script
   /**
    * @brief this symbol is place at the start of the data contents in ROM. This
    * is where the globally defined values for each statically allocated variable
    * is saved.
    *
    */
-  extern uint32_t __data_source;
+  extern hal::u32 __data_source;  // NOLINT: needed for linker script
   /**
    * @brief This is the length of the data to be copied from ROM to RAM.
    *
    */
-  extern uint32_t __data_size;
+  extern hal::u32 __data_size;  // NOLINT: needed for linker script
   /**
    * @brief this symbol is placed at the start of the bss section in RAM.
    *
    */
-  extern uint32_t __bss_start;
+  extern hal::u32 __bss_start;  // NOLINT: needed for linker script
   /**
    * @brief This is the length of the bss section to write zeros to.
    *
    */
-  extern uint32_t __bss_size;
+  extern hal::u32 __bss_size;  // NOLINT: needed for linker script
 }
 
 namespace hal::cortex_m {
@@ -71,7 +72,7 @@ inline void initialize_data_section()
   // Initialize statically allocated data by coping the data section from ROM to
   // RAM. CRT0.o/.s does not perform .data section initialization so it must be
   // done by initialize_platform.
-  intptr_t data_size = reinterpret_cast<intptr_t>(&__data_size);
+  auto data_size = reinterpret_cast<intptr_t>(&__data_size);
   memcpy(&__data_start, &__data_source, data_size);
 }
 /**
@@ -84,7 +85,7 @@ inline void initialize_bss_section()
   // Initialize statically allocated data by coping the data section from ROM to
   // RAM. CRT0.o/.s does not perform .data section initialization so it must be
   // done by initialize_platform.
-  intptr_t bss_size = reinterpret_cast<intptr_t>(&__bss_size);
+  auto bss_size = reinterpret_cast<intptr_t>(&__bss_size);
   memset(&__bss_start, 0, bss_size);
 }
 }  // namespace hal::cortex_m

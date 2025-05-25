@@ -1,4 +1,4 @@
-// Copyright 2024 Khalil Estell
+// Copyright 2024 - 2025 Khalil Estell and the libhal contributors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -14,9 +14,21 @@
 
 #pragma once
 
-#include <cstdint>
+#include <libhal/units.hpp>
 
 namespace hal::stm32f1 {
+/**
+ * @brief Structure to hold a port & pin selection
+ *
+ */
+struct pin_select
+{
+  /// @brief Port letter: must be a capitol letter from 'A' to 'G'
+  u8 port;
+  /// @brief Pin number: must be between 0 to 15
+  u8 pin;
+};
+
 /**
  * @brief Make JTAG pins not associated with SWD available as IO
  *
@@ -46,6 +58,11 @@ enum class mco_source : std::uint8_t
  * @param p_source - source clock to channel to the PA8 pin
  */
 void activate_mco_pa8(mco_source p_source);
+
+/**
+ * @brief Reset pin back to default
+ */
+void reset_mco_pa8();
 
 /**
  * @brief Remap pins for can bus peripheral

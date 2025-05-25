@@ -1,4 +1,4 @@
-// Copyright 2024 Khalil Estell
+// Copyright 2024 - 2025 Khalil Estell and the libhal contributors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -14,8 +14,6 @@
 
 #include <bitset>
 #include <cstdint>
-#include <libhal/steady_clock.hpp>
-#include <libhal/units.hpp>
 #include <optional>
 
 #include <libhal-arm-mcu/interrupt.hpp>
@@ -32,6 +30,8 @@
 #include <libhal-util/steady_clock.hpp>
 #include <libhal/can.hpp>
 #include <libhal/error.hpp>
+#include <libhal/steady_clock.hpp>
+#include <libhal/units.hpp>
 #include <nonstd/scope.hpp>
 
 #include "can_reg.hpp"
@@ -1050,8 +1050,10 @@ can_peripheral_manager::identifier_filter_set::identifier_filter_set(
 can_peripheral_manager::extended_identifier_filter_set::
   extended_identifier_filter_set(hal::u8 p_filter_index, fifo_assignment p_fifo)
   : filter{
-    can_peripheral_manager::extended_identifier_filter{ { p_filter_index, 0 } },
-    can_peripheral_manager::extended_identifier_filter{ { p_filter_index, 1 } },
+    can_peripheral_manager::extended_identifier_filter{
+      { .filter_index = p_filter_index, .word_index = 0 } },
+    can_peripheral_manager::extended_identifier_filter{
+      { .filter_index = p_filter_index, .word_index = 1 } },
   }
 {
   // Required to set filter scale and type

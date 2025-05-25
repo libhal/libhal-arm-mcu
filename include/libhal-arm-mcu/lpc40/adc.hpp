@@ -1,4 +1,4 @@
-// Copyright 2024 Khalil Estell
+// Copyright 2024 - 2025 Khalil Estell and the libhal contributors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -13,8 +13,6 @@
 // limitations under the License.
 
 #pragma once
-
-#include <cstdint>
 
 #include <libhal/adc.hpp>
 #include <libhal/initializers.hpp>
@@ -88,7 +86,7 @@ public:
   adc& operator=(adc const& p_other) = delete;
   adc(adc&& p_other) noexcept = delete;
   adc& operator=(adc&& p_other) noexcept = delete;
-  virtual ~adc() = default;
+  ~adc() override = default;
 
 private:
   channel get_predefined_channel_info(std::uint8_t p_channel);

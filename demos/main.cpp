@@ -1,4 +1,4 @@
-// Copyright 2024 Khalil Estell
+// Copyright 2024 - 2025 Khalil Estell and the libhal contributors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -71,7 +71,7 @@ int main()
 extern "C"
 {
   // This gets rid of an issue with libhal-exceptions in Debug mode.
-  void __assert_func()
+  void __assert_func()  // NOLINT
   {
   }
 }

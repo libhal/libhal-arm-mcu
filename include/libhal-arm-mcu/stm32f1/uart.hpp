@@ -1,4 +1,4 @@
-// Copyright 2024 Khalil Estell
+// Copyright 2024 - 2025 Khalil Estell and the libhal contributors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -14,15 +14,15 @@
 
 #pragma once
 
-#include <cstdint>
-
 #include <libhal/initializers.hpp>
 #include <libhal/serial.hpp>
+#include <libhal/units.hpp>
 
 #include "constants.hpp"
 #include "dma.hpp"
 
 namespace hal::stm32f1 {
+
 class uart final : public hal::serial
 {
 public:
@@ -57,6 +57,7 @@ public:
        std::uint8_t p_port,
        std::span<hal::byte> p_buffer,
        serial::settings const& p_settings = {});
+  ~uart() override;
 
 private:
   uart(std::uint8_t p_port,
@@ -68,12 +69,16 @@ private:
   read_t driver_read(std::span<hal::byte> p_data) override;
   void driver_flush() override;
 
-  std::uint32_t dma_cursor_position();
+  u32 dma_cursor_position();
 
   void* m_uart;
   std::span<hal::byte> m_receive_buffer;
-  std::uint16_t m_read_index;
-  std::uint8_t m_dma;
+  u16 m_read_index;
+  u8 m_dma;
+  u8 m_port_tx;
+  u8 m_pin_tx;
+  u8 m_port_rx;
+  u8 m_pin_rx;
   peripheral m_id;
 };
 }  // namespace hal::stm32f1

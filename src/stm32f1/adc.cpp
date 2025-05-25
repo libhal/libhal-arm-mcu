@@ -1,4 +1,4 @@
-// Copyright 2024 Khalil Estell
+// Copyright 2024 - 2025 Khalil Estell and the libhal contributors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,14 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include <cstdint>
-
 #include <array>
 #include <mutex>
 
 #include <libhal-arm-mcu/stm32f1/adc.hpp>
 #include <libhal-arm-mcu/stm32f1/clock.hpp>
 #include <libhal-arm-mcu/stm32f1/constants.hpp>
+#include <libhal-arm-mcu/stm32f1/pin.hpp>
 #include <libhal-util/bit.hpp>
 #include <libhal-util/bit_limits.hpp>
 #include <libhal-util/enum.hpp>
@@ -31,9 +30,7 @@
 #include "power.hpp"
 
 namespace hal::stm32f1 {
-
 namespace {
-
 /// adc register map
 struct adc_reg_t
 {
@@ -223,44 +220,10 @@ adc_reg_t& to_reg(void* p_address)
   return *reinterpret_cast<adc_reg_t*>(p_address);
 }
 
-void setup_adc(hal::stm32f1::peripheral p_adc_peripheral, void* p_address)
-{
-  auto& adc_reg = to_reg(p_address);
-
-  // Verify adc's clock is not higher than the maximum frequency.
-  auto const adc_frequency = frequency(p_adc_peripheral);
-  if (adc_frequency > 14.0_MHz) {
-    hal::safe_throw(hal::operation_not_supported(nullptr));
-  }
-
-  // Power on adc clock.
-  power_on(p_adc_peripheral);
-
-  // Turns on and calibrates the adc only if its the first time power-on. This
-  // is to prevent accidentally toggling the start of a new conversion as it
-  // uses the same bit.
-  if (bit_extract<adc_control_register_2::ad_converter_on>(adc_reg.control_2) ==
-      0) {
-    // Power on the adc.
-    hal::bit_modify(adc_reg.control_2)
-      .set<adc_control_register_2::ad_converter_on>();
-
-    // Start adc calibration. ADC must have been in power-on state for a minimum
-    // of 2 clock cycles before starting calibration.
-    hal::bit_modify(adc_reg.control_2)
-      .set<adc_control_register_2::ad_calibration>();
-
-    // Wait for calibration to complete.
-    while (bit_extract<adc_control_register_2::ad_calibration>(
-             adc_reg.control_2) == 1) {
-    }
-  }
-}
-
-void setup_pin(adc_peripheral_manager::pins const& p_pin)
+pin_select to_pin_select(adc_pins const& p_pin)
 {
   // Derive port and pin from the enum.
-  hal::u8 port, pin;
+  hal::u8 port = 0, pin = 0;
   if (hal::value(p_pin) <= 7) {
     port = 'A';
     pin = hal::value(p_pin);
@@ -271,56 +234,72 @@ void setup_pin(adc_peripheral_manager::pins const& p_pin)
     port = 'C';
     pin = hal::value(p_pin) - 10;
   }
-
-  // Set specified pin to analog input mode.
-  configure_pin({ .port = port, .pin = pin }, input_analog);
+  return { .port = port, .pin = pin };
 }
 }  // namespace
 
-adc_peripheral_manager::adc_peripheral_manager(adc_selection p_adc_selection,
-                                               hal::basic_lock& p_lock)
+adc_manager::adc_manager(peripheral p_id, hal::basic_lock& p_lock)
   : m_lock(&p_lock)
-  , adc_reg_location(nullptr)
+  , m_reg(nullptr)
+  , m_id(p_id)
 {
-  // Base address for apb2 bus.
-  constexpr std::uintptr_t stm_apb2_base = 0x40000000UL;
-  // Determines the appropriate adc peripheral to use and its memory offset.
-  std::uintptr_t adc_offset;
-  hal::stm32f1::peripheral adc_peripheral;
-  switch (p_adc_selection) {
-    case adc_selection::adc1:
-      adc_offset = 0x12400;
-      adc_peripheral = peripheral::adc1;
+  switch (p_id) {
+    case peripheral::adc1:
+      // NOLINTNEXTLINE(performance-no-int-to-ptr)
+      m_reg = reinterpret_cast<void*>(0x4001'2400UL);
       break;
-    case adc_selection::adc2:
-      adc_offset = 0x12800;
-      adc_peripheral = peripheral::adc2;
+    case peripheral::adc2:
+      // NOLINTNEXTLINE(performance-no-int-to-ptr): Need
+      m_reg = reinterpret_cast<void*>(0x4001'2800UL);
       break;
     default:
-      adc_offset = 0x12400;
-      adc_peripheral = peripheral::adc1;
+      hal::safe_throw(hal::argument_out_of_domain(this));
       break;
   }
-  // Stores address of specified adc peripheral's config registers to the
-  // manager object.
-  // NOLINTNEXTLINE(performance-no-int-to-ptr)
-  adc_reg_location = reinterpret_cast<void*>(stm_apb2_base + adc_offset);
 
-  setup_adc(adc_peripheral, adc_reg_location);
+  auto& adc_reg = to_reg(m_reg);
+
+  // Verify adc's clock is not higher than the maximum frequency.
+  auto const adc_frequency = frequency(m_id);
+  if (adc_frequency > 14.0_MHz) {
+    hal::safe_throw(hal::operation_not_supported(nullptr));
+  }
+
+  // Power on adc clock.
+  power_on(m_id);
+
+  // Turns on and calibrates the adc only if its the first time power-on. This
+  // is to prevent accidentally toggling the start of a new conversion as it
+  // uses the same bit.
+  if (not bit_extract<adc_control_register_2::ad_converter_on>(
+        adc_reg.control_2)) {
+    // Power on the adc.
+    hal::bit_modify(adc_reg.control_2)
+      .set<adc_control_register_2::ad_converter_on>();
+
+    // Start adc calibration. ADC must have been in power-on state for a minimum
+    // of 2 clock cycles before starting calibration.
+    hal::bit_modify(adc_reg.control_2)
+      .set<adc_control_register_2::ad_calibration>();
+
+    // Wait for calibration to complete.
+    while (
+      bit_extract<adc_control_register_2::ad_calibration>(adc_reg.control_2)) {
+      continue;
+    }
+  }
 }
-
-adc_peripheral_manager::channel adc_peripheral_manager::acquire_channel(
-  pins p_pin)
+adc_manager::channel adc_manager::acquire_channel(adc_pins p_pin)
 {
   return { *this, p_pin };
 }
 
-float adc_peripheral_manager::read_channel(pins p_pin)
+float adc_manager::read_channel(adc_pins p_pin)
 {
   // Lock the lock.
   std::lock_guard<hal::basic_lock> acquire_lock(*m_lock);
 
-  auto& adc_reg = to_reg(adc_reg_location);
+  auto& adc_reg = to_reg(m_reg);
   // Set the specified channel to be sampled.
   hal::bit_modify(adc_reg.regular_sequence_3)
     .insert<adc_regular_sequence_register_3::first_conversion>(
@@ -346,17 +325,21 @@ float adc_peripheral_manager::read_channel(pins p_pin)
   return sample / full_scale_float;
 }
 
-adc_peripheral_manager::channel::channel(adc_peripheral_manager& p_manager,
-                                         adc_peripheral_manager::pins p_pin)
+adc_manager::channel::channel(adc_manager& p_manager, adc_pins p_pin)
   : m_manager(&p_manager)
   , m_pin(p_pin)
 {
-  setup_pin(m_pin);
+  // Set specified pin to analog input mode.
+  configure_pin(to_pin_select(m_pin), input_analog);
 }
 
-float adc_peripheral_manager::channel::driver_read()
+float adc_manager::channel::driver_read()
 {
   return m_manager->read_channel(m_pin);
 }
 
+adc_manager::channel::~channel()
+{
+  reset_pin(to_pin_select(m_pin));
+}
 }  // namespace hal::stm32f1

@@ -1,4 +1,4 @@
-// Copyright 2024 Khalil Estell
+// Copyright 2024 - 2025 Khalil Estell and the libhal contributors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -14,7 +14,9 @@
 
 #pragma once
 
-#include <cstdint>
+#include <array>
+
+#include <libhal/units.hpp>
 
 namespace hal::lpc40 {
 /**
@@ -24,49 +26,49 @@ namespace hal::lpc40 {
 struct pwm_reg_t
 {
   /// Offset: 0x000 Interrupt Register (R/W)
-  std::uint32_t volatile interrupt_register;
+  u32 volatile interrupt_register;
   /// Offset: 0x004 Timer Control Register (R/W)
-  std::uint32_t volatile timer_control_register;
+  u32 volatile timer_control_register;
   /// Offset: 0x008 Timer Counter Register (R/W)
-  std::uint32_t volatile timer_counter_register;
+  u32 volatile timer_counter_register;
   /// Offset: 0x00C Prescale Register (R/W)
-  std::uint32_t volatile prescale_register;
+  u32 volatile prescale_register;
   /// Offset: 0x010 Prescale Counter Register (R/W)
-  std::uint32_t volatile prescale_counter_register;
+  u32 volatile prescale_counter_register;
   /// Offset: 0x014 Match Control Register (R/W)
-  std::uint32_t volatile match_control_register;
+  u32 volatile match_control_register;
   /// Offset: 0x018 Match Register 0 (R/W)
-  std::uint32_t volatile match_register_0;
+  u32 volatile match_register_0;
   /// Offset: 0x01C Match Register 1 (R/W)
-  std::uint32_t volatile match_register_1;
+  u32 volatile match_register_1;
   /// Offset: 0x020 Match Register 2 (R/W)
-  std::uint32_t volatile match_register_2;
+  u32 volatile match_register_2;
   /// Offset: 0x024 Match Register 3 (R/W)
-  std::uint32_t volatile match_register_3;
+  u32 volatile match_register_3;
   /// Offset: 0x028 Capture Control Register (R/W)
-  std::uint32_t volatile capture_control_register;
+  u32 volatile capture_control_register;
   /// Offset: 0x02C Capture Register 0 (R/ )
-  std::uint32_t const volatile capture_register_0;
+  u32 const volatile capture_register_0;
   /// Offset: 0x030 Capture Register 1 (R/ )
-  std::uint32_t const volatile capture_register_1;
+  u32 const volatile capture_register_1;
   /// Offset: 0x034 Capture Register 2 (R/ )
-  std::uint32_t const volatile capture_register_2;
+  u32 const volatile capture_register_2;
   /// Offset: 0x038 Capture Register 3 (R/ )
-  std::uint32_t const volatile capture_register_3;
-  std::uint32_t reserved0;
+  u32 const volatile capture_register_3;
+  u32 reserved0;
   /// Offset: 0x040 Match Register 4 (R/W)
-  std::uint32_t volatile match_register_4;
+  u32 volatile match_register_4;
   /// Offset: 0x044 Match Register 5 (R/W)
-  std::uint32_t volatile match_register_5;
+  u32 volatile match_register_5;
   /// Offset: 0x048 Match Register 6 (R/W)
-  std::uint32_t volatile match_register_6;
+  u32 volatile match_register_6;
   /// Offset: 0x04C PWM Control Register (R/W)
-  std::uint32_t volatile pwm_control_register;
+  u32 volatile pwm_control_register;
   /// Offset: 0x050 Load Enable Register (R/W)
-  std::uint32_t volatile load_enable_register;
-  std::uint32_t reserved1[7];
+  u32 volatile load_enable_register;
+  std::array<u32, 7> reserved1;
   /// Offset: 0x070 Counter Control Register (R/W)
-  std::uint32_t volatile counter_control_register;
+  u32 volatile counter_control_register;
 };
 
 inline pwm_reg_t* pwm_reg0 = reinterpret_cast<pwm_reg_t*>(0x4001'4000);

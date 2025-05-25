@@ -1,4 +1,4 @@
-// Copyright 2024 Khalil Estell
+// Copyright 2024 - 2025 Khalil Estell and the libhal contributors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -14,32 +14,33 @@
 
 #pragma once
 
-#include <cstdint>
+#include <array>
 
 #include <libhal-util/bit.hpp>
+#include <libhal/units.hpp>
 
 namespace hal::stm32f1 {
 
 struct can_tx_mailbox_t
 {
-  std::uint32_t volatile TIR;
-  std::uint32_t volatile TDTR;
-  std::uint32_t volatile TDLR;
-  std::uint32_t volatile TDHR;
+  u32 volatile TIR;
+  u32 volatile TDTR;
+  u32 volatile TDLR;
+  u32 volatile TDHR;
 };
 
 struct can_fifo_mailbox_t
 {
-  std::uint32_t volatile RIR;
-  std::uint32_t volatile RDTR;
-  std::uint32_t volatile RDLR;
-  std::uint32_t volatile RDHR;
+  u32 volatile RIR;
+  u32 volatile RDTR;
+  u32 volatile RDLR;
+  u32 volatile RDHR;
 };
 
 struct can_filter_register_t
 {
-  std::uint32_t volatile FR1;
-  std::uint32_t volatile FR2;
+  u32 volatile FR1;
+  u32 volatile FR2;
 };
 
 /**
@@ -48,29 +49,29 @@ struct can_filter_register_t
 
 struct can_reg_t
 {
-  std::uint32_t volatile MCR;
-  std::uint32_t volatile MSR;
-  std::uint32_t volatile TSR;
-  std::uint32_t volatile RF0R;
-  std::uint32_t volatile RF1R;
-  std::uint32_t volatile IER;
-  std::uint32_t volatile ESR;
-  std::uint32_t volatile BTR;
-  std::uint32_t reserved0[88];
-  can_tx_mailbox_t transmit_mailbox[3];
-  can_fifo_mailbox_t fifo_mailbox[2];
-  std::uint32_t reserved1[12];
-  std::uint32_t volatile FMR;
-  std::uint32_t volatile FM1R;
-  std::uint32_t volatile reserved2;
-  std::uint32_t volatile FS1R;
-  std::uint32_t volatile reserved3;
-  std::uint32_t volatile FFA1R;
-  std::uint32_t volatile reserved4;
-  std::uint32_t volatile FA1R;
-  std::uint32_t volatile reserved5[8];
+  u32 volatile MCR;
+  u32 volatile MSR;
+  u32 volatile TSR;
+  u32 volatile RF0R;
+  u32 volatile RF1R;
+  u32 volatile IER;
+  u32 volatile ESR;
+  u32 volatile BTR;
+  std::array<u32, 88> reserved0;
+  std::array<can_tx_mailbox_t, 3> transmit_mailbox;
+  std::array<can_fifo_mailbox_t, 2> fifo_mailbox;
+  std::array<u32, 12> reserved1;
+  u32 volatile FMR;
+  u32 volatile FM1R;
+  u32 volatile reserved2;
+  u32 volatile FS1R;
+  u32 volatile reserved3;
+  u32 volatile FFA1R;
+  u32 volatile reserved4;
+  u32 volatile FA1R;
+  std::array<u32, 8> volatile reserved5;
   // Limited to only 14 on connectivity line devices
-  can_filter_register_t filter_registers[28];
+  std::array<can_filter_register_t, 28> filter_registers;
 };
 
 inline auto* can1_reg = reinterpret_cast<can_reg_t*>(0x4000'6400);

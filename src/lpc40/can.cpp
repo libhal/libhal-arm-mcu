@@ -1,4 +1,4 @@
-// Copyright 2024 Khalil Estell
+// Copyright 2024 - 2025 Khalil Estell and the libhal contributors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -62,7 +62,7 @@ void enable_acceptance_filter() noexcept
 
 [[maybe_unused]] bool has_data(can_reg_t* p_reg) noexcept
 {
-  return bit_extract<can_global_status::receive_buffer>(p_reg->GSR);
+  return bit_extract<can_global_status::receive_buffer>(p_reg->gsr);
 }
 
 can::message_t receive(can_reg_t* p_reg) noexcept
@@ -71,7 +71,7 @@ can::message_t receive(can_reg_t* p_reg) noexcept
   can::message_t message;
 
   // Extract all of the information from the message frame
-  auto frame = p_reg->RFS;
+  auto frame = p_reg->rfs;
   auto remote_request = bit_extract<can_frame_info::remote_request>(frame);
   auto length = bit_extract<can_frame_info::length>(frame);
 
@@ -79,22 +79,22 @@ can::message_t receive(can_reg_t* p_reg) noexcept
   message.length = static_cast<uint8_t>(length);
 
   // Get the frame ID
-  message.id = bit_extract<id_mask>(p_reg->RID);
+  message.id = bit_extract<id_mask>(p_reg->rid);
 
   // Pull the bytes from RDA into the payload array
-  message.payload[0] = (p_reg->RDA >> (0 * 8)) & 0xFF;
-  message.payload[1] = (p_reg->RDA >> (1 * 8)) & 0xFF;
-  message.payload[2] = (p_reg->RDA >> (2 * 8)) & 0xFF;
-  message.payload[3] = (p_reg->RDA >> (3 * 8)) & 0xFF;
+  message.payload[0] = (p_reg->rda >> (0 * 8)) & 0xFF;
+  message.payload[1] = (p_reg->rda >> (1 * 8)) & 0xFF;
+  message.payload[2] = (p_reg->rda >> (2 * 8)) & 0xFF;
+  message.payload[3] = (p_reg->rda >> (3 * 8)) & 0xFF;
 
   // Pull the bytes from RDB into the payload array
-  message.payload[4] = (p_reg->RDB >> (0 * 8)) & 0xFF;
-  message.payload[5] = (p_reg->RDB >> (1 * 8)) & 0xFF;
-  message.payload[6] = (p_reg->RDB >> (2 * 8)) & 0xFF;
-  message.payload[7] = (p_reg->RDB >> (3 * 8)) & 0xFF;
+  message.payload[4] = (p_reg->rdb >> (0 * 8)) & 0xFF;
+  message.payload[5] = (p_reg->rdb >> (1 * 8)) & 0xFF;
+  message.payload[6] = (p_reg->rdb >> (2 * 8)) & 0xFF;
+  message.payload[7] = (p_reg->rdb >> (3 * 8)) & 0xFF;
 
   // Release the RX buffer and allow another buffer to be read.
-  p_reg->CMR = value(can_commands::release_rx_buffer);
+  p_reg->cmr = value(can_commands::release_rx_buffer);
 
   return message;
 }
@@ -191,7 +191,7 @@ void can::configure_baud_rate(can::port const& p_port,
     enable_triple_sampling = 1U;
   }
 
-  bit_modify(reg->BTR)
+  bit_modify(reg->btr)
     .insert<can_bus_timing::sync_jump_width>(sync_jump_width)
     .insert<can_bus_timing::time_segment1>(phase_segment1)
     .insert<can_bus_timing::time_segment2>(phase_segment2)
@@ -213,13 +213,13 @@ void can::setup(can::port const& p_port, can::settings const& p_settings)
   p_port.rd.function(p_port.rd_function_code);
 
   // Enable reset mode in order to write to CAN registers.
-  bit_modify(reg->MOD).set<can_mode::reset>();
+  bit_modify(reg->mod).set<can_mode::reset>();
 
   configure_baud_rate(p_port, p_settings);
   enable_acceptance_filter();
 
   // Disable reset mode, enabling the device
-  bit_modify(reg->MOD).clear<can_mode::reset>();
+  bit_modify(reg->mod).clear<can_mode::reset>();
 }
 
 can::can(std::uint8_t p_port_number, can::settings const& p_settings)
@@ -255,7 +255,7 @@ can::~can()
   // Disable generating an interrupt request by this CAN peripheral, but leave
   // the interrupt enabled. We must NOT disable the interrupt via Arm's NVIC
   // as it could be used by the other CAN peripheral.
-  bit_modify(reg->IER).clear<can_interrupts::received_message>();
+  bit_modify(reg->ier).clear<can_interrupts::received_message>();
 }
 
 /**
@@ -283,31 +283,31 @@ void can::driver_send(message_t const& p_message)
   // through it.
   bool sent = false;
   while (!sent) {
-    auto const status_register = reg->SR;
+    auto const status_register = reg->sr;
     // Check if any buffer is available.
     if (bit_extract<can_buffer_status::bus_status>(status_register) ==
         can_buffer_status::bus_off) {
       throw std::errc::network_down;
     } else if (bit_extract<can_buffer_status::tx1_released>(status_register)) {
-      reg->TFI1 = can_message_registers.frame;
-      reg->TID1 = can_message_registers.id;
-      reg->TDA1 = can_message_registers.data_a;
-      reg->TDB1 = can_message_registers.data_b;
-      reg->CMR = value(can_commands::send_tx_buffer1);
+      reg->tfi1 = can_message_registers.frame;
+      reg->tid1 = can_message_registers.id;
+      reg->tda1 = can_message_registers.data_a;
+      reg->tdb1 = can_message_registers.data_b;
+      reg->cmr = value(can_commands::send_tx_buffer1);
       sent = true;
     } else if (bit_extract<can_buffer_status::tx2_released>(status_register)) {
-      reg->TFI2 = can_message_registers.frame;
-      reg->TID2 = can_message_registers.id;
-      reg->TDA2 = can_message_registers.data_a;
-      reg->TDB2 = can_message_registers.data_b;
-      reg->CMR = value(can_commands::send_tx_buffer2);
+      reg->tfi2 = can_message_registers.frame;
+      reg->tid2 = can_message_registers.id;
+      reg->tda2 = can_message_registers.data_a;
+      reg->tdb2 = can_message_registers.data_b;
+      reg->cmr = value(can_commands::send_tx_buffer2);
       sent = true;
     } else if (bit_extract<can_buffer_status::tx3_released>(status_register)) {
-      reg->TFI3 = can_message_registers.frame;
-      reg->TID3 = can_message_registers.id;
-      reg->TDA3 = can_message_registers.data_a;
-      reg->TDB3 = can_message_registers.data_b;
-      reg->CMR = value(can_commands::send_tx_buffer3);
+      reg->tfi3 = can_message_registers.frame;
+      reg->tid3 = can_message_registers.id;
+      reg->tda3 = can_message_registers.data_a;
+      reg->tdb3 = can_message_registers.data_b;
+      reg->cmr = value(can_commands::send_tx_buffer3);
       sent = true;
     }
   }
@@ -318,7 +318,7 @@ void can::driver_bus_on()
   auto* reg = get_can_reg(m_port.id);
   // When the device is in "bus-off" mode, the mode::reset bit is set to '1'. To
   // re-enable the device, clear the reset bit.
-  bit_modify(reg->MOD).clear<can_mode::reset>();
+  bit_modify(reg->mod).clear<can_mode::reset>();
 }
 
 void can::driver_on_receive(hal::callback<can::handler> p_receive_handler)
@@ -336,6 +336,6 @@ void can::driver_on_receive(hal::callback<can::handler> p_receive_handler)
   auto can_handler = static_callable<can, 0, void(void)>(isr).get_handler();
   cortex_m::enable_interrupt(irq::can, can_handler);
 
-  bit_modify(reg->IER).set(can_interrupts::received_message);
+  bit_modify(reg->ier).set(can_interrupts::received_message);
 }
 }  // namespace hal::lpc40

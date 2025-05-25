@@ -1,4 +1,4 @@
-// Copyright 2024 Khalil Estell
+// Copyright 2024 - 2025 Khalil Estell and the libhal contributors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -14,31 +14,30 @@
 
 #pragma once
 
-#include <cstdint>
-
-#include <libhal-armcortex/interrupt.hpp>
+#include <libhal-arm-mcu/interrupt.hpp>
+#include <libhal/units.hpp>
 
 namespace hal::stm32f411 {
 
 /// Number of bits between each enable register
-static constexpr std::uint32_t bus_id_offset = 32;
+static constexpr u32 bus_id_offset = 32;
 /// Bit position of AHB1
-static constexpr std::uint32_t ahb1_bus = bus_id_offset * 0;
+static constexpr u32 ahb1_bus = bus_id_offset * 0;
 /// Bit position of AHB2
-static constexpr std::uint32_t ahb2_bus = bus_id_offset * 1;
+static constexpr u32 ahb2_bus = bus_id_offset * 1;
 /// Bit position of AHB3
-static constexpr std::uint32_t ahb3_bus = bus_id_offset * 2;
+static constexpr u32 ahb3_bus = bus_id_offset * 2;
 
 /// Bit position of APB1
-static constexpr std::uint32_t apb1_bus = bus_id_offset * 3;
+static constexpr u32 apb1_bus = bus_id_offset * 3;
 /// Bit position of AHB2
-static constexpr std::uint32_t apb2_bus = bus_id_offset * 4;
+static constexpr u32 apb2_bus = bus_id_offset * 4;
 
 /// Bit position of outside any bus
-static constexpr std::uint32_t beyond = bus_id_offset * 5;
+static constexpr u32 beyond = bus_id_offset * 5;
 
 /// List of each peripheral and their power on id number for this platform
-enum class peripheral : std::uint32_t
+enum class peripheral : u8
 {
   gpio_a = ahb1_bus + 0,
   gpio_b = ahb1_bus + 1,
@@ -84,7 +83,7 @@ enum class peripheral : std::uint32_t
 };
 
 /// List of interrupt request numbers for this platform
-enum class irq : cortex_m::irq_t
+enum class irq : cortex_m::irq_t  // NOLINT(performance-enum-size)
 {
   /// Window WatchDog
   window_watchdog = 0,

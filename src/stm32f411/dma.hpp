@@ -1,4 +1,4 @@
-// Copyright 2024 Khalil Estell
+// Copyright 2024 - 2025 Khalil Estell and the libhal contributors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -15,7 +15,6 @@
 #pragma once
 
 #include <array>
-#include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <span>
@@ -23,6 +22,7 @@
 #include <libhal-arm-mcu/stm32f411/constants.hpp>
 #include <libhal-arm-mcu/stm32f411/dma.hpp>
 #include <libhal-util/bit.hpp>
+#include <libhal-util/enum.hpp>
 #include <libhal/functional.hpp>
 
 namespace hal::stm32f411 {
@@ -54,11 +54,13 @@ enum class dma_priority_level : std::uint8_t
   high = 0b10U,
   very_high = 0b11U,
 };
-enum class dma_flow_controller : bool
+
+enum class dma_flow_controller : u8
 {
   dma_controls_flow = 0b0U,
   peripheral_controls_flow = 0b1U,
 };
+
 struct dma_channel_stream_t
 {
   uint8_t stream;
@@ -167,9 +169,11 @@ inline constexpr intptr_t ahb_base = 0x4002'0000UL;
 inline constexpr intptr_t dma_base = ahb_base + 0x6000;
 static inline dma_config_t* get_dma_reg(peripheral p_dma)
 {
-  std::uint8_t dma_index =
-    static_cast<int>(p_dma) - static_cast<int>(peripheral::dma1);
+  auto const dma_index =
+    static_cast<u8>(hal::value(p_dma) - hal::value(peripheral::dma1));
+
   // STM has dedicated memory blocks where every 2^10 is a new DMA register
+  // NOLINTNEXTLINE(performance-no-int-to-ptr)
   return reinterpret_cast<dma_config_t*>(dma_base + (dma_index << 10));
 }
 

@@ -1,4 +1,4 @@
-// Copyright 2024 Khalil Estell
+// Copyright 2024 - 2025 Khalil Estell and the libhal contributors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -14,9 +14,8 @@
 
 #pragma once
 
-#include <cstdint>
-
 #include <libhal-armcortex/interrupt.hpp>
+#include <libhal/units.hpp>
 
 /**
  * @brief libhal drivers for the lpc40 series of microcontrollers from NXP
@@ -24,7 +23,7 @@
  */
 namespace hal::lpc40 {
 /// List of each peripheral and their power on id number for this platform
-enum class peripheral : std::uint8_t
+enum class peripheral : u8
 {
   lcd = 0,
   timer0 = 1,
@@ -63,7 +62,7 @@ enum class peripheral : std::uint8_t
 };
 
 /// List of interrupt request numbers for this platform
-enum class irq : cortex_m::irq_t
+enum class irq : cortex_m::irq_t  // NOLINT(performance-enum-size)
 {
   /// Watchdog Timer Interrupt
   wdt = 0,

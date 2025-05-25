@@ -29,6 +29,7 @@ libhal_build_demos(
   interrupt_pin
   uart
   pwm
+  pwm16
   spi
   blank
   # stream_dac

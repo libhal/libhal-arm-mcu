@@ -1,4 +1,4 @@
-// Copyright 2024 Khalil Estell
+// Copyright 2024 - 2025 Khalil Estell and the libhal contributors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -14,10 +14,10 @@
 
 #pragma once
 
-#include "constants.hpp"
-
 #include <libhal/error.hpp>
 #include <libhal/units.hpp>
+
+#include "constants.hpp"
 
 namespace hal::stm32f1 {
 

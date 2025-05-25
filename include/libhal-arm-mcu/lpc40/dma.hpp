@@ -1,18 +1,18 @@
 #pragma once
 
 #include <cstddef>
-#include <cstdint>
 
 #include <libhal/functional.hpp>
 #include <libhal/lock.hpp>
+#include <libhal/units.hpp>
 
 namespace hal::lpc40 {
 
-constexpr std::uintptr_t dma_reg_address = 0x2008'0000;
-constexpr std::size_t dma_max_transfer_size = (1 << 12) - 1;
-constexpr std::size_t dma_channel_count = 8;
+constexpr uptr dma_reg_address = 0x2008'0000;
+constexpr usize dma_max_transfer_size = (1 << 12) - 1;
+constexpr usize dma_channel_count = 8;
 
-enum class dma_transfer_type : std::uint8_t
+enum class dma_transfer_type : u8
 {
   /// Flow Control: DMA controller
   memory_to_memory = 0b000,
@@ -32,7 +32,7 @@ enum class dma_transfer_type : std::uint8_t
   peripheral_to_peripheral_sp = 0b111
 };
 
-enum class dma_channel_select : std::uint8_t
+enum class dma_channel_select : u8
 {
   channel0 = 0,
   channel1,
@@ -44,14 +44,14 @@ enum class dma_channel_select : std::uint8_t
   channel7,
 };
 
-enum class dma_transfer_width : std::uint8_t
+enum class dma_transfer_width : u8
 {
   bit_8 = 0b000,
   bit_16 = 0b001,
   bit_32 = 0b010,
 };
 
-enum class dma_burst_size : std::uint8_t
+enum class dma_burst_size : u8
 {
   bytes_1 = 0b000,
   bytes_4 = 0b001,
@@ -63,7 +63,7 @@ enum class dma_burst_size : std::uint8_t
   bytes_256 = 0b111,
 };
 
-enum class dma_peripheral : std::uint8_t
+enum class dma_peripheral : u8
 {
   memory_or_timer0_match0 = 0,
   sd_card_and_timer0_match1 = 1,

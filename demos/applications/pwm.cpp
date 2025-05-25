@@ -1,4 +1,4 @@
-// Copyright 2024 Khalil Estell
+// Copyright 2024 - 2025 Khalil Estell and the libhal contributors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -36,8 +36,8 @@ void application(resource_list& p_map)
 
     pwm.duty_cycle(0.5f);
 
-    for (unsigned iteration = 0; iteration < 100; iteration++) {
-      auto frequency = 100.0_Hz * (static_cast<float>(iteration) * 10);
+    for (unsigned iteration = 1; iteration < 20; iteration++) {
+      auto const frequency = static_cast<hal::hertz>(100_Hz * iteration);
       pwm.frequency(frequency);
       hal::delay(clock, 100ms);
     }

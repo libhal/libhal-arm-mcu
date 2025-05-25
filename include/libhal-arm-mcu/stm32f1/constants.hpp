@@ -1,4 +1,4 @@
-// Copyright 2024 Khalil Estell
+// Copyright 2024 - 2025 Khalil Estell and the libhal contributors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -14,25 +14,24 @@
 
 #pragma once
 
-#include <cstdint>
-
 #include <libhal-armcortex/interrupt.hpp>
+#include <libhal/units.hpp>
 
 namespace hal::stm32f1 {
 
 /// Number of bits between each enable register
-static constexpr std::uint32_t bus_id_offset = 32;
+static constexpr u32 bus_id_offset = 32;
 /// Bit position of AHB
-static constexpr std::uint32_t ahb_bus = bus_id_offset * 0;
+static constexpr u32 ahb_bus = bus_id_offset * 0;
 /// Bit position of APB1
-static constexpr std::uint32_t apb1_bus = bus_id_offset * 1;
+static constexpr u32 apb1_bus = bus_id_offset * 1;
 /// Bit position of AHB2
-static constexpr std::uint32_t apb2_bus = bus_id_offset * 2;
+static constexpr u32 apb2_bus = bus_id_offset * 2;
 /// Bit position of systems outside of any bus
-static constexpr std::uint32_t beyond_bus = bus_id_offset * 3;
+static constexpr u32 beyond_bus = bus_id_offset * 3;
 
 /// List of each peripheral and their power on id number for this platform
-enum class peripheral : std::uint8_t
+enum class peripheral : u8
 {
   dma1 = ahb_bus + 0,
   dma2 = ahb_bus + 1,
@@ -88,10 +87,11 @@ enum class peripheral : std::uint8_t
   cpu = beyond_bus + 0,
   system_timer = beyond_bus + 1,
   i2s = beyond_bus + 2,
+
 };
 
 /// List of interrupt request numbers for this platform
-enum class irq : cortex_m::irq_t
+enum class irq : cortex_m::irq_t  // NOLINT(performance-enum-size)
 {
   /// Window WatchDog
   window_watchdog = 0,

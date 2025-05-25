@@ -1,4 +1,4 @@
-// Copyright 2024 Khalil Estell
+// Copyright 2024 - 2025 Khalil Estell and the libhal contributors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -29,6 +29,7 @@
 #include <libhal/spi.hpp>
 #include <libhal/steady_clock.hpp>
 #include <libhal/stream_dac.hpp>
+#include <libhal/zero_copy_serial.hpp>
 
 struct resource_list
 {
@@ -40,6 +41,7 @@ struct resource_list
   // message will be printed if the `console` field has been set, then call
   // std::terminate.
   std::optional<hal::serial*> console;
+  std::optional<hal::zero_copy_serial*> zero_copy_serial;
   std::optional<hal::output_pin*> status_led;
   std::optional<hal::steady_clock*> clock;
   std::optional<hal::can_transceiver*> can_transceiver;
@@ -50,6 +52,8 @@ struct resource_list
   std::optional<hal::i2c*> i2c;
   std::optional<hal::interrupt_pin*> interrupt_pin;
   std::optional<hal::pwm*> pwm;
+  std::optional<hal::pwm16_channel*> pwm_channel;
+  std::optional<hal::pwm_group_manager*> pwm_frequency;
   std::optional<hal::spi*> spi;
   std::optional<hal::output_pin*> spi_chip_select;
   std::optional<hal::stream_dac_u8*> stream_dac;

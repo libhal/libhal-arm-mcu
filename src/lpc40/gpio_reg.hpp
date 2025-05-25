@@ -1,4 +1,4 @@
-// Copyright 2024 Khalil Estell
+// Copyright 2024 - 2025 Khalil Estell and the libhal contributors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -15,10 +15,9 @@
 #pragma once
 
 #include <array>
-#include <cstddef>
-#include <cstdint>
 
 #include <libhal-util/bit.hpp>
+#include <libhal-util/units.hpp>
 
 namespace hal::lpc40 {
 /// gpio peripheral register map
@@ -40,6 +39,7 @@ struct lpc_gpio_t
 
 inline constexpr intptr_t ahb_base = 0x20080000UL;
 
+// NOLINTBEGIN(performance-no-int-to-ptr)
 inline std::array gpio_reg{
   reinterpret_cast<lpc_gpio_t*>(ahb_base + 0x18000),
   reinterpret_cast<lpc_gpio_t*>(ahb_base + 0x18020),
@@ -48,6 +48,7 @@ inline std::array gpio_reg{
   reinterpret_cast<lpc_gpio_t*>(ahb_base + 0x18080),
   reinterpret_cast<lpc_gpio_t*>(ahb_base + 0x180a0),
 };
+// NOLINTEND(performance-no-int-to-ptr)
 
 inline constexpr bit_mask pin_mask(std::uint8_t p_pin)
 {

@@ -1,4 +1,4 @@
-// Copyright 2024 Khalil Estell
+// Copyright 2024 - 2025 Khalil Estell and the libhal contributors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -14,11 +14,11 @@
 
 #pragma once
 
-#include <cstdint>
 #include <span>
 
 #include <libhal/io_waiter.hpp>
 #include <libhal/spi.hpp>
+#include <libhal/units.hpp>
 
 #include "constants.hpp"
 #include "pin.hpp"
@@ -39,11 +39,11 @@ public:
     /// spi clock pin
     pin data_in;
     /// clock function code
-    std::uint8_t clock_function;
+    u8 clock_function;
     /// scl pin function code
-    std::uint8_t data_out_function;
+    u8 data_out_function;
     /// scl pin function code
-    std::uint8_t data_in_function;
+    u8 data_in_function;
   };
 
   /**
@@ -56,7 +56,7 @@ public:
    * @throws hal::operation_not_supported - if the p_bus is not 0, 1, or 2 or if
    * the spi settings could not be achieved.
    */
-  dma_spi(std::uint8_t p_bus,
+  dma_spi(u8 p_bus,
           hal::io_waiter& p_waiter = hal::polling_io_waiter(),
           spi::settings const& p_settings = {});
   /**
@@ -70,7 +70,7 @@ public:
   dma_spi& operator=(dma_spi const& p_other) = delete;
   dma_spi(dma_spi&& p_other) noexcept = delete;
   dma_spi& operator=(dma_spi&& p_other) noexcept = delete;
-  virtual ~dma_spi();
+  ~dma_spi() override;
 
 private:
   void driver_configure(settings const& p_settings) override;

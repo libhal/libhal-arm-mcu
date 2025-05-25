@@ -1,4 +1,4 @@
-// Copyright 2024 Khalil Estell
+// Copyright 2024 - 2025 Khalil Estell and the libhal contributors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -14,8 +14,6 @@
 
 #pragma once
 
-#include <cstdint>
-
 #include <libhal/units.hpp>
 
 #include "constants.hpp"
@@ -29,7 +27,7 @@ namespace hal::stm32f411 {
 class pin
 {
 public:
-  enum class pin_function
+  enum class pin_function : u8
   {
     input,
     output,
@@ -52,6 +50,14 @@ public:
     alternate15
   };
 
+  enum class mco_source : std::uint8_t
+  {
+    system_clock = 0b00U,
+    pll_i2s = 0b01U,
+    high_speed_external = 0b10U,
+    pll = 0b11U,
+  };
+
   /**
    * @brief Construct a new pin mux and configuration driver
    *
@@ -61,6 +67,9 @@ public:
    * @param p_pin - selects pin within the port to use
    */
   pin(peripheral p_port, std::uint8_t p_pin) noexcept;
+
+  // NOLINTBEGIN(modernize-use-nodiscard): Allow return values to be dropped if
+  // they are not needed.
 
   /**
    * @brief Change the function of the pin (mux the pins function)
@@ -86,13 +95,7 @@ public:
    */
   pin const& open_drain(bool p_enable = true) const noexcept;
 
-  enum class mco_source : std::uint8_t
-  {
-    system_clock = 0b00U,
-    pll_i2s = 0b01U,
-    high_speed_external = 0b10U,
-    pll = 0b11U,
-  };
+  // NOLINTEND(modernize-use-nodiscard)
 
   /**
    * @brief Output a clock divided by 2 on the PA8 pin

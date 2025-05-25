@@ -1,4 +1,4 @@
-// Copyright 2024 Khalil Estell
+// Copyright 2024 - 2025 Khalil Estell and the libhal contributors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -17,6 +17,7 @@
 #include <cstdint>
 
 #include <libhal-util/bit.hpp>
+#include <libhal-util/units.hpp>
 
 namespace hal::cortex_m {
 /// @brief Structure type to access the System Timer (SysTick).
@@ -57,10 +58,12 @@ static constexpr auto count_flag = hal::bit_mask::from<16>();
 };  // namespace systick_control_register
 
 /// The address of the sys_tick register
-inline constexpr std::intptr_t systick_address = 0xE000'E010UL;
+inline constexpr auto systick_address = static_cast<uptr>(0xE000'E010UL);
 /// The IRQ number for the SysTick interrupt vector
-inline constexpr std::uint16_t event_number = 15;
+inline constexpr u16 event_number = 15;
 
 /// @return auto* - Address of the ARM Cortex SysTick peripheral
-inline auto* sys_tick = reinterpret_cast<systick_register_t*>(systick_address);
+inline auto* sys_tick =
+  // NOLINTNEXTLINE(performance-no-int-to-ptr)
+  reinterpret_cast<systick_register_t*>(systick_address);
 }  // namespace hal::cortex_m

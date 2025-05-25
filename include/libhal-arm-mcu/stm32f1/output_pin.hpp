@@ -1,4 +1,4 @@
-// Copyright 2024 Khalil Estell
+// Copyright 2024 - 2025 Khalil Estell and the libhal contributors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -14,13 +14,14 @@
 
 #pragma once
 
-#include <cstdint>
-
 #include <libhal/output_pin.hpp>
+#include <libhal/units.hpp>
 
 namespace hal::stm32f1 {
 /**
  * @brief Output pin implementation for the stm32::f10x
+ * @deprecated Use the `hal::gpio<peripheral>` class instead. This will be
+ * removed in the next later stage.
  *
  */
 class output_pin final : public hal::output_pin
@@ -34,8 +35,8 @@ public:
    * @param p_settings - initial pin settings
    * @throws hal::argument_out_of_domain - if the port and pin are not valid
    */
-  output_pin(std::uint8_t p_port,  // NOLINT
-             std::uint8_t p_pin,   // NOLINT
+  output_pin(u8 p_port,  // NOLINT
+             u8 p_pin,   // NOLINT
              output_pin::settings p_settings = {});
 
 private:
@@ -43,7 +44,7 @@ private:
   void driver_level(bool p_high) override;
   bool driver_level() override;
 
-  std::uint8_t m_port{};
-  std::uint8_t m_pin{};
+  u8 m_port{};
+  u8 m_pin{};
 };
 }  // namespace hal::stm32f1

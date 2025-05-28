@@ -12,12 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include <libhal-lpc40/pwm.hpp>
+#include <libhal-arm-mcu/lpc40/pwm.hpp>
 
-#include <libhal-lpc40/clock.hpp>
-#include <libhal-lpc40/constants.hpp>
-#include <libhal-lpc40/pin.hpp>
-#include <libhal-lpc40/power.hpp>
+#include <libhal-arm-mcu/lpc40/clock.hpp>
+#include <libhal-arm-mcu/lpc40/constants.hpp>
+#include <libhal-arm-mcu/lpc40/pin.hpp>
+#include <libhal-arm-mcu/lpc40/power.hpp>
 
 #include "pwm_reg.hpp"
 

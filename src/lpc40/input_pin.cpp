@@ -14,12 +14,12 @@
 
 #include <cstdint>
 
-#include <libhal-lpc40/input_pin.hpp>
+#include <libhal-arm-mcu/lpc40/input_pin.hpp>
 
-#include <libhal-lpc40/clock.hpp>
-#include <libhal-lpc40/constants.hpp>
-#include <libhal-lpc40/pin.hpp>
-#include <libhal-lpc40/power.hpp>
+#include <libhal-arm-mcu/lpc40/clock.hpp>
+#include <libhal-arm-mcu/lpc40/constants.hpp>
+#include <libhal-arm-mcu/lpc40/pin.hpp>
+#include <libhal-arm-mcu/lpc40/power.hpp>
 #include <libhal-util/bit.hpp>
 
 #include "gpio_reg.hpp"

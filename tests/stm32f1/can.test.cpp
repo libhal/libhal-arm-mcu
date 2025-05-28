@@ -1,4 +1,4 @@
-#include <libhal-stm32f1/can.hpp>
+#include <libhal-arm-mcu/stm32f1/can.hpp>
 
 #include <boost/ut.hpp>
 

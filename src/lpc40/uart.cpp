@@ -12,16 +12,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include <libhal-lpc40/uart.hpp>
+#include <libhal-arm-mcu/lpc40/uart.hpp>
 
 #include <cstdint>
 #include <span>
 
+#include <libhal-arm-mcu/lpc40/clock.hpp>
+#include <libhal-arm-mcu/lpc40/constants.hpp>
+#include <libhal-arm-mcu/lpc40/interrupt.hpp>
+#include <libhal-arm-mcu/lpc40/power.hpp>
 #include <libhal-armcortex/interrupt.hpp>
-#include <libhal-lpc40/clock.hpp>
-#include <libhal-lpc40/constants.hpp>
-#include <libhal-lpc40/interrupt.hpp>
-#include <libhal-lpc40/power.hpp>
 #include <libhal-util/bit.hpp>
 #include <libhal-util/enum.hpp>
 #include <libhal-util/static_callable.hpp>

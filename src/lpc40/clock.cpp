@@ -1,4 +1,4 @@
-#include <libhal-lpc40/clock.hpp>
+#include <libhal-arm-mcu/lpc40/clock.hpp>
 
 #include <cstdint>
 

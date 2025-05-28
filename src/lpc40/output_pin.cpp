@@ -12,11 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include <libhal-lpc40/output_pin.hpp>
+#include <libhal-arm-mcu/lpc40/output_pin.hpp>
 
 #include <cstdint>
 
-#include <libhal-lpc40/pin.hpp>
+#include <libhal-arm-mcu/lpc40/pin.hpp>
 
 #include "gpio_reg.hpp"
 

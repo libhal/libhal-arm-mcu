@@ -15,6 +15,7 @@
 #include <libhal-arm-mcu/dwt_counter.hpp>
 #include <libhal-arm-mcu/lpc40/adc.hpp>
 #include <libhal-arm-mcu/lpc40/can.hpp>
+#include <libhal-arm-mcu/lpc40/clock.hpp>
 #include <libhal-arm-mcu/lpc40/constants.hpp>
 #include <libhal-arm-mcu/lpc40/dac.hpp>
 #include <libhal-arm-mcu/lpc40/dma_spi.hpp>
@@ -28,7 +29,6 @@
 #include <libhal-arm-mcu/lpc40/uart.hpp>
 #include <libhal-arm-mcu/startup.hpp>
 #include <libhal-arm-mcu/system_control.hpp>
-#include <libhal-lpc40/clock.hpp>
 
 #include <resource_list.hpp>
 

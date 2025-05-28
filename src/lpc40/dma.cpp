@@ -4,11 +4,11 @@
 #include <bit>
 #include <mutex>
 
+#include <libhal-arm-mcu/lpc40/constants.hpp>
+#include <libhal-arm-mcu/lpc40/dma.hpp>
+#include <libhal-arm-mcu/lpc40/interrupt.hpp>
+#include <libhal-arm-mcu/lpc40/power.hpp>
 #include <libhal-armcortex/interrupt.hpp>
-#include <libhal-lpc40/constants.hpp>
-#include <libhal-lpc40/dma.hpp>
-#include <libhal-lpc40/interrupt.hpp>
-#include <libhal-lpc40/power.hpp>
 #include <libhal-util/atomic_spin_lock.hpp>
 #include <libhal-util/bit.hpp>
 #include <libhal-util/enum.hpp>

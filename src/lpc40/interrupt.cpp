@@ -1,5 +1,5 @@
+#include <libhal-arm-mcu/interrupt.hpp>
 #include <libhal-arm-mcu/lpc40/constants.hpp>
-#include <libhal-armcortex/interrupt.hpp>
 
 namespace hal::lpc40 {
 void initialize_interrupts()

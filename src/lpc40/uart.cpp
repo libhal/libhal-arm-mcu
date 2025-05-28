@@ -17,11 +17,11 @@
 #include <cstdint>
 #include <span>
 
+#include <libhal-arm-mcu/interrupt.hpp>
 #include <libhal-arm-mcu/lpc40/clock.hpp>
 #include <libhal-arm-mcu/lpc40/constants.hpp>
 #include <libhal-arm-mcu/lpc40/interrupt.hpp>
 #include <libhal-arm-mcu/lpc40/power.hpp>
-#include <libhal-armcortex/interrupt.hpp>
 #include <libhal-util/bit.hpp>
 #include <libhal-util/enum.hpp>
 #include <libhal-util/static_callable.hpp>

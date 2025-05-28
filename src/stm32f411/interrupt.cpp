@@ -1,6 +1,6 @@
+#include <libhal-arm-mcu/interrupt.hpp>
 #include <libhal-arm-mcu/stm32f411/constants.hpp>
 #include <libhal-arm-mcu/stm32f411/interrupt.hpp>
-#include <libhal-armcortex/interrupt.hpp>
 
 namespace hal::stm32f411 {
 void initialize_interrupts()

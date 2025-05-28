@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include <libhal-armcortex/system_control.hpp>
+#include <libhal-arm-mcu/system_control.hpp>
 
 #include "system_controller_reg.hpp"
 

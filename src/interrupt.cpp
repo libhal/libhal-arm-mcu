@@ -12,13 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include <libhal-armcortex/interrupt.hpp>
+#include <libhal-arm-mcu/interrupt.hpp>
 
 #include <algorithm>
 #include <cstdint>
 #include <span>
 
-#include <libhal-armcortex/system_control.hpp>
+#include <libhal-arm-mcu/system_control.hpp>
 #include <libhal-util/enum.hpp>
 
 #include "interrupt_reg.hpp"

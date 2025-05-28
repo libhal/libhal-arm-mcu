@@ -14,12 +14,12 @@
 
 #include <libhal-arm-mcu/lpc40/can.hpp>
 
+#include <libhal-arm-mcu/interrupt.hpp>
 #include <libhal-arm-mcu/lpc40/clock.hpp>
 #include <libhal-arm-mcu/lpc40/constants.hpp>
 #include <libhal-arm-mcu/lpc40/interrupt.hpp>
 #include <libhal-arm-mcu/lpc40/pin.hpp>
 #include <libhal-arm-mcu/lpc40/power.hpp>
-#include <libhal-armcortex/interrupt.hpp>
 #include <libhal-util/bit.hpp>
 #include <libhal-util/bit_limits.hpp>
 #include <libhal-util/can.hpp>

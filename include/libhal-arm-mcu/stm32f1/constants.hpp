@@ -14,7 +14,7 @@
 
 #pragma once
 
-#include <libhal-armcortex/interrupt.hpp>
+#include <libhal-arm-mcu/interrupt.hpp>
 #include <libhal/units.hpp>
 
 namespace hal::stm32f1 {

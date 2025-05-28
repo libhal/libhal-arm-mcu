@@ -14,11 +14,11 @@
 
 #include <cstdint>
 
+#include <libhal-arm-mcu/interrupt.hpp>
 #include <libhal-arm-mcu/lpc40/constants.hpp>
 #include <libhal-arm-mcu/lpc40/interrupt.hpp>
 #include <libhal-arm-mcu/lpc40/interrupt_pin.hpp>
 #include <libhal-arm-mcu/lpc40/pin.hpp>
-#include <libhal-armcortex/interrupt.hpp>
 #include <libhal-util/enum.hpp>
 
 #include "gpio_reg.hpp"

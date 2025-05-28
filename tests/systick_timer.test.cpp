@@ -12,9 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include <libhal-armcortex/systick_timer.hpp>
+#include <libhal-arm-mcu/systick_timer.hpp>
 
-#include <libhal-armcortex/interrupt.hpp>
+#include <libhal-arm-mcu/interrupt.hpp>
 #include <libhal/units.hpp>
 
 #include "helper.hpp"

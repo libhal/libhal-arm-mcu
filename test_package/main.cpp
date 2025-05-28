@@ -16,7 +16,7 @@
 #include <exception>
 #include <span>
 
-#include <libhal-armcortex/dwt_counter.hpp>
+#include <libhal-arm-mcu/dwt_counter.hpp>
 
 bool volatile run = false;
 

@@ -16,8 +16,6 @@ cmake_minimum_required(VERSION 3.20)
 
 project(demos LANGUAGES CXX)
 
-set(ENV{LIBHAL_PLATFORM_LIBRARY} arm-mcu)
-
 libhal_build_demos(
   DEMOS
   adc

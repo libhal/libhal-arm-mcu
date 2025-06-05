@@ -69,7 +69,7 @@ void initialize_platform(resource_list& p_resources)
   static hal::stm32f1::gpio<st_peripheral::gpio_a> gpio_a;
   static hal::stm32f1::gpio<st_peripheral::gpio_b> gpio_b;
   static hal::stm32f1::gpio<st_peripheral::gpio_c> gpio_c;
-  static auto led = gpio_c.acquire_output_pin(13);
+  static auto led = gpio_b.acquire_output_pin(13);
   p_resources.status_led = &led;
 
   static hal::stm32f1::input_pin input_pin('B', 4);

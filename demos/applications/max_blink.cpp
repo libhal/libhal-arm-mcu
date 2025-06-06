@@ -10,6 +10,7 @@
 #include <span>
 #include <stdexcept>
 #include <string>
+#include <syncstream>
 #include <utility>
 #include <variant>
 
@@ -329,8 +330,10 @@ public:
     if (not m_handle) {
       return T{};
     }
+    auto& context = m_handle.promise().context();
+
     while (not m_handle.done()) {
-      auto active = m_handle.promise().context().active_handle();
+      auto active = context.active_handle();
       active.resume();
     }
 
@@ -559,6 +562,9 @@ inline static gpio_t& gpio_reg(hal::u8 p_port)
   return *gpio_reg_map[offset];
 }
 
+// Add a volatile operation to prevent optimization
+[[maybe_unused]] uint32_t volatile dummy = 0;
+
 class coro_sync_pin : public async_output_pin
 {
 private:
@@ -570,8 +576,6 @@ private:
 
   hal::async<void> driver_level(hal::async_context&, bool p_high) override
   {
-    // Add a volatile operation to prevent optimization
-    [[maybe_unused]] uint32_t volatile dummy = 0;
     dummy = gpio_reg(m_port).odr;  // Force a read
 
     if (p_high) {
@@ -629,7 +633,6 @@ std::array<hal::byte, 512> coroutine_stack;
 hal::coroutine_stack_memory_resource coroutine_resource(coroutine_stack);
 hal::async_context ctx(coroutine_resource);
 
-[[gnu::noinline]]
 void set_pin(hal::u8 p_port, hal::u8 p_pin, bool p_state)
 {
   if (p_state) {
@@ -644,34 +647,147 @@ void set_pin(hal::u8 p_port, hal::u8 p_pin, bool p_state)
 coro_sync_pin coro_pin_obj;
 coro_async_pin coro_pin_async_obj;
 
+bool volatile switcher = false;
+
+async_output_pin* get_coro_pin()
+{
+  if (not switcher) {
+    return &coro_pin_obj;
+  }
+  return &coro_pin_async_obj;
+}
+async_output_pin* get_async_coro_pin()
+{
+  if (not switcher) {
+    return &coro_pin_async_obj;
+  }
+  return &coro_pin_obj;
+}
+
+struct c_output_pin_vtable
+{
+  decltype(set_pin)* set_pin_funct = nullptr;
+};
+
+c_output_pin_vtable get_c_output_pin_vtable()
+{
+  if (not switcher) {
+    return { .set_pin_funct = &set_pin };
+  }
+  return { nullptr };  // Will crash
+}
+
+struct c_output_pin_object
+{
+  void (*set_pin_funct)(c_output_pin_object*, bool p_state) = nullptr;
+  hal::u8 m_port = 0;
+  hal::u8 m_pin = 0;
+};
+
+static void my_set_pin_funct(c_output_pin_object* p_self, bool p_state)
+{
+  if (p_state) {
+    // The first 16 bits of the register set the output state
+    gpio_reg(p_self->m_port).bsrr = 1 << p_self->m_pin;
+  } else {
+    // The last 16 bits of the register reset the output state
+    gpio_reg(p_self->m_port).bsrr = 1 << (16 + p_self->m_pin);
+  }
+}
+
+c_output_pin_object get_c_output_pin_object(hal::u8 p_port, hal::u8 p_pin)
+{
+  if (not switcher) {
+    return {
+      .set_pin_funct = &my_set_pin_funct,
+      .m_port = p_port,
+      .m_pin = p_pin,
+    };
+  }
+  return {};  // Will crash
+}
+
+hal::async<void> sync_coro_set_pin(hal::async_context&,
+                                   hal::u8 p_port,
+                                   hal::u8 p_pin,
+                                   bool p_state)
+{
+  if (p_state) {
+    // The first 16 bits of the register set the output state
+    gpio_reg(p_port).bsrr = 1 << p_pin;
+  } else {
+    // The last 16 bits of the register reset the output state
+    gpio_reg(p_port).bsrr = 1 << (16 + p_pin);
+  }
+  return {};
+}
+
+hal::async<void> async_coro_set_pin(hal::async_context&,
+                                    hal::u8 p_port,
+                                    hal::u8 p_pin,
+                                    bool p_state)
+{
+  if (p_state) {
+    // The first 16 bits of the register set the output state
+    gpio_reg(p_port).bsrr = 1 << p_pin;
+  } else {
+    // The last 16 bits of the register reset the output state
+    gpio_reg(p_port).bsrr = 1 << (16 + p_pin);
+  }
+  co_return;
+}
+
 void application(resource_list& p_map)
 {
   auto& clock = *p_map.clock.value();
+  auto c_vtable = get_c_output_pin_vtable();
+  auto c_output_pin_obj = get_c_output_pin_object('B', 13);
   auto& led = *p_map.status_led.value();
-  async_output_pin* coro_pin = &coro_pin_obj;
-  async_output_pin* coro_pin_async = &coro_pin_async_obj;
+  async_output_pin* coro_pin = get_coro_pin();
+  async_output_pin* coro_pin_async = get_async_coro_pin();
 
   while (true) {
     using namespace std::chrono_literals;
-    for (int i = 0; i < 1000; i++) {
+    constexpr auto delay_time = 500us;
+    for (int i = 0; i < 900; i++) {
       set_pin('B', 13, false);
       set_pin('B', 13, true);
     }
-    hal::delay(clock, 500us);
+    hal::delay(clock, delay_time);
+    for (int i = 0; i < 800; i++) {
+      sync_coro_set_pin(ctx, 'B', 13, false).sync_result();
+      sync_coro_set_pin(ctx, 'B', 13, true).sync_result();
+    }
+    hal::delay(clock, delay_time);
+    for (int i = 0; i < 700; i++) {
+      c_vtable.set_pin_funct('B', 13, false);
+      c_vtable.set_pin_funct('B', 13, true);
+    }
+    hal::delay(clock, delay_time);
+    for (int i = 0; i < 600; i++) {
+      c_output_pin_obj.set_pin_funct(&c_output_pin_obj, false);
+      c_output_pin_obj.set_pin_funct(&c_output_pin_obj, true);
+    }
+    hal::delay(clock, delay_time);
     for (int i = 0; i < 500; i++) {
       led.level(false);
       led.level(true);
     }
-    hal::delay(clock, 500us);
+    hal::delay(clock, delay_time);
     for (int i = 0; i < 400; i++) {
       coro_pin->level(ctx, false).sync_result();
       coro_pin->level(ctx, true).sync_result();
     }
-    hal::delay(clock, 500us);
+    hal::delay(clock, delay_time);
+    for (int i = 0; i < 300; i++) {
+      async_coro_set_pin(ctx, 'B', 13, false).sync_result();
+      async_coro_set_pin(ctx, 'B', 13, true).sync_result();
+    }
+    hal::delay(clock, delay_time);
     for (int i = 0; i < 200; i++) {
       coro_pin_async->level(ctx, false).sync_result();
       coro_pin_async->level(ctx, true).sync_result();
     }
-    hal::delay(clock, 500us);
+    hal::delay(clock, delay_time);
   }
 }

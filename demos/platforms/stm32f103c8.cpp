@@ -126,21 +126,35 @@ void initialize_platform(resource_list& p_resources)
   }
   p_resources.spi = spi;
 
+  hal::timer* callback_timer = nullptr;
+  static hal::stm32f1::general_purpose_timer<hal::stm32f1::peripheral::timer2>
+    timer2;
+  static auto timer_callback_timer = timer2.acquire_timer();
+  callback_timer = &timer_callback_timer;
+  p_resources.callback_timer = callback_timer;
+
+  hal::pwm* old_pwm = nullptr;
   hal::pwm16_channel* pwm_channel = nullptr;
   hal::pwm_group_manager* pwm_frequency = nullptr;
 
+  static hal::stm32f1::advanced_timer<hal::stm32f1::peripheral::timer1>
+    pwm_timer;
+
   if constexpr (use_libhal_4_pwm) {
-    // Use old PWM
+    static auto timer_old_pwm =
+      pwm_timer.acquire_pwm(hal::stm32f1::timer1_pin::pa8);
+    old_pwm = &timer_old_pwm;
   } else {
-    static hal::stm32f1::general_purpose_timer<hal::stm32f1::peripheral::timer2>
-      timer;
     static auto timer_pwm_channel =
-      timer.acquire_pwm16_channel(hal::stm32f1::timer2_pin::pa1);
+      pwm_timer.acquire_pwm16_channel(hal::stm32f1::timer1_pin::pa8);
+
     pwm_channel = &timer_pwm_channel;
-    static auto timer1_pwm_frequency = timer.acquire_pwm_group_frequency();
-    pwm_frequency = &timer1_pwm_frequency;
+
+    static auto timer_pwm_frequency = pwm_timer.acquire_pwm_group_frequency();
+    pwm_frequency = &timer_pwm_frequency;
   }
 
+  p_resources.pwm = old_pwm;
   p_resources.pwm_channel = pwm_channel;
   p_resources.pwm_frequency = pwm_frequency;
 

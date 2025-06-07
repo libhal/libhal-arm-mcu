@@ -18,18 +18,8 @@ project(demos LANGUAGES CXX)
 
 libhal_build_demos(
   DEMOS
-  adc
   blinker
-  can
-  dac
-  gpio
-  i2c
-  interrupt_pin
-  uart
-  pwm
-  pwm16
-  spi
-  blank
+  max_blink
   # stream_dac
   timer
 

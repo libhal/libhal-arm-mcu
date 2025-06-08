@@ -77,6 +77,7 @@ public:
     p_context.last_allocation_size(p_size);
     return p_context.resource()->allocate(p_size);
   }
+
   // Add regular delete operators for normal coroutine destruction
   static constexpr void operator delete(void*) noexcept
   {
@@ -87,34 +88,30 @@ public:
   }
 
   // Constructor for functions accepting no arguments
-  task_promise_base(async_context& p_context)
+  constexpr task_promise_base(async_context& p_context)
+    : m_context(&p_context)
   {
-    m_context = &p_context;
-    m_frame_size = p_context.last_allocation_size();
   }
 
   // Constructor for functions accepting arguments
   template<typename... Args>
-  task_promise_base(async_context& p_context, Args&&...)
+  constexpr task_promise_base(async_context& p_context, Args&&...)
+    : m_context(&p_context)
   {
-    m_context = &p_context;
-    m_frame_size = p_context.last_allocation_size();
   }
 
   // Constructor for member functions (handles 'this' parameter)
   template<typename Class>
-  task_promise_base(Class&, async_context& p_context)
+  constexpr task_promise_base(Class&, async_context& p_context)
+    : m_context(&p_context)
   {
-    m_context = &p_context;
-    m_frame_size = p_context.last_allocation_size();
   }
 
   // Constructor for member functions with additional parameters
   template<typename Class, typename... Args>
-  task_promise_base(Class&, async_context& p_context, Args&&...)
+  constexpr task_promise_base(Class&, async_context& p_context, Args&&...)
+    : m_context(&p_context)
   {
-    m_context = &p_context;
-    m_frame_size = p_context.last_allocation_size();
   }
 
   constexpr std::suspend_always initial_suspend() noexcept
@@ -131,15 +128,11 @@ public:
   void unhandled_exception() noexcept
   {
     std::terminate();
-    // m_error = std::current_exception();
+    // m_exception_ptr = std::current_exception();
   }
   constexpr auto& context()
   {
     return *m_context;
-  }
-  constexpr void context(async_context& p_context)
-  {
-    m_context = &p_context;
   }
   constexpr auto continuation()
   {
@@ -150,10 +143,6 @@ public:
     m_continuation = p_continuation;
   }
 
-  [[nodiscard]] constexpr auto frame_size() const
-  {
-    return m_frame_size;
-  }
   constexpr std::coroutine_handle<> pop_active_coroutine()
   {
     m_context->active_handle(m_continuation);
@@ -163,10 +152,9 @@ public:
 protected:
   // Storage for the coroutine result/error
   std::coroutine_handle<> m_continuation = std::noop_coroutine();
-  async_context* m_context{};
+  async_context* m_context;
   // NOLINTNEXTLINE(bugprone-throw-keyword-missing)
-  // std::exception_ptr m_error{};
-  usize m_frame_size = 0;
+  // std::exception_ptr m_exception_ptr{};
 };
 
 template<typename T>
@@ -225,7 +213,7 @@ public:
     }
   };
 
-  final_awaiter final_suspend() noexcept
+  constexpr final_awaiter final_suspend() noexcept
   {
     return {};
   }
@@ -301,7 +289,7 @@ public:
     }
   };
 
-  final_awaiter final_suspend() noexcept
+  constexpr final_awaiter final_suspend() noexcept
   {
     return {};
   }
@@ -388,9 +376,8 @@ public:
     if (m_handle) {
       void* const address = m_handle.address();
       auto* const allocator = m_handle.promise().context().resource();
-      auto const frame_size = m_handle.promise().frame_size();
       m_handle.destroy();
-      allocator->deallocate(address, frame_size);
+      allocator->deallocate(address, m_frame_size);
     }
   }
 
@@ -411,28 +398,32 @@ public:
   }
 
 private:
-  explicit async(std::coroutine_handle<promise_type> p_handle)
+  explicit constexpr async(std::coroutine_handle<promise_type> p_handle,
+                           hal::usize p_frame_size)
     : m_handle(p_handle)
+    , m_frame_size(p_frame_size)
   {
-    m_handle.promise().continuation(std::noop_coroutine());
-    m_handle.promise().context().active_handle(m_handle);
   }
 
   std::coroutine_handle<promise_type> m_handle{};
+  hal::usize m_frame_size;
 };
 
 template<typename T>
 constexpr async<T> task_promise_type<T>::get_return_object() noexcept
 {
-  return async<T>{ std::coroutine_handle<task_promise_type<T>>::from_promise(
-    *this) };
+  auto handle =
+    std::coroutine_handle<task_promise_type<T>>::from_promise(*this);
+  m_context->active_handle(handle);
+  return async<T>{ handle, m_context->last_allocation_size() };
 }
 
 constexpr async<void> task_promise_type<void>::get_return_object() noexcept
 {
-  return async<void>{
-    std::coroutine_handle<task_promise_type<void>>::from_promise(*this)
-  };
+  auto handle =
+    std::coroutine_handle<task_promise_type<void>>::from_promise(*this);
+  m_context->active_handle(handle);
+  return async<void>{ handle, m_context->last_allocation_size() };
 }
 
 class coroutine_stack_memory_resource : public std::pmr::memory_resource
@@ -773,13 +764,13 @@ hal::async<void> async_coro_set_pin(hal::async_context&,
   co_return;
 }
 
-hal::async<void> coro_await_task_loop(hal::async_context&,
+hal::async<void> coro_await_task_loop(hal::async_context& p_ctx,
                                       async_output_pin& p_pin,
                                       int p_cycle_count)
 {
   for (int i = 0; i < p_cycle_count; i++) {
-    co_await p_pin.level(ctx, false);
-    co_await p_pin.level(ctx, true);
+    co_await p_pin.level(p_ctx, false);
+    co_await p_pin.level(p_ctx, true);
   }
   co_return;
 }
@@ -818,7 +809,6 @@ struct simulated_coroutine_frame
         promise))
     , frame_address(this)
   {
-    promise.context(p_ctx);
     promise.continuation(std::noop_coroutine());
     p_ctx.active_handle(handle);
   }
@@ -828,20 +818,41 @@ hal::u64 benchmark_user_frame_setup(hal::steady_clock& p_clock,
                                     hal::async_context& p_ctx)
 {
   auto start = p_clock.uptime();
-
-  // Single allocation + construction
   auto* frame = new (p_ctx) simulated_coroutine_frame(p_ctx);
-
   auto end = p_clock.uptime();
 
-  // Manual cleanup
   frame->~simulated_coroutine_frame();
   p_ctx.resource()->deallocate(frame, sizeof(*frame));
 
   return end - start;
 }
 
+hal::u64 benchmark_output_pin_virtual(hal::steady_clock& p_clock,
+                                      hal::output_pin& p_pin)
+{
+  auto const start = p_clock.uptime();
+  p_pin.level(false);
+  auto const end = p_clock.uptime();
+
+  return end - start;
+}
+
+hal::u64 measure_timing_overhead(hal::steady_clock& p_clock)
+{
+  // Measure the exact same pattern you use in your real benchmark
+  auto start = p_clock.uptime();
+
+  // Do absolutely nothing (but prevent optimization)
+  asm volatile("" ::: "memory");
+
+  auto end = p_clock.uptime();
+
+  return end - start;
+}
+
 hal::u64 volatile overhead = 0;
+hal::u64 volatile uptime_overhead = 0;
+hal::u64 volatile virtual_overhead = 0;
 hal::u64 volatile full_setup_time = 0;
 
 void application(resource_list& p_map)
@@ -881,6 +892,9 @@ void application(resource_list& p_map)
       led.level(false);
       led.level(true);
     }
+
+    virtual_overhead = benchmark_output_pin_virtual(clock, led);
+
     hal::delay(clock, delay_time);
     for (int i = 0; i < 400; i++) {
       coro_pin->level(ctx, false).sync_result();
@@ -897,17 +911,21 @@ void application(resource_list& p_map)
       coro_pin_async->level(ctx, true).sync_result();
     }
 
+    // hal::delay(clock, delay_time);
+    // coro_await_task_loop(ctx, *coro_pin_async, 150).sync_result();
+
     hal::delay(clock, delay_time);
-    coro_await_task_loop(ctx, *coro_pin, 150).sync_result();
+    coro_await_task_loop(ctx, *coro_pin, 100).sync_result();
 
     // Measure full user-controlled setup
     full_setup_time = benchmark_user_frame_setup(clock, ctx);
-
-    // hal::delay(clock, delay_time);
-    // coro_await_task_loop(ctx, *coro_pin_async, 100).sync_result();
+    uptime_overhead = measure_timing_overhead(clock);
 
     hal::delay(clock, delay_time);
+    auto const overhead_start = clock.uptime();
     auto set_high = coro_forever->level(ctx, true);
+    auto const overhead_end = clock.uptime();
+    overhead = overhead_end - overhead_start;
     auto set_low = coro_forever->level(ctx2, false);
     for (int i = 0; i < 75; i++) {
       set_low.resume();

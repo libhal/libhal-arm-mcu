@@ -86,8 +86,16 @@ public:
   {
   }
 
-  // Constructor for regular functions
+  // Constructor for functions accepting no arguments
   task_promise_base(async_context& p_context)
+  {
+    m_context = &p_context;
+    m_frame_size = p_context.last_allocation_size();
+  }
+
+  // Constructor for functions accepting arguments
+  template<typename... Args>
+  task_promise_base(async_context& p_context, Args&&...)
   {
     m_context = &p_context;
     m_frame_size = p_context.last_allocation_size();
@@ -96,14 +104,6 @@ public:
   // Constructor for member functions (handles 'this' parameter)
   template<typename Class>
   task_promise_base(Class&, async_context& p_context)
-  {
-    m_context = &p_context;
-    m_frame_size = p_context.last_allocation_size();
-  }
-
-  // Generic constructor for additional parameters
-  template<typename... Args>
-  task_promise_base(async_context& p_context, Args&&...)
   {
     m_context = &p_context;
     m_frame_size = p_context.last_allocation_size();
@@ -792,18 +792,36 @@ async_output_pin* get_forever_coro_pin()
   return &coro_pin_async_obj;
 }
 
-// Simulate the frame construction overhead we can measure
 struct simulated_coroutine_frame
 {
-  // Your promise object construction
   hal::task_promise_type<void> promise;
-
-  // Coroutine handle creation
   std::coroutine_handle<hal::task_promise_type<void>> handle;
+  void* frame_address = nullptr;
 
-  // Frame metadata that gets set
-  void* frame_address;
-  hal::usize frame_size;
+  // Add custom operator new that propagates context
+  static void* operator new(std::size_t p_size, hal::async_context& p_context)
+  {
+    p_context.last_allocation_size(p_size);
+    return p_context.resource()->allocate(p_size);
+  }
+
+  static void operator delete(void*, std::size_t) noexcept
+  {
+    // Note: We can't easily get the context here, so this is a limitation
+    // For benchmark purposes, we'll handle cleanup manually
+  }
+
+  // Constructor that initializes everything
+  simulated_coroutine_frame(hal::async_context& p_ctx)
+    : promise(p_ctx)
+    , handle(std::coroutine_handle<hal::task_promise_type<void>>::from_promise(
+        promise))
+    , frame_address(this)
+  {
+    promise.context(p_ctx);
+    promise.continuation(std::noop_coroutine());
+    p_ctx.active_handle(handle);
+  }
 };
 
 hal::u64 benchmark_user_frame_setup(hal::steady_clock& p_clock,
@@ -811,24 +829,14 @@ hal::u64 benchmark_user_frame_setup(hal::steady_clock& p_clock,
 {
   auto start = p_clock.uptime();
 
-  constexpr size_t frame_size = sizeof(simulated_coroutine_frame);
-  p_ctx.last_allocation_size(frame_size);
-  void* frame_memory = p_ctx.resource()->allocate(frame_size);
-
-  // Not correct BUT just adding this to the benchmark so I can do the rest
-  auto* promise = new (p_ctx) hal::task_promise_type<void>(ctx);
-  auto handle =
-    std::coroutine_handle<hal::task_promise_type<void>>::from_promise(*promise);
-
-  promise->context(p_ctx);
-  promise->continuation(std::noop_coroutine());
-  p_ctx.active_handle(handle);
+  // Single allocation + construction
+  auto* frame = new (p_ctx) simulated_coroutine_frame(p_ctx);
 
   auto end = p_clock.uptime();
 
-  // Cleanup to avoid affecting next measurement
-  promise->~task_promise_type<void>();
-  p_ctx.resource()->deallocate(frame_memory, frame_size);
+  // Manual cleanup
+  frame->~simulated_coroutine_frame();
+  p_ctx.resource()->deallocate(frame, sizeof(*frame));
 
   return end - start;
 }

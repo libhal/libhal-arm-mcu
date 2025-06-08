@@ -1,4 +1,3 @@
-#include <algorithm>
 #include <array>
 #include <coroutine>
 #include <cstddef>
@@ -6,13 +5,9 @@
 #include <cstdio>
 #include <exception>
 #include <memory_resource>
-#include <numeric>
 #include <span>
 #include <stdexcept>
-#include <string>
-#include <syncstream>
 #include <utility>
-#include <variant>
 
 namespace hal {
 using byte = std::uint8_t;
@@ -54,9 +49,9 @@ public:
   }
 
 private:
+  std::coroutine_handle<> m_active_handle = std::noop_coroutine();
   std::pmr::memory_resource* m_resource = nullptr;
   usize m_last_allocation_size = 0;
-  std::coroutine_handle<> m_active_handle = std::noop_coroutine();
 };
 
 class task_promise_base
@@ -419,10 +414,11 @@ private:
   explicit async(std::coroutine_handle<promise_type> p_handle)
     : m_handle(p_handle)
   {
+    m_handle.promise().continuation(std::noop_coroutine());
     m_handle.promise().context().active_handle(m_handle);
   }
 
-  std::coroutine_handle<promise_type> m_handle;
+  std::coroutine_handle<promise_type> m_handle{};
 };
 
 template<typename T>
@@ -443,7 +439,7 @@ class coroutine_stack_memory_resource : public std::pmr::memory_resource
 {
 public:
   constexpr coroutine_stack_memory_resource(std::span<hal::byte> p_memory)
-    : m_memory(p_memory.data())
+    : m_memory(p_memory)
   {
     if (p_memory.data() == nullptr || p_memory.size() < 32) {
       throw std::runtime_error(
@@ -454,13 +450,14 @@ public:
 private:
   void* do_allocate(std::size_t p_bytes, std::size_t) override
   {
-    auto* const new_stack_pointer = m_memory;
-    m_memory += p_bytes;
+    auto* const new_stack_pointer = m_memory.data();
+    m_allocated_memory += p_bytes;
     return new_stack_pointer;
   }
+
   void do_deallocate(void*, std::size_t p_bytes, std::size_t) override
   {
-    m_memory -= p_bytes;
+    m_allocated_memory -= p_bytes;
   }
 
   [[nodiscard]] bool do_is_equal(
@@ -468,8 +465,9 @@ private:
   {
     return this == &other;
   }
-  // TODO(kammce): CHANGE this to just a void* and increment it.
-  hal::byte* m_memory;
+
+  std::span<hal::byte> m_memory;
+  hal::usize m_allocated_memory = 0;
 };
 }  // namespace hal
 
@@ -662,11 +660,11 @@ private:
   hal::u8 m_pin = 13;
 };
 
-std::array<hal::byte, 512> coroutine_stack;
+std::array<hal::byte, 512 * 2> coroutine_stack;
 hal::coroutine_stack_memory_resource coroutine_resource(coroutine_stack);
 hal::async_context ctx(coroutine_resource);
 
-std::array<hal::byte, 512> coroutine_stack2;
+std::array<hal::byte, 512 * 2> coroutine_stack2;
 hal::coroutine_stack_memory_resource coroutine_resource2(coroutine_stack2);
 hal::async_context ctx2(coroutine_resource2);
 
@@ -786,17 +784,6 @@ hal::async<void> coro_await_task_loop(hal::async_context&,
   co_return;
 }
 
-hal::async<void> coro_scheduler_task_loop(hal::async_context&,
-                                          async_output_pin& p_pin,
-                                          int p_cycle_count)
-{
-  for (int i = 0; i < p_cycle_count; i++) {
-    co_await p_pin.level(ctx, false);
-    co_await p_pin.level(ctx, true);
-  }
-  co_return;
-}
-
 async_output_pin* get_forever_coro_pin()
 {
   if (not switcher) {
@@ -804,6 +791,50 @@ async_output_pin* get_forever_coro_pin()
   }
   return &coro_pin_async_obj;
 }
+
+// Simulate the frame construction overhead we can measure
+struct simulated_coroutine_frame
+{
+  // Your promise object construction
+  hal::task_promise_type<void> promise;
+
+  // Coroutine handle creation
+  std::coroutine_handle<hal::task_promise_type<void>> handle;
+
+  // Frame metadata that gets set
+  void* frame_address;
+  hal::usize frame_size;
+};
+
+hal::u64 benchmark_user_frame_setup(hal::steady_clock& p_clock,
+                                    hal::async_context& p_ctx)
+{
+  auto start = p_clock.uptime();
+
+  constexpr size_t frame_size = sizeof(simulated_coroutine_frame);
+  p_ctx.last_allocation_size(frame_size);
+  void* frame_memory = p_ctx.resource()->allocate(frame_size);
+
+  // Not correct BUT just adding this to the benchmark so I can do the rest
+  auto* promise = new (p_ctx) hal::task_promise_type<void>(ctx);
+  auto handle =
+    std::coroutine_handle<hal::task_promise_type<void>>::from_promise(*promise);
+
+  promise->context(p_ctx);
+  promise->continuation(std::noop_coroutine());
+  p_ctx.active_handle(handle);
+
+  auto end = p_clock.uptime();
+
+  // Cleanup to avoid affecting next measurement
+  promise->~task_promise_type<void>();
+  p_ctx.resource()->deallocate(frame_memory, frame_size);
+
+  return end - start;
+}
+
+hal::u64 volatile overhead = 0;
+hal::u64 volatile full_setup_time = 0;
 
 void application(resource_list& p_map)
 {
@@ -861,8 +892,11 @@ void application(resource_list& p_map)
     hal::delay(clock, delay_time);
     coro_await_task_loop(ctx, *coro_pin, 150).sync_result();
 
-    hal::delay(clock, delay_time);
-    coro_await_task_loop(ctx, *coro_pin_async, 100).sync_result();
+    // Measure full user-controlled setup
+    full_setup_time = benchmark_user_frame_setup(clock, ctx);
+
+    // hal::delay(clock, delay_time);
+    // coro_await_task_loop(ctx, *coro_pin_async, 100).sync_result();
 
     hal::delay(clock, delay_time);
     auto set_high = coro_forever->level(ctx, true);
@@ -873,15 +907,18 @@ void application(resource_list& p_map)
     }
 
     hal::delay(clock, delay_time);
-    std::array<hal::async<void>*, 2> list{ &set_high, &set_low };
+    std::array<hal::async<void>*, 2> list{
+      &set_low,
+      &set_high,
+    };
     for (int i = 0; i < 50; i++) {  // round robin
       for (auto task : list) {
-        if (task->handle()) {
+        if (task->handle() && not task->handle().done()) {
           task->resume();
         }
       }
     }
 
-    hal::delay(clock, delay_time * 5);
+    hal::delay(clock, delay_time * 15);
   }
 }

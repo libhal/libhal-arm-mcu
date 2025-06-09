@@ -16,9 +16,13 @@ using usize = std::size_t;
 class async_context
 {
 public:
-  explicit async_context(std::pmr::memory_resource& p_resource)
+  explicit async_context(std::pmr::memory_resource& p_resource,
+                         hal::usize p_total_stack_size)
     : m_resource(&p_resource)
+    , m_total_stack_size(p_total_stack_size)
   {
+    m_buffer = std::pmr::polymorphic_allocator<hal::byte>(m_resource)
+                 .allocate(p_total_stack_size);
   }
 
   async_context() = default;
@@ -33,11 +37,6 @@ public:
     return m_last_allocation_size;
   }
 
-  constexpr void last_allocation_size(usize p_last_allocation_size)
-  {
-    m_last_allocation_size = p_last_allocation_size;
-  }
-
   constexpr std::coroutine_handle<> active_handle()
   {
     return m_active_handle;
@@ -48,9 +47,31 @@ public:
     m_active_handle = p_active_handle;
   }
 
+  [[nodiscard]] constexpr void* allocate(std::size_t p_bytes)
+  {
+    m_last_allocation_size = p_bytes;
+    auto* const new_stack_pointer = &m_buffer[m_stack_pointer];
+    m_stack_pointer += p_bytes;
+    return new_stack_pointer;
+  }
+
+  constexpr void deallocate(std::size_t p_bytes)
+  {
+    m_stack_pointer -= p_bytes;
+  }
+
+  ~async_context()
+  {
+    std::pmr::polymorphic_allocator<hal::byte>(m_resource)
+      .deallocate(m_buffer, m_total_stack_size);
+  }
+
 private:
   std::coroutine_handle<> m_active_handle = std::noop_coroutine();
-  std::pmr::memory_resource* m_resource = nullptr;
+  std::pmr::memory_resource* m_resource;
+  hal::byte* m_buffer = nullptr;
+  usize m_total_stack_size = 0;
+  usize m_stack_pointer = 0;
   usize m_last_allocation_size = 0;
 };
 
@@ -63,8 +84,7 @@ public:
                                       async_context& p_context,
                                       Args&&...)
   {
-    p_context.last_allocation_size(p_size);
-    return p_context.resource()->allocate(p_size);
+    return p_context.allocate(p_size);
   }
 
   // For member functions - handles the implicit 'this' parameter
@@ -74,8 +94,7 @@ public:
                                       async_context& p_context,
                                       Args&&...)
   {
-    p_context.last_allocation_size(p_size);
-    return p_context.resource()->allocate(p_size);
+    return p_context.allocate(p_size);
   }
 
   // Add regular delete operators for normal coroutine destruction
@@ -374,10 +393,9 @@ public:
   ~async()
   {
     if (m_handle) {
-      void* const address = m_handle.address();
-      auto* const allocator = m_handle.promise().context().resource();
+      auto& context = m_handle.promise().context();
       m_handle.destroy();
-      allocator->deallocate(address, m_frame_size);
+      context.deallocate(m_frame_size);
     }
   }
 
@@ -653,11 +671,11 @@ private:
 
 std::array<hal::byte, 512 * 2> coroutine_stack;
 hal::coroutine_stack_memory_resource coroutine_resource(coroutine_stack);
-hal::async_context ctx(coroutine_resource);
+hal::async_context ctx(coroutine_resource, sizeof(coroutine_stack));
 
 std::array<hal::byte, 512 * 2> coroutine_stack2;
 hal::coroutine_stack_memory_resource coroutine_resource2(coroutine_stack2);
-hal::async_context ctx2(coroutine_resource2);
+hal::async_context ctx2(coroutine_resource2, sizeof(coroutine_stack2));
 
 void set_pin(hal::u8 p_port, hal::u8 p_pin, bool p_state)
 {
@@ -764,6 +782,24 @@ hal::async<void> async_coro_set_pin(hal::async_context&,
   co_return;
 }
 
+hal::async<void> coro_pin_set_level(hal::async_context& p_ctx,
+                                    async_output_pin& p_pin,
+                                    bool p_level)
+{
+  co_return co_await p_pin.level(p_ctx, p_level);
+}
+
+hal::async<void> coro_await_task_loop_deeper(hal::async_context& p_ctx,
+                                             async_output_pin& p_pin,
+                                             int p_cycle_count)
+{
+  for (int i = 0; i < p_cycle_count; i++) {
+    co_await coro_pin_set_level(p_ctx, p_pin, false);
+    co_await coro_pin_set_level(p_ctx, p_pin, true);
+  }
+  co_return;
+}
+
 hal::async<void> coro_await_task_loop(hal::async_context& p_ctx,
                                       async_output_pin& p_pin,
                                       int p_cycle_count)
@@ -783,6 +819,11 @@ async_output_pin* get_forever_coro_pin()
   return &coro_pin_async_obj;
 }
 
+hal::u32 fast_uptime()
+{
+  return *std::bit_cast<hal::u32*>(0xE0001004);
+}
+
 struct simulated_coroutine_frame
 {
   hal::task_promise_type<void> promise;
@@ -792,7 +833,6 @@ struct simulated_coroutine_frame
   // Add custom operator new that propagates context
   static void* operator new(std::size_t p_size, hal::async_context& p_context)
   {
-    p_context.last_allocation_size(p_size);
     return p_context.resource()->allocate(p_size);
   }
 
@@ -814,12 +854,11 @@ struct simulated_coroutine_frame
   }
 };
 
-hal::u64 benchmark_user_frame_setup(hal::steady_clock& p_clock,
-                                    hal::async_context& p_ctx)
+hal::u64 benchmark_user_frame_setup(hal::async_context& p_ctx)
 {
-  auto start = p_clock.uptime();
+  auto start = fast_uptime();
   auto* frame = new (p_ctx) simulated_coroutine_frame(p_ctx);
-  auto end = p_clock.uptime();
+  auto end = fast_uptime();
 
   frame->~simulated_coroutine_frame();
   p_ctx.resource()->deallocate(frame, sizeof(*frame));
@@ -827,12 +866,12 @@ hal::u64 benchmark_user_frame_setup(hal::steady_clock& p_clock,
   return end - start;
 }
 
-hal::u64 benchmark_output_pin_virtual(hal::steady_clock& p_clock,
-                                      hal::output_pin& p_pin)
+hal::u64 benchmark_output_pin_virtual(hal::output_pin& p_pin)
 {
-  auto const start = p_clock.uptime();
+  auto const start = fast_uptime();
   p_pin.level(false);
-  auto const end = p_clock.uptime();
+  auto const end = fast_uptime();
+  p_pin.level(true);
 
   return end - start;
 }
@@ -850,10 +889,25 @@ hal::u64 measure_timing_overhead(hal::steady_clock& p_clock)
   return end - start;
 }
 
-hal::u64 volatile overhead = 0;
+hal::u64 volatile creation_overhead = 0;
+hal::u64 volatile creation_and_resume_overhead = 0;
 hal::u64 volatile uptime_overhead = 0;
 hal::u64 volatile virtual_overhead = 0;
 hal::u64 volatile full_setup_time = 0;
+hal::u64 volatile fast_uptime_overhead = 0;
+
+hal::u64 fast_measure_timing_overhead()
+{
+  // Measure the exact same pattern you use in your real benchmark
+  auto start = fast_uptime();
+
+  // Do absolutely nothing (but prevent optimization)
+  asm volatile("" ::: "memory");
+
+  auto end = fast_uptime();
+
+  return end - start;
+}
 
 void application(resource_list& p_map)
 {
@@ -893,7 +947,7 @@ void application(resource_list& p_map)
       led.level(true);
     }
 
-    virtual_overhead = benchmark_output_pin_virtual(clock, led);
+    virtual_overhead = benchmark_output_pin_virtual(led);
 
     hal::delay(clock, delay_time);
     for (int i = 0; i < 400; i++) {
@@ -911,22 +965,32 @@ void application(resource_list& p_map)
       coro_pin_async->level(ctx, true).sync_result();
     }
 
-    // hal::delay(clock, delay_time);
-    // coro_await_task_loop(ctx, *coro_pin_async, 150).sync_result();
+    hal::delay(clock, delay_time);
+    coro_await_task_loop(ctx, *coro_pin_async, 150).sync_result();
+
+    hal::delay(clock, delay_time);
+    coro_await_task_loop_deeper(ctx, *coro_pin_async, 130).sync_result();
+
+    hal::delay(clock, delay_time);
+    coro_await_task_loop_deeper(ctx, *coro_pin, 120).sync_result();
 
     hal::delay(clock, delay_time);
     coro_await_task_loop(ctx, *coro_pin, 100).sync_result();
 
-    // Measure full user-controlled setup
-    full_setup_time = benchmark_user_frame_setup(clock, ctx);
-    uptime_overhead = measure_timing_overhead(clock);
+    fast_uptime_overhead = fast_measure_timing_overhead();
 
     hal::delay(clock, delay_time);
-    auto const overhead_start = clock.uptime();
+    auto const creation_overhead_start = fast_uptime();
     auto set_high = coro_forever->level(ctx, true);
-    auto const overhead_end = clock.uptime();
-    overhead = overhead_end - overhead_start;
+    auto const creation_overhead_end = fast_uptime();
+    creation_overhead = creation_overhead_end - creation_overhead_start;
+
+    auto const creation_and_resume_overhead_start = fast_uptime();
     auto set_low = coro_forever->level(ctx2, false);
+    set_low.resume();
+    auto const creation_and_resume_overhead_end = fast_uptime();
+    creation_and_resume_overhead =
+      creation_and_resume_overhead_end - creation_and_resume_overhead_start;
     for (int i = 0; i < 75; i++) {
       set_low.resume();
       set_high.resume();

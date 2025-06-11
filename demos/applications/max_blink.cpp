@@ -5,9 +5,11 @@
 #include <cstdio>
 #include <exception>
 #include <memory_resource>
+#include <optional>
 #include <span>
 #include <stdexcept>
 #include <utility>
+#include <variant>
 
 namespace hal {
 using byte = std::uint8_t;
@@ -68,7 +70,7 @@ public:
 
 private:
   std::coroutine_handle<> m_active_handle = std::noop_coroutine();
-  std::pmr::memory_resource* m_resource;
+  std::pmr::memory_resource* m_resource = nullptr;
   hal::byte* m_buffer = nullptr;
   usize m_total_stack_size = 0;
   usize m_stack_pointer = 0;
@@ -107,28 +109,28 @@ public:
   }
 
   // Constructor for functions accepting no arguments
-  constexpr task_promise_base(async_context& p_context)
+  task_promise_base(async_context& p_context)
     : m_context(&p_context)
   {
   }
 
   // Constructor for functions accepting arguments
   template<typename... Args>
-  constexpr task_promise_base(async_context& p_context, Args&&...)
+  task_promise_base(async_context& p_context, Args&&...)
     : m_context(&p_context)
   {
   }
 
   // Constructor for member functions (handles 'this' parameter)
   template<typename Class>
-  constexpr task_promise_base(Class&, async_context& p_context)
+  task_promise_base(Class&, async_context& p_context)
     : m_context(&p_context)
   {
   }
 
   // Constructor for member functions with additional parameters
   template<typename Class, typename... Args>
-  constexpr task_promise_base(Class&, async_context& p_context, Args&&...)
+  task_promise_base(Class&, async_context& p_context, Args&&...)
     : m_context(&p_context)
   {
   }
@@ -142,12 +144,6 @@ public:
   constexpr U&& await_transform(U&& awaitable) noexcept
   {
     return static_cast<U&&>(awaitable);
-  }
-
-  void unhandled_exception() noexcept
-  {
-    std::terminate();
-    // m_exception_ptr = std::current_exception();
   }
   constexpr auto& context()
   {
@@ -172,21 +168,15 @@ protected:
   // Storage for the coroutine result/error
   std::coroutine_handle<> m_continuation = std::noop_coroutine();
   async_context* m_context;
-  // NOLINTNEXTLINE(bugprone-throw-keyword-missing)
-  // std::exception_ptr m_exception_ptr{};
 };
 
 template<typename T>
 class async;
 
-// Helper type for void
-struct void_placeholder
-{};
-
 // Type selection for void vs non-void
 template<typename T>
-using void_to_placeholder_t =
-  std::conditional_t<std::is_void_v<T>, void_placeholder, T>;
+using type_or_monostate =
+  std::conditional_t<std::is_void_v<T>, std::monostate, T>;
 
 template<typename T>
 class task_promise_type : public task_promise_base
@@ -202,6 +192,11 @@ public:
 
   static constexpr void operator delete(void*, std::size_t) noexcept
   {
+  }
+
+  void unhandled_exception() noexcept
+  {
+    m_value = std::current_exception();
   }
 
   struct final_awaiter
@@ -247,12 +242,20 @@ public:
     m_value = std::forward<U>(p_value);
   }
 
-  auto result()
+  /**
+   * @brief We should only call this within await_resume
+   *
+   */
+  T get_result_or_rethrow()
   {
-    return m_value;
+    if (std::holds_alternative<type_or_monostate<T>>(m_value)) [[likely]] {
+      return std::get<type_or_monostate<T>>(m_value);
+    } else {
+      std::rethrow_exception(std::get<std::exception_ptr>(m_value));
+    }
   }
 
-  void_to_placeholder_t<T> m_value{};
+  std::variant<type_or_monostate<T>, std::exception_ptr> m_value{};
 };
 
 template<>
@@ -312,6 +315,24 @@ public:
   {
     return {};
   }
+
+  void unhandled_exception() noexcept
+  {
+    m_exception_ptr = std::current_exception();
+  }
+
+  /**
+   * @brief We should only call this within await_resume
+   *
+   */
+  void get_result_or_rethrow()
+  {
+    if (m_exception_ptr) [[unlikely]] {
+      std::rethrow_exception(m_exception_ptr);
+    }
+  }
+
+  std::exception_ptr m_exception_ptr;
 };
 
 template<typename T = void>
@@ -341,7 +362,7 @@ public:
     }
 
     if constexpr (not std::is_void_v<T>) {
-      return m_handle.promise().result();
+      return m_handle.promise().get_result_or_rethrow();
     }
   }
 
@@ -371,9 +392,11 @@ public:
 
     T await_resume()
     {
-      if constexpr (not std::is_void_v<T>) {
-        if (m_handle) {
-          return m_handle.promise().result();
+      if (m_handle) {
+        if constexpr (std::is_void_v<T>) {
+          m_handle.promise().get_result_or_rethrow();
+        } else {
+          return m_handle.promise().get_result_or_rethrow();
         }
       }
     }
@@ -669,6 +692,73 @@ private:
   hal::u8 m_pin = 13;
 };
 
+class pseudo_coro_output_pin
+{
+public:
+  auto level(hal::async_context& p_context, bool p_high)
+  {
+    return driver_level(p_context, p_high);
+  }
+
+private:
+  virtual void driver_level(hal::async_context& p_context, bool p_high) = 0;
+};
+
+class pseudo_coro_output_pin_impl : public pseudo_coro_output_pin
+{
+public:
+  pseudo_coro_output_pin_impl(hal::u8 p_port,  // NOLINT
+                              hal::u8 p_pin)
+    : m_port(p_port)
+    , m_pin(p_pin)
+  {
+  }
+
+private:
+  static inline bool volatile inner_state = false;
+
+  void driver_level(hal::async_context& p_context, bool p_high) override
+  {
+    auto* frame =
+      new (p_context, this, p_high) hal::task_promise_type<void>(p_context);
+    auto return_object = frame->get_return_object();
+
+    auto init_suspend = frame->initial_suspend();
+    if (init_suspend.await_ready()) {
+      init_suspend.await_suspend(std::noop_coroutine());
+    }
+    init_suspend.await_resume();
+
+    try {
+      if (p_high) {
+        // The first 16 bits of the register set the output state
+        gpio_reg(m_port).bsrr = 1 << m_pin;
+      } else {
+        // The last 16 bits of the register reset the output state
+        gpio_reg(m_port).bsrr = 1 << (16 + m_pin);
+      }
+      if (not inner_state) {
+        throw 5;
+      }
+    } catch (...) {
+      frame->unhandled_exception();
+      delete frame;
+    }
+
+    {
+      auto final_await = frame->final_suspend();
+      if (final_await.await_ready()) {
+        // final_await.await_suspend();
+      }
+      final_await.await_resume();
+    }
+    delete frame;
+    // return void
+  }
+  hal::u8 m_port;
+  hal::u8 m_pin;
+};
+
 std::array<hal::byte, 512 * 2> coroutine_stack;
 hal::coroutine_stack_memory_resource coroutine_resource(coroutine_stack);
 hal::async_context ctx(coroutine_resource, sizeof(coroutine_stack));
@@ -688,11 +778,20 @@ void set_pin(hal::u8 p_port, hal::u8 p_pin, bool p_state)
   }
 }
 
+pseudo_coro_output_pin_impl pseudo_coro_output_pin_obj('B', 13);
 coro_sync_pin coro_pin_obj;
 coro_async_pin coro_pin_async_obj;
 coro_forever_async_pin coro_pin_forever_async_obj;
 
 bool volatile switcher = false;
+
+pseudo_coro_output_pin* get_pseudo_coro_pin()
+{
+  if (not switcher) {
+    return &pseudo_coro_output_pin_obj;
+  }
+  return nullptr;
+}
 
 async_output_pin* get_coro_pin()
 {
@@ -915,9 +1014,15 @@ void application(resource_list& p_map)
   auto c_vtable = get_c_output_pin_vtable();
   auto c_output_pin_obj = get_c_output_pin_object('B', 13);
   auto& led = *p_map.status_led.value();
-  async_output_pin* coro_pin = get_coro_pin();
+  async_output_pin* sync_coro_pin = get_coro_pin();
   async_output_pin* coro_pin_async = get_async_coro_pin();
   async_output_pin* coro_forever = get_forever_coro_pin();
+  [[maybe_unused]] pseudo_coro_output_pin* pseudo_coro_pin =
+    get_pseudo_coro_pin();
+
+  if (not switcher) {
+    pseudo_coro_pin->level(ctx, false);
+  }
 
   while (true) {
     using namespace std::chrono_literals;
@@ -951,8 +1056,8 @@ void application(resource_list& p_map)
 
     hal::delay(clock, delay_time);
     for (int i = 0; i < 400; i++) {
-      coro_pin->level(ctx, false).sync_result();
-      coro_pin->level(ctx, true).sync_result();
+      sync_coro_pin->level(ctx, false).sync_result();
+      sync_coro_pin->level(ctx, true).sync_result();
     }
     hal::delay(clock, delay_time);
     for (int i = 0; i < 300; i++) {
@@ -972,10 +1077,10 @@ void application(resource_list& p_map)
     coro_await_task_loop_deeper(ctx, *coro_pin_async, 130).sync_result();
 
     hal::delay(clock, delay_time);
-    coro_await_task_loop_deeper(ctx, *coro_pin, 120).sync_result();
+    coro_await_task_loop_deeper(ctx, *sync_coro_pin, 120).sync_result();
 
     hal::delay(clock, delay_time);
-    coro_await_task_loop(ctx, *coro_pin, 100).sync_result();
+    coro_await_task_loop(ctx, *sync_coro_pin, 100).sync_result();
 
     fast_uptime_overhead = fast_measure_timing_overhead();
 

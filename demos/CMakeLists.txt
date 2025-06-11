@@ -32,6 +32,7 @@ libhal_build_demos(
   pwm16
   spi
   blank
+  stm_watchdog
   # stream_dac
 
   PACKAGES

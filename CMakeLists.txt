@@ -65,6 +65,7 @@ libhal_test_and_make_library(
   src/stm32f1/spi.cpp
   src/stm32f1/adc.cpp
   src/stm32f1/usart.cpp
+  src/stm32f1/independent_watchdog.cpp
 
   # stm32f411
   src/stm32f411/clock.cpp

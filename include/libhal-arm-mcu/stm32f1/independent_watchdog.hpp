@@ -4,7 +4,8 @@
 
 namespace hal::stm32f1 {
 
-//TODO: update documentation for if watch dog resets on start or if it just continues
+// TODO: update documentation for if watch dog resets on start or if it just
+// continues
 /**
  * @brief start the watchdog countdown
  */
@@ -18,12 +19,17 @@ void restart_independent_watchdog();
  */
 void stop_independent_watchdog();
 /**
- * @brief configures the watchdog countdown frequency and counter to specified time
+ * @brief configures the watchdog countdown frequency and counter to specified
+ * time
  */
 void set_independent_watchdog_countdown_time(hal::time_duration wait_time);
 /**
- * @brief if last reset caused by watchdog
+ * @brief checks if indpendet watchdog reset flag is set
  */
-bool reset_by_independent_watchdog();
+bool check_independent_watchdog_flag();
+/**
+ * @brief clears reset flags
+ */
+void clear_reset_flags();
 
 }  // namespace hal::stm32f1

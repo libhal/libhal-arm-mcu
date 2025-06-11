@@ -6,7 +6,6 @@
 #include <libhal/units.hpp>
 #include <memory>
 
-
 using namespace std::chrono_literals;
 
 namespace hal {
@@ -46,14 +45,9 @@ void start_independent_watchdog()
 {
   iwdg_regs->set_kr(0xCCCC);
 }
-void stop_independent_watchdog()
+void reset_independent_watchdog_counter()
 {
   iwdg_regs->set_kr(0xAAAA);
-}
-void restart_independent_watchdog()
-{
-  stop_independent_watchdog();
-  start_independent_watchdog();
 }
 
 void set_independent_watchdog_countdown_time(hal::time_duration p_wait_time)
@@ -81,13 +75,13 @@ void set_independent_watchdog_countdown_time(hal::time_duration p_wait_time)
     }
     iwdg_regs->set_kr(0x5555);
     iwdg_regs->set_pr(frq_divider);
-    iwdg_regs->set_rlr(cycle_count-1);
+    iwdg_regs->set_rlr(cycle_count - 1);
   }
 }
 
 bool check_independent_watchdog_flag()
 {
-  //pg. 152
+  // pg. 152
   return bit_extract(bit_mask::from(29), *reset_status_register);
 }
 

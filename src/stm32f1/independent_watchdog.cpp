@@ -15,6 +15,9 @@ struct independent_watchdog_registers
   uint32_t volatile pr;
   uint32_t volatile rlr;
   uint32_t volatile sr;
+  
+  // setters are to not acidentily write in reserved memory
+
   void set_kr(uint32_t p_value)
   {
     constexpr bit_mask writeable_kr = bit_mask::from(0, 15);
@@ -52,11 +55,11 @@ void reset_independent_watchdog_counter()
 
 void set_independent_watchdog_countdown_time(hal::time_duration p_wait_time)
 {
-  // convert to counts of 40khz clock (pg. 126)
+  // convert to counts of 40khz clock (figure 11, pg. 126)
   constexpr hal::time_duration nano_seconds_per_clock_cycle =
     1'000'000'000ns / 40'000;
   long long cycle_count = p_wait_time / nano_seconds_per_clock_cycle;
-  // frq divider starts a /4 ()
+  // frq divider starts a /4 (table 96, pg. 495)
   cycle_count = cycle_count >> 2;
   if (cycle_count == 0) {
     throw hal::operation_not_supported(nullptr);
@@ -70,6 +73,7 @@ void set_independent_watchdog_countdown_time(hal::time_duration p_wait_time)
   if (frq_divider >= 7) {
     throw hal::operation_not_supported(nullptr);
   } else {
+    // register's shouldn't be edited when bits are 1 (sec. 19.4.4, pg. 498)
     if (bit_extract(bit_mask::from(0, 1), iwdg_regs->sr)) {
       throw hal::resource_unavailable_try_again(nullptr);
     }
@@ -81,12 +85,13 @@ void set_independent_watchdog_countdown_time(hal::time_duration p_wait_time)
 
 bool check_independent_watchdog_flag()
 {
-  // pg. 152
+  // sec. 8.3.10, pg. 152
   return bit_extract(bit_mask::from(29), *reset_status_register);
 }
 
 void clear_reset_flags()
 {
+  // sec. 8.3.10, pg. 152
   bit_modify(*reset_status_register).set(bit_mask::from(24));
 }
 

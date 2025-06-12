@@ -54,6 +54,7 @@ libhal_test_and_make_library(
   src/stm32f1/can.cpp
   src/stm32f1/clock.cpp
   src/stm32f1/gpio.cpp
+  src/stm32f1/independent_watchdog.cpp
   src/stm32f1/input_pin.cpp
   src/stm32f1/interrupt.cpp
   src/stm32f1/output_pin.cpp
@@ -65,7 +66,6 @@ libhal_test_and_make_library(
   src/stm32f1/spi.cpp
   src/stm32f1/adc.cpp
   src/stm32f1/usart.cpp
-  src/stm32f1/watchdog.cpp
 
   # stm32f411
   src/stm32f411/clock.cpp

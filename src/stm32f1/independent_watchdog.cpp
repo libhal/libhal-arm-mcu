@@ -3,7 +3,6 @@
 #include <libhal-util/bit.hpp>
 #include <libhal/error.hpp>
 
-
 using namespace std::chrono_literals;
 
 namespace {

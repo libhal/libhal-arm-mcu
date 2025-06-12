@@ -31,7 +31,23 @@
 #include <libhal/stream_dac.hpp>
 #include <libhal/timer.hpp>
 #include <libhal/zero_copy_serial.hpp>
-#include <libhal-arm-mcu/watchdog.hpp>
+#pragma once
+
+#include <libhal/units.hpp>
+
+namespace hal {
+
+class watchdog
+{
+public:
+  void start();
+  void reset();
+  void set_countdown_time(hal::time_duration p_wait_time);
+  bool check_flag();
+  void clear_flag();
+};
+
+}  // namespace hal
 
 struct resource_list
 {

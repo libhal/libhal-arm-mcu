@@ -29,6 +29,29 @@
 
 #include <resource_list.hpp>
 
+void hal::watchdog::start()
+{
+  throw hal::operation_not_supported(nullptr);
+};
+void hal::watchdog::reset()
+{
+  throw hal::operation_not_supported(nullptr);
+}
+void hal::watchdog::set_countdown_time(hal::time_duration p_wait_time)
+{
+  if (p_wait_time == p_wait_time) {  // so compiler dosen't freakout
+    throw hal::operation_not_supported(nullptr);
+  }
+}
+bool hal::watchdog::check_flag()
+{
+  throw hal::operation_not_supported(nullptr);
+}
+void hal::watchdog::clear_flag()
+{
+  throw hal::operation_not_supported(nullptr);
+}
+
 void initialize_platform(resource_list& p_resources)
 {
   using namespace hal::literals;

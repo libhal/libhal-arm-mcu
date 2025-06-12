@@ -3,7 +3,6 @@
 #include <libhal-util/bit.hpp>
 #include <libhal/error.hpp>
 
-
 using namespace std::chrono_literals;
 
 namespace {
@@ -37,7 +36,7 @@ auto* const iwdg_regs =
   reinterpret_cast<independent_watchdog_registers*>(0x40003000);
 // NOLINTBEGIN(performance-no-int-to-ptr)
 uint32_t* const reset_status_register =
-  reinterpret_cast<uint32_t*>(0x40021000 + 0x24);  //
+  reinterpret_cast<uint32_t*>(0x40021000 + 0x24);
 // NOLINTEND(performance-no-int-to-ptr)
 
 }  // namespace

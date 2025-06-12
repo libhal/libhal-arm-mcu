@@ -24,22 +24,35 @@ void application(resource_list& p_map)
 
   auto& pwm = *p_map.pwm.value();
   auto& clock = *p_map.clock.value();
+  auto& console = *p_map.console.value();
 
   while (true) {
+    pwm.duty_cycle(0.0f);
     pwm.frequency(1.0_kHz);
-
-    for (unsigned iteration = 0; iteration <= 100; iteration += 1) {
-      auto duty_cycle = static_cast<float>(iteration) / 100.0f;
+    hal::print(console, "Sweeping duty cycle from 0 to 1 \n");
+    hal::delay(clock, 1s);
+    float constexpr duty_cycle_step_count = 20;
+    float const duty_cycle_step = 1 / duty_cycle_step_count;
+    for (float duty_cycle = 0; duty_cycle < 1; duty_cycle += duty_cycle_step) {
+      hal::print<64>(console, ">> Duty: %.2f \n", duty_cycle);
       pwm.duty_cycle(duty_cycle);
       hal::delay(clock, 100ms);
     }
 
-    pwm.duty_cycle(0.5f);
+    pwm.duty_cycle(0.0f);
 
-    for (unsigned iteration = 1; iteration < 20; iteration++) {
-      auto const frequency = static_cast<hal::hertz>(100_Hz * iteration);
+    hal::print(console, "Sweeping frequency from 1kHz to 20kHz\n");
+    hal::print(console, ">> pwm Duty Cycle = 50%\n");
+    hal::delay(clock, 1s);
+    pwm.duty_cycle(1.0f / 2);  // 50% duty cycle
+
+    for (float multiplier = 1; multiplier < 20; multiplier++) {
+      float frequency = 1000 /* Hz */ * multiplier;
       pwm.frequency(frequency);
+      hal::print<64>(console, ">> Freq: %f Hz\n", frequency);
       hal::delay(clock, 100ms);
     }
+
+    hal::print(console, "\n");
   }
 }

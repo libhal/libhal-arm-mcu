@@ -1,4 +1,4 @@
-# Copyright 2024 Khalil Estell
+# Copyright 2024 - 2025 Khalil Estell and the libhal contributors
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -16,8 +16,6 @@ cmake_minimum_required(VERSION 3.20)
 
 project(demos LANGUAGES CXX)
 
-set(ENV{LIBHAL_PLATFORM_LIBRARY} arm-mcu)
-
 libhal_build_demos(
   DEMOS
   adc
@@ -33,6 +31,7 @@ libhal_build_demos(
   spi
   blank
   # stream_dac
+  timer
 
   PACKAGES
   minimp3

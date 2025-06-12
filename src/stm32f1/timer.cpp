@@ -12,15 +12,19 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <libhal-arm-mcu/interrupt.hpp>
 #include <libhal-arm-mcu/stm32_generic/pwm.hpp>
 #include <libhal-arm-mcu/stm32f1/constants.hpp>
+#include <libhal-arm-mcu/stm32f1/interrupt.hpp>
 #include <libhal-arm-mcu/stm32f1/pwm.hpp>
 #include <libhal-arm-mcu/stm32f1/timer.hpp>
 #include <libhal-util/bit.hpp>
 #include <libhal-util/enum.hpp>
+#include <libhal-util/static_callable.hpp>
 #include <libhal/error.hpp>
 #include <libhal/units.hpp>
 
+#include "../stm32_generic/timer.hpp"
 #include "power.hpp"
 
 namespace hal::stm32f1 {
@@ -53,27 +57,26 @@ void* peripheral_to_advanced_register(peripheral p_id)
   return reg;
 }
 
-template<peripheral select>
-void* peripheral_to_general_register()
+void* peripheral_to_general_register(peripheral p_id)
 {
   void* reg;
-  if constexpr (select == peripheral::timer2) {
+  if (p_id == peripheral::timer2) {
     reg = timer2;
-  } else if constexpr (select == peripheral::timer3) {
+  } else if (p_id == peripheral::timer3) {
     reg = timer3;
-  } else if constexpr (select == peripheral::timer4) {
+  } else if (p_id == peripheral::timer4) {
     reg = timer4;
-  } else if constexpr (select == peripheral::timer5) {
+  } else if (p_id == peripheral::timer5) {
     reg = timer5;
-  } else if constexpr (select == peripheral::timer9) {
+  } else if (p_id == peripheral::timer9) {
     reg = timer9;
-  } else if constexpr (select == peripheral::timer10) {
+  } else if (p_id == peripheral::timer10) {
     reg = timer10;
-  } else if constexpr (select == peripheral::timer11) {
+  } else if (p_id == peripheral::timer11) {
     reg = timer11;
-  } else if constexpr (select == peripheral::timer12) {
+  } else if (p_id == peripheral::timer12) {
     reg = timer12;
-  } else if constexpr (select == peripheral::timer13) {
+  } else if (p_id == peripheral::timer13) {
     reg = timer13;
   } else {
     reg = timer14;
@@ -82,70 +85,295 @@ void* peripheral_to_general_register()
 }
 }  // namespace
 
-advanced_timer_manager::advanced_timer_manager(peripheral p_id)
-  : m_id(p_id)
+timer::timer(void* p_reg, manager_data* p_manager_data_ptr)
+  : m_timer(unsafe{})
+  , m_manager_data_ptr(p_manager_data_ptr)
 {
-  power_on(m_id);
+  // Captures the needed stm32f1 series interrupt data to be passed
+  auto peripheral_interrupt_params = setup_interrupt();
+
+  // Passes the stm32f1 series data to the generic stm32 timer object
+  m_timer.initialize(unsafe{},
+                     p_reg,
+                     &stm32f1::initialize_interrupts,
+                     peripheral_interrupt_params.irq,
+                     peripheral_interrupt_params.handler);
+
+  m_manager_data_ptr->m_timer_usage = manager_data::timer_usage::callback_timer;
+}
+
+timer::~timer()
+{
+  m_manager_data_ptr->m_timer_usage = manager_data::timer_usage::uninitialized;
+  reset_peripheral(m_manager_data_ptr->m_id);
+}
+
+bool timer::driver_is_running()
+{
+  return m_timer.is_running();
+}
+
+void timer::driver_cancel()
+{
+  m_timer.cancel();
+}
+
+void timer::driver_schedule(hal::callback<void(void)> p_callback,
+                            hal::time_duration p_delay)
+{
+  m_callback = p_callback;
+  auto const timer_frequency = frequency(m_manager_data_ptr->m_id);
+  m_timer.schedule(p_delay, static_cast<u32>(timer_frequency));
+}
+
+timer::interrupt_params timer::setup_interrupt()
+{
+  // Create a lambda to call the interrupt() method
+  auto isr = [this]() { interrupt(); };
+
+  // A pointer to save the static_callable isr address to
+  interrupt_params peripheral_interrupt_params;
+
+  // Determines IRQ and handler to use
+  switch (m_manager_data_ptr->m_id) {
+    case peripheral::timer1:
+      peripheral_interrupt_params.irq =
+        static_cast<cortex_m::irq_t>(irq::tim1_up);
+      peripheral_interrupt_params.handler =
+        static_callable<timer, 0, void(void)>(isr).get_handler();
+      break;
+    case peripheral::timer2:
+      peripheral_interrupt_params.irq = static_cast<cortex_m::irq_t>(irq::tim2);
+      peripheral_interrupt_params.handler =
+        static_callable<timer, 1, void(void)>(isr).get_handler();
+      break;
+    case peripheral::timer3:
+      peripheral_interrupt_params.irq = static_cast<cortex_m::irq_t>(irq::tim3);
+      peripheral_interrupt_params.handler =
+        static_callable<timer, 2, void(void)>(isr).get_handler();
+      break;
+    case peripheral::timer4:
+      peripheral_interrupt_params.irq = static_cast<cortex_m::irq_t>(irq::tim4);
+      peripheral_interrupt_params.handler =
+        static_callable<timer, 3, void(void)>(isr).get_handler();
+      break;
+    case peripheral::timer5:
+      peripheral_interrupt_params.irq = static_cast<cortex_m::irq_t>(irq::tim5);
+      peripheral_interrupt_params.handler =
+        static_callable<timer, 4, void(void)>(isr).get_handler();
+      break;
+    case peripheral::timer6:
+      peripheral_interrupt_params.irq = static_cast<cortex_m::irq_t>(irq::tim6);
+      peripheral_interrupt_params.handler =
+        static_callable<timer, 5, void(void)>(isr).get_handler();
+      break;
+    case peripheral::timer7:
+      peripheral_interrupt_params.irq = static_cast<cortex_m::irq_t>(irq::tim7);
+      peripheral_interrupt_params.handler =
+        static_callable<timer, 6, void(void)>(isr).get_handler();
+      break;
+    case peripheral::timer8:
+      peripheral_interrupt_params.irq =
+        static_cast<cortex_m::irq_t>(irq::tim8_up);
+      peripheral_interrupt_params.handler =
+        static_callable<timer, 7, void(void)>(isr).get_handler();
+      break;
+    case peripheral::timer9:
+      peripheral_interrupt_params.irq =
+        static_cast<cortex_m::irq_t>(irq::tim1_brk_tim9);
+      peripheral_interrupt_params.handler =
+        static_callable<timer, 8, void(void)>(isr).get_handler();
+      break;
+    case peripheral::timer10:  // uses timer 1's interrupt vector
+      peripheral_interrupt_params.irq =
+        static_cast<cortex_m::irq_t>(irq::tim1_up_tim10);
+      peripheral_interrupt_params.handler =
+        static_callable<timer, 9, void(void)>(isr).get_handler();
+      break;
+    case peripheral::timer11:
+      peripheral_interrupt_params.irq =
+        static_cast<cortex_m::irq_t>(irq::tim1_trg_com_tim11);
+      peripheral_interrupt_params.handler =
+        static_callable<timer, 10, void(void)>(isr).get_handler();
+      break;
+    case peripheral::timer12:
+      peripheral_interrupt_params.irq =
+        static_cast<cortex_m::irq_t>(irq::tim8_brk_tim12);
+      peripheral_interrupt_params.handler =
+        static_callable<timer, 11, void(void)>(isr).get_handler();
+      break;
+    case peripheral::timer13:  // uses timer 8's interrupt vector
+      peripheral_interrupt_params.irq =
+        static_cast<cortex_m::irq_t>(irq::tim8_up_tim13);
+      peripheral_interrupt_params.handler =
+        static_callable<timer, 12, void(void)>(isr).get_handler();
+      break;
+    case peripheral::timer14:
+      [[fallthrough]];
+    default:
+      peripheral_interrupt_params.irq =
+        static_cast<cortex_m::irq_t>(irq::tim8_trg_com_tim14);
+      peripheral_interrupt_params.handler =
+        static_callable<timer, 13, void(void)>(isr).get_handler();
+      break;
+  }
+  return peripheral_interrupt_params;
+}
+
+void timer::handle_interrupt()
+{
+  void* reg = nullptr;
+  if (m_manager_data_ptr->m_id == peripheral::timer1 ||
+      m_manager_data_ptr->m_id == peripheral::timer8) {
+    reg = peripheral_to_advanced_register(m_manager_data_ptr->m_id);
+  } else {
+    reg = peripheral_to_general_register(m_manager_data_ptr->m_id);
+  }
+
+  static auto timer_reg = stm32_generic::get_timer_reg(reg);
+
+  static constexpr auto update_interrupt_flag = hal::bit_mask::from(0);
+  bit_modify(timer_reg->status_register).clear(update_interrupt_flag);
+}
+
+void timer::interrupt()
+{
+  if (m_callback) {
+    (*m_callback)();
+    timer::handle_interrupt();
+  }
+}
+
+advanced_timer_manager::advanced_timer_manager(peripheral p_id)
+  : m_manager_data(p_id)
+{
+  power_on(m_manager_data.m_id);
+}
+
+general_purpose_timer_manager::general_purpose_timer_manager(peripheral p_id)
+  : m_manager_data(p_id)
+{
+  power_on(m_manager_data.m_id);
 }
 
 advanced_timer_manager::~advanced_timer_manager()
 {
-  power_off(m_id);
+  power_off(m_manager_data.m_id);
 }
 
-template<peripheral select>
-general_purpose_timer<select>::general_purpose_timer()
+general_purpose_timer_manager::~general_purpose_timer_manager()
 {
-  power_on(select);
-}
-template<peripheral select>
-general_purpose_timer<select>::~general_purpose_timer()
-{
-  power_off(select);
+  power_off(m_manager_data.m_id);
 }
 
-hal::stm32f1::pwm advanced_timer_manager::acquire_pwm(timer_pins p_pin)
+hal::stm32f1::timer advanced_timer_manager::acquire_timer()
 {
-  return { peripheral_to_advanced_register(m_id), m_id, true, p_pin };
+  if (m_manager_data.m_timer_usage !=
+      manager_data::timer_usage::uninitialized) {
+    safe_throw(hal::device_or_resource_busy(this));
+  }
+
+  return { peripheral_to_advanced_register(m_manager_data.m_id),
+           &m_manager_data };
 }
 
-template<peripheral select>
-hal::stm32f1::pwm general_purpose_timer<select>::acquire_pwm(pin_type p_pin)
+hal::stm32f1::timer general_purpose_timer_manager::acquire_timer()
 {
+  if (m_manager_data.m_timer_usage !=
+      manager_data::timer_usage::uninitialized) {
+    safe_throw(hal::device_or_resource_busy(this));
+  }
 
-  return { peripheral_to_general_register<select>(),
-           select,
-           false,
-           static_cast<timer_pins>(p_pin) };
-}
-
-hal::stm32f1::pwm16_channel advanced_timer_manager::acquire_pwm16_channel(
-  timer_pins p_pin)
-{
-  return { peripheral_to_advanced_register(m_id), m_id, true, p_pin };
-}
-
-template<peripheral select>
-hal::stm32f1::pwm16_channel
-general_purpose_timer<select>::acquire_pwm16_channel(pin_type p_pin)
-{
-  return { peripheral_to_general_register<select>(),
-           select,
-           false,
-           static_cast<timer_pins>(p_pin) };
+  return { peripheral_to_general_register(m_manager_data.m_id),
+           &m_manager_data };
 }
 
 hal::stm32f1::pwm_group_frequency
 advanced_timer_manager::acquire_pwm_group_frequency()
 {
-  return { peripheral_to_advanced_register(m_id), m_id };
+  if (m_manager_data.m_timer_usage !=
+        manager_data::timer_usage::uninitialized &&
+      m_manager_data.m_timer_usage !=
+        manager_data::timer_usage::pwm_generator) {
+    safe_throw(hal::device_or_resource_busy(this));
+  }
+
+  return { peripheral_to_advanced_register(m_manager_data.m_id),
+           &m_manager_data };
 }
 
-template<peripheral select>
 hal::stm32f1::pwm_group_frequency
-general_purpose_timer<select>::acquire_pwm_group_frequency()
+general_purpose_timer_manager::acquire_pwm_group_frequency()
 {
-  return { peripheral_to_general_register<select>(), select };
+  if (m_manager_data.m_timer_usage !=
+        manager_data::timer_usage::uninitialized &&
+      m_manager_data.m_timer_usage !=
+        manager_data::timer_usage::pwm_generator) {
+    safe_throw(hal::device_or_resource_busy(this));
+  }
+
+  return { peripheral_to_general_register(m_manager_data.m_id),
+           &m_manager_data };
+}
+
+hal::stm32f1::pwm16_channel advanced_timer_manager::acquire_pwm16_channel(
+  timer_pins p_pin)
+{
+  if (m_manager_data.m_timer_usage !=
+        manager_data::timer_usage::uninitialized &&
+      m_manager_data.m_timer_usage !=
+        manager_data::timer_usage::pwm_generator) {
+    safe_throw(hal::device_or_resource_busy(this));
+  }
+
+  return { peripheral_to_advanced_register(m_manager_data.m_id),
+           &m_manager_data,
+           true,
+           p_pin };
+}
+
+hal::stm32f1::pwm16_channel
+general_purpose_timer_manager::acquire_pwm16_channel(timer_pins p_pin)
+{
+  if (m_manager_data.m_timer_usage !=
+        manager_data::timer_usage::uninitialized &&
+      m_manager_data.m_timer_usage !=
+        manager_data::timer_usage::pwm_generator) {
+    safe_throw(hal::device_or_resource_busy(this));
+  }
+
+  return { peripheral_to_general_register(m_manager_data.m_id),
+           &m_manager_data,
+           false,
+           p_pin };
+}
+
+hal::stm32f1::pwm advanced_timer_manager::acquire_pwm(timer_pins p_pin)
+{
+  if (m_manager_data.m_timer_usage !=
+        manager_data::timer_usage::uninitialized &&
+      m_manager_data.m_timer_usage != manager_data::timer_usage::old_pwm) {
+    safe_throw(hal::device_or_resource_busy(this));
+  }
+
+  return { peripheral_to_advanced_register(m_manager_data.m_id),
+           &m_manager_data,
+           true,
+           p_pin };
+}
+
+hal::stm32f1::pwm general_purpose_timer_manager::acquire_pwm(timer_pins p_pin)
+{
+  if (m_manager_data.m_timer_usage !=
+        manager_data::timer_usage::uninitialized &&
+      m_manager_data.m_timer_usage != manager_data::timer_usage::old_pwm) {
+    safe_throw(hal::device_or_resource_busy(this));
+  }
+
+  return { peripheral_to_general_register(m_manager_data.m_id),
+           &m_manager_data,
+           false,
+           p_pin };
 }
 
 // Tell the compiler which instances to generate

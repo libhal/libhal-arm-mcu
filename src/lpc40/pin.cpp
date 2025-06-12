@@ -14,7 +14,7 @@
 
 #include <cstdint>
 
-#include <libhal-lpc40/pin.hpp>
+#include <libhal-arm-mcu/lpc40/pin.hpp>
 
 #include <libhal-util/bit.hpp>
 #include <libhal/units.hpp>

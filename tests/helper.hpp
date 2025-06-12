@@ -3,7 +3,7 @@
 #include <algorithm>
 #include <array>
 
-#include <libhal-armcortex/interrupt.hpp>
+#include <libhal-arm-mcu/interrupt.hpp>
 #include <libhal/units.hpp>
 
 #include "interrupt_reg.hpp"

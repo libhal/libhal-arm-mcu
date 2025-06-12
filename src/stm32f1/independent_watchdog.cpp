@@ -1,46 +1,45 @@
-#include "libhal-arm-mcu/watchdog.hpp"
 #include <cstdint>
 #include <libhal-arm-mcu/stm32f1/independent_watchdog.hpp>
 #include <libhal-util/bit.hpp>
-#include <libhal-util/serial.hpp>
 #include <libhal/error.hpp>
-#include <libhal/units.hpp>
-#include <memory>
+
 
 using namespace std::chrono_literals;
 
 namespace {
 struct independent_watchdog_registers
 {
-  uint32_t volatile kr;
-  uint32_t volatile pr;
-  uint32_t volatile rlr;
-  uint32_t volatile sr;
-
   // setters are to not acidentily write in reserved memory
 
-  void set_kr(uint32_t p_value)
+  void set_kr(uint16_t p_value)
   {
     constexpr hal::bit_mask writeable_kr = hal::bit_mask::from(0, 15);
     hal::bit_modify(kr).insert<writeable_kr>(p_value);
   }
-  void set_pr(uint32_t p_value)
+  void set_pr(uint8_t p_value)
   {
     constexpr hal::bit_mask writeable_pr = hal::bit_mask::from(0, 2);
     hal::bit_modify(pr).insert<writeable_pr>(p_value);
   }
-  void set_rlr(uint32_t p_value)
+  void set_rlr(uint16_t p_value)
   {
     constexpr hal::bit_mask writeable_rlr = hal::bit_mask::from(0, 11);
     hal::bit_modify(rlr).insert<writeable_rlr>(p_value);
   }
+
+  uint32_t volatile kr;
+  uint32_t volatile pr;
+  uint32_t volatile rlr;
+  uint32_t volatile sr;
 };
+
 auto* const iwdg_regs =
   reinterpret_cast<independent_watchdog_registers*>(0x40003000);
 // NOLINTBEGIN(performance-no-int-to-ptr)
 uint32_t* const reset_status_register =
   reinterpret_cast<uint32_t*>(0x40021000 + 0x24);  //
 // NOLINTEND(performance-no-int-to-ptr)
+
 }  // namespace
 
 namespace hal::stm32f1 {
@@ -48,7 +47,8 @@ void independent_watchdog::start()
 {
   iwdg_regs->set_kr(0xCCCC);
 }
-void independent_watchdog::reset() {
+void independent_watchdog::reset()
+{
   iwdg_regs->set_kr(0xAAAA);
 }
 
@@ -85,13 +85,15 @@ void independent_watchdog::set_countdown_time(hal::time_duration p_wait_time)
 bool independent_watchdog::check_flag()
 {
   // sec. 8.3.10, pg. 152
-  return bit_extract(bit_mask::from(29), *reset_status_register);
+  bit_mask const flag = bit_mask::from(29);
+  return bit_extract(flag, *reset_status_register);
 }
 
 void independent_watchdog::clear_flag()
 {
   // sec. 8.3.10, pg. 152
-  bit_modify(*reset_status_register).set(bit_mask::from(24));
+  bit_mask const reset_flag = bit_mask::from(24);
+  bit_modify(*reset_status_register).set(reset_flag);
 }
 
 }  // namespace hal::stm32f1

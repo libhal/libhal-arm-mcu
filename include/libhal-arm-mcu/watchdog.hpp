@@ -17,8 +17,10 @@ public:
   virtual void reset() = 0;
   /**
    * @brief configures the watchdog to match countdown to specified time
+   *
+   * @param p_wait_time coundown time till the watchdog resets
    */
-  virtual void set_countdown_time(hal::time_duration wait_time) = 0;
+  virtual void set_countdown_time(hal::time_duration p_wait_time) = 0;
   /**
    * @brief checks if watchdog reset flag is set
    */

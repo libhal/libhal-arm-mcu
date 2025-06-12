@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include <libhal-lpc40/dac.hpp>
-#include <libhal-lpc40/pin.hpp>
+#include <libhal-arm-mcu/lpc40/dac.hpp>
+#include <libhal-arm-mcu/lpc40/pin.hpp>
 #include <libhal-util/bit.hpp>
 #include <libhal-util/bit_limits.hpp>
 

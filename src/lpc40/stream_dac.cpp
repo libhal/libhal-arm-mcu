@@ -1,9 +1,9 @@
 #include <concepts>
 
-#include <libhal-lpc40/clock.hpp>
-#include <libhal-lpc40/dma.hpp>
-#include <libhal-lpc40/pin.hpp>
-#include <libhal-lpc40/stream_dac.hpp>
+#include <libhal-arm-mcu/lpc40/clock.hpp>
+#include <libhal-arm-mcu/lpc40/dma.hpp>
+#include <libhal-arm-mcu/lpc40/pin.hpp>
+#include <libhal-arm-mcu/lpc40/stream_dac.hpp>
 #include <libhal/io_waiter.hpp>
 #include <libhal/stream_dac.hpp>
 

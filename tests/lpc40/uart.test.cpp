@@ -12,4 +12,4 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include <libhal-lpc40/uart.hpp>
+#include <libhal-arm-mcu/lpc40/uart.hpp>

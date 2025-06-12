@@ -17,7 +17,7 @@
 #include <array>
 #include <cstdint>
 
-#include <libhal-lpc40/constants.hpp>
+#include <libhal-arm-mcu/lpc40/constants.hpp>
 #include <libhal-util/bit.hpp>
 #include <libhal-util/enum.hpp>
 #include <libhal/error.hpp>

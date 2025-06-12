@@ -1,6 +1,6 @@
 #!/usr/bin/python
 #
-# Copyright 2024 Khalil Estell
+# Copyright 2024 - 2025 Khalil Estell and the libhal contributors
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -19,7 +19,7 @@ from conan import ConanFile
 
 class TestPackageConan(ConanFile):
     settings = "os", "arch", "compiler", "build_type"
-    python_requires = "libhal-bootstrap/[^3.0.0]"
+    python_requires = "libhal-bootstrap/[>=4.3.0 <5]"
     python_requires_extend = "libhal-bootstrap.library_test_package"
 
     def requirements(self):

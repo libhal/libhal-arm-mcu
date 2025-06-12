@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include <libhal-armcortex/dwt_counter.hpp>
+#include <libhal-arm-mcu/dwt_counter.hpp>
 
 #include "dwt_counter_reg.hpp"
 #include "helper.hpp"

@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include <libhal-stm32f1/output_pin.hpp>
+#include <libhal-arm-mcu/stm32f1/output_pin.hpp>
 
 #include <libhal-util/bit.hpp>
 #include <libhal/error.hpp>

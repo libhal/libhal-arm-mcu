@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include <libhal-lpc40/i2c.hpp>
+#include <libhal-arm-mcu/lpc40/i2c.hpp>
 
 #include "lpc40/gpio_reg.hpp"
 #include "lpc40/helper.hpp"

@@ -30,6 +30,7 @@
 #include <libhal/steady_clock.hpp>
 #include <libhal/stream_dac.hpp>
 #include <libhal/zero_copy_serial.hpp>
+#include <libhal-arm-mcu/watchdog.hpp>
 
 struct resource_list
 {
@@ -58,6 +59,7 @@ struct resource_list
   std::optional<hal::output_pin*> spi_chip_select;
   std::optional<hal::stream_dac_u8*> stream_dac;
   std::optional<hal::dac*> dac;
+  std::optional<hal::watchdog*> watchdog;
 };
 
 // Each application file should have this function implemented

@@ -14,7 +14,6 @@
 
 #include <array>
 #include <cmath>
-#include <libhal-arm-mcu/stm32f1/independent_watchdog.hpp>
 #include <libhal-util/serial.hpp>
 #include <libhal-util/steady_clock.hpp>
 
@@ -29,18 +28,19 @@ void application(resource_list& p_map)
   using namespace hal::literals;
 
   auto& console = *p_map.console.value();
+  auto& watchdog =*p_map.watchdog.value();
   hal::time_duration const wait_time = 5s;
 
-  if (hal::stm32f1::check_independent_watchdog_flag()) {
+  if (watchdog.check_flag()) {
     hal::print(console, "Reset by watchdog\n");
-    hal::stm32f1::clear_reset_flags();
+    watchdog.clear_flag();
   } else {
     hal::print(console, "Non-watchdog reset\n");
   }
 
   try {
-    hal::stm32f1::set_independent_watchdog_countdown_time(wait_time);
-    hal::stm32f1::start_independent_watchdog();
+    watchdog.set_countdown_time(wait_time);
+    watchdog.start();
   } catch (hal::operation_not_supported e) {
     hal::print(console, "invalid time\n");
   }
@@ -51,7 +51,7 @@ void application(resource_list& p_map)
     auto read = console.read(read_buffer).data;
     if (!read.empty()) {
       hal::print(console, "woof!\n");
-      hal::stm32f1::reset_independent_watchdog_counter();
+      watchdog.reset();
     }
   }
 }

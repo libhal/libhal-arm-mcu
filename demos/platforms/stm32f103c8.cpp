@@ -19,6 +19,7 @@
 #include <libhal-arm-mcu/stm32f1/clock.hpp>
 #include <libhal-arm-mcu/stm32f1/constants.hpp>
 #include <libhal-arm-mcu/stm32f1/gpio.hpp>
+#include <libhal-arm-mcu/stm32f1/independent_watchdog.hpp>
 #include <libhal-arm-mcu/stm32f1/input_pin.hpp>
 #include <libhal-arm-mcu/stm32f1/output_pin.hpp>
 #include <libhal-arm-mcu/stm32f1/spi.hpp>
@@ -34,6 +35,7 @@
 #include <libhal-util/steady_clock.hpp>
 #include <libhal/pwm.hpp>
 #include <libhal/units.hpp>
+
 
 #include <resource_list.hpp>
 
@@ -179,4 +181,7 @@ void initialize_platform(resource_list& p_resources)
       "- System will operate normally if CAN is NOT required.\n\n");
   }
 #endif
+  static hal::stm32f1::independent_watchdog watchdog =
+    hal::stm32f1::independent_watchdog();
+  p_resources.watchdog = &watchdog;
 }

@@ -32,6 +32,7 @@ libhal_build_demos(
   blank
   # stream_dac
   timer
+  max_blink
 
   PACKAGES
   minimp3

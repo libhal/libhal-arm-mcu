@@ -45,6 +45,7 @@ public:
   void set_countdown_time(hal::time_duration p_wait_time);
   bool check_flag();
   void clear_flag();
+  virtual ~watchdog() = default;
 };
 
 }  // namespace hal

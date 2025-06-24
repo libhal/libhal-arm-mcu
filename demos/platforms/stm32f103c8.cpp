@@ -195,6 +195,7 @@ void initialize_platform(resource_list& p_resources)
 #endif
 }
 
+#if 0
 void app()
 {
   // Will do all of the magic of setting up the thread_local
@@ -208,3 +209,4 @@ void app()
   // performs what you'd expect but coroutines are used underneath.
   led.level(true);
 }
+#endif

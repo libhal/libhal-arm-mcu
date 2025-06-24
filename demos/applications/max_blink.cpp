@@ -134,6 +134,7 @@ private:
   hal::u8 m_port = 'B';
   hal::u8 m_pin = 13;
 };
+
 class coro_async_pin : public async_output_pin
 {
 private:
@@ -164,6 +165,63 @@ private:
 
   hal::u8 m_port = 'B';
   hal::u8 m_pin = 13;
+};
+
+class pre_alloc_coro_async_pin : public async_output_pin
+{
+public:
+  pre_alloc_coro_async_pin(std::pmr::memory_resource* m_resource)
+    : m_runtime(*m_resource, 256, [](auto&&...) {})
+    , m_self_context(m_runtime.lease(0))
+    , m_level_write_coroutine(this->driver_level_impl(*m_self_context))
+  {
+  }
+
+private:
+  hal::v5::async<void> driver_configure(hal::v5::async_context&,
+                                        settings const&) override
+  {
+    co_return;
+  }
+
+  hal::v5::async<void> driver_level_impl(hal::v5::async_context&)
+  {
+    while (true) {
+      if (m_pin_state) {
+        // The first 16 bits of the register set the output state
+        gpio_reg(m_port).bsrr = 1 << m_pin;
+      } else {
+        // The last 16 bits of the register reset the output state
+        gpio_reg(m_port).bsrr = 1 << (16 + m_pin);
+      }
+      // m_active_context->active_handle(nullptr);
+      // co_return;
+      co_await hal::v5::async_promise_type<void>::final_awaiter{};
+    }
+  }
+
+  hal::v5::async<void> driver_level(hal::v5::async_context& p_ctx,
+                                    bool p_high) override
+  {
+    m_pin_state = p_high;
+    // p_ctx.active_handle(m_level_write_coroutine.handle());
+    m_level_write_coroutine.set_context(p_ctx);
+    return m_level_write_coroutine;
+  }
+  hal::v5::async<bool> driver_level(hal::v5::async_context&) override
+  {
+    auto const pin_value =
+      hal::bit_extract(hal::bit_mask::from(m_pin), gpio_reg(m_port).idr);
+    co_return static_cast<bool>(pin_value);
+  }
+
+  std::coroutine_handle<> m_previous_handler = nullptr;
+  hal::v5::async_runtime<1> m_runtime;
+  hal::v5::context_lease m_self_context;
+  hal::v5::async<void> m_level_write_coroutine;
+  hal::u8 m_port = 'B';
+  hal::u8 m_pin = 13;
+  bool m_pin_state = false;
 };
 
 class coro_forever_async_pin : public async_output_pin
@@ -230,7 +288,17 @@ coro_forever_async_pin coro_pin_forever_async_obj;
 
 bool volatile switcher = false;
 
-async_output_pin* get_coro_pin()
+async_output_pin* get_pre_alloc_coro_async_pin(
+  std::pmr::memory_resource* m_resource)
+{
+  if (not switcher) {
+    static pre_alloc_coro_async_pin pre_alloc_coro_async_pin_obj(m_resource);
+    return &pre_alloc_coro_async_pin_obj;
+  }
+  return &coro_pin_async_obj;
+}
+
+async_output_pin* get_sync_coro_pin()
 {
   if (not switcher) {
     return &coro_pin_obj;
@@ -403,9 +471,7 @@ hal::u64 fast_measure_timing_overhead()
   return end - start;
 }
 
-namespace hal::v5 {
-}
-
+#if 0
 // Converts output_pin into a synchonous API, will block until finished
 class sync_ouput_pin
 {
@@ -430,34 +496,36 @@ public:
 private:
   hal::v5::strong_ptr<async_output_pin> m_pin;
 };
+#endif
 
 void application(resource_list& p_map)
 {
-  std::array<hal::byte, 512 * 2> coroutine_stack;
+  std::array<hal::byte, 1024 * 2> coroutine_stack;
   std::pmr::monotonic_buffer_resource coroutine_resource(
     coroutine_stack.data(),
     coroutine_stack.size(),
     std::pmr::null_memory_resource());
 
-  hal::v5::async_thread_manager manager(
-    coroutine_resource, sizeof(coroutine_stack), [](auto const&...) {});
-  hal::v5::async_context ctx = manager.entire_context();
-
-  std::array<hal::byte, 512 * 2> coroutine_stack2;
-  std::pmr::monotonic_buffer_resource coroutine_resource2(
-    coroutine_stack2.data(),
-    coroutine_stack2.size(),
-    std::pmr::null_memory_resource());
-
-  auto ctx2 = manager.split_context<2>();
+  hal::v5::async_runtime<2> manager(
+    coroutine_resource, sizeof(coroutine_stack) / 2, [](auto const&...) {});
+  auto ctx = manager.lease(0);
+  auto ctx1 = manager.lease(1);
 
   auto& clock = *p_map.clock.value();
   auto c_vtable = get_c_output_pin_vtable();
   auto c_output_pin_obj = get_c_output_pin_object('B', 13);
   auto& led = *p_map.status_led.value();
-  async_output_pin* sync_coro_pin = get_coro_pin();
+  async_output_pin* sync_coro_pin = get_sync_coro_pin();
   async_output_pin* coro_pin_async = get_async_coro_pin();
   async_output_pin* coro_forever = get_forever_coro_pin();
+
+  std::array<hal::byte, 256> pre_alloc_buffer{};
+  std::pmr::monotonic_buffer_resource pre_alloc_buffer_resource(
+    pre_alloc_buffer.data(),
+    pre_alloc_buffer.size(),
+    std::pmr::null_memory_resource());
+  async_output_pin* coro_pre =
+    get_pre_alloc_coro_async_pin(&pre_alloc_buffer_resource);
 
   while (true) {
     using namespace std::chrono_literals;
@@ -468,8 +536,8 @@ void application(resource_list& p_map)
     }
     hal::delay(clock, delay_time);
     for (int i = 0; i < 800; i++) {
-      sync_coro_set_pin(ctx, 'B', 13, false).wait();
-      sync_coro_set_pin(ctx, 'B', 13, true).wait();
+      sync_coro_set_pin(*ctx, 'B', 13, false).wait();
+      sync_coro_set_pin(*ctx, 'B', 13, true).wait();
     }
     hal::delay(clock, delay_time);
     for (int i = 0; i < 700; i++) {
@@ -491,42 +559,54 @@ void application(resource_list& p_map)
 
     hal::delay(clock, delay_time);
     for (int i = 0; i < 400; i++) {
-      sync_coro_pin->level(ctx, false).wait();
-      sync_coro_pin->level(ctx, true).wait();
+      sync_coro_pin->level(*ctx, false).wait();
+      sync_coro_pin->level(*ctx, true).wait();
     }
+
     hal::delay(clock, delay_time);
     for (int i = 0; i < 300; i++) {
-      async_coro_set_pin(ctx, 'B', 13, false).wait();
-      async_coro_set_pin(ctx, 'B', 13, true).wait();
+      async_coro_set_pin(*ctx, 'B', 13, false).wait();
+      async_coro_set_pin(*ctx, 'B', 13, true).wait();
     }
+
     hal::delay(clock, delay_time);
     for (int i = 0; i < 200; i++) {
-      coro_pin_async->level(ctx, false).wait();
-      coro_pin_async->level(ctx, true).wait();
+      coro_pin_async->level(*ctx, false).wait();
+      coro_pin_async->level(*ctx, true).wait();
     }
 
+#if 0
     hal::delay(clock, delay_time);
-    coro_await_task_loop(ctx, *coro_pin_async, 150).wait();
+    for (int i = 0; i < 175; i++) {
+      coro_pre->level(*ctx, false).wait();
+      coro_pre->level(*ctx, true).wait();
+    }
+#endif
+    hal::delay(clock, delay_time);
+    coro_await_task_loop(*ctx, *coro_pre, 175).wait();
 
     hal::delay(clock, delay_time);
-    coro_await_task_loop_deeper(ctx, *coro_pin_async, 130).wait();
+    coro_await_task_loop(*ctx, *coro_pin_async, 150).wait();
 
     hal::delay(clock, delay_time);
-    coro_await_task_loop_deeper(ctx, *sync_coro_pin, 120).wait();
+    coro_await_task_loop_deeper(*ctx, *coro_pin_async, 130).wait();
 
     hal::delay(clock, delay_time);
-    coro_await_task_loop(ctx, *sync_coro_pin, 100).wait();
+    coro_await_task_loop_deeper(*ctx, *sync_coro_pin, 120).wait();
+
+    hal::delay(clock, delay_time);
+    coro_await_task_loop(*ctx, *sync_coro_pin, 100).wait();
 
     fast_uptime_overhead = fast_measure_timing_overhead();
 
     hal::delay(clock, delay_time);
     auto const creation_overhead_start = fast_uptime();
-    auto set_high = coro_forever->level(ctx2[0], true);
+    auto set_high = coro_forever->level(*ctx, true);
     auto const creation_overhead_end = fast_uptime();
     creation_overhead = creation_overhead_end - creation_overhead_start;
 
     auto const creation_and_resume_overhead_start = fast_uptime();
-    auto set_low = coro_forever->level(ctx2[1], false);
+    auto set_low = coro_forever->level(*ctx1, false);
     set_low.resume();
     auto const creation_and_resume_overhead_end = fast_uptime();
     creation_and_resume_overhead =
@@ -552,3 +632,13 @@ void application(resource_list& p_map)
     hal::delay(clock, delay_time * 15);
   }
 }
+
+#if 0
+void my_app()
+{
+  std::array<hal::byte, 1024> coroutine_stack{};
+  hal::v5::async_thread_manager manager(
+    coroutine_resource, sizeof(coroutine_stack), [](auto const&...) {});
+  hal::v5::async_context ctx = manager.entire_context();
+}
+#endif

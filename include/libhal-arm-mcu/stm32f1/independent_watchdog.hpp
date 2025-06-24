@@ -28,11 +28,11 @@ public:
   /**
    * @brief checks if watchdog reset flag is set
    */
-  virtual bool check_flag();
+  bool check_flag();
   /**
    * @brief clears reset flags
    */
-  virtual void clear_flag();
+  void clear_flag();
 };
 
 }  // namespace hal::stm32f1

@@ -28,7 +28,7 @@ void application(resource_list& p_map)
   using namespace hal::literals;
 
   auto& console = *p_map.console.value();
-  auto& watchdog =*p_map.watchdog.value();
+  auto& watchdog = *p_map.watchdog.value();
   hal::time_duration const wait_time = 5s;
 
   if (watchdog.check_flag()) {

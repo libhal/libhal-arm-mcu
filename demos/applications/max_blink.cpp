@@ -206,7 +206,7 @@ private:
     m_pin_state = p_high;
     // p_ctx.active_handle(m_level_write_coroutine.handle());
     m_level_write_coroutine.set_context(p_ctx);
-    return m_level_write_coroutine;
+    return std::move(m_level_write_coroutine);
   }
   hal::v5::async<bool> driver_level(hal::v5::async_context&) override
   {
@@ -517,14 +517,14 @@ void application(resource_list& p_map)
   auto& led = *p_map.status_led.value();
   async_output_pin* sync_coro_pin = get_sync_coro_pin();
   async_output_pin* coro_pin_async = get_async_coro_pin();
-  async_output_pin* coro_forever = get_forever_coro_pin();
+  [[maybe_unused]] async_output_pin* coro_forever = get_forever_coro_pin();
 
   std::array<hal::byte, 256> pre_alloc_buffer{};
   std::pmr::monotonic_buffer_resource pre_alloc_buffer_resource(
     pre_alloc_buffer.data(),
     pre_alloc_buffer.size(),
     std::pmr::null_memory_resource());
-  async_output_pin* coro_pre =
+  [[maybe_unused]] async_output_pin* coro_pre =
     get_pre_alloc_coro_async_pin(&pre_alloc_buffer_resource);
 
   while (true) {
@@ -536,8 +536,8 @@ void application(resource_list& p_map)
     }
     hal::delay(clock, delay_time);
     for (int i = 0; i < 800; i++) {
-      sync_coro_set_pin(*ctx, 'B', 13, false).wait();
-      sync_coro_set_pin(*ctx, 'B', 13, true).wait();
+      sync_coro_set_pin(*ctx, 'B', 13, false).sync_wait();
+      sync_coro_set_pin(*ctx, 'B', 13, true).sync_wait();
     }
     hal::delay(clock, delay_time);
     for (int i = 0; i < 700; i++) {
@@ -559,43 +559,42 @@ void application(resource_list& p_map)
 
     hal::delay(clock, delay_time);
     for (int i = 0; i < 400; i++) {
-      sync_coro_pin->level(*ctx, false).wait();
-      sync_coro_pin->level(*ctx, true).wait();
+      sync_coro_pin->level(*ctx, false).sync_wait();
+      sync_coro_pin->level(*ctx, true).sync_wait();
     }
 
     hal::delay(clock, delay_time);
     for (int i = 0; i < 300; i++) {
-      async_coro_set_pin(*ctx, 'B', 13, false).wait();
-      async_coro_set_pin(*ctx, 'B', 13, true).wait();
+      async_coro_set_pin(*ctx, 'B', 13, false).sync_wait();
+      async_coro_set_pin(*ctx, 'B', 13, true).sync_wait();
     }
 
     hal::delay(clock, delay_time);
     for (int i = 0; i < 200; i++) {
-      coro_pin_async->level(*ctx, false).wait();
-      coro_pin_async->level(*ctx, true).wait();
+      coro_pin_async->level(*ctx, false).sync_wait();
+      coro_pin_async->level(*ctx, true).sync_wait();
     }
 
+    hal::delay(clock, delay_time);
 #if 0
-    hal::delay(clock, delay_time);
     for (int i = 0; i < 175; i++) {
-      coro_pre->level(*ctx, false).wait();
-      coro_pre->level(*ctx, true).wait();
+      coro_pre->level(*ctx, false).sync_wait();
+      coro_pre->level(*ctx, true).sync_wait();
     }
-#endif
     hal::delay(clock, delay_time);
-    coro_await_task_loop(*ctx, *coro_pre, 175).wait();
+    // coro_await_task_loop(*ctx, *coro_pre, 175).sync_wait();
 
     hal::delay(clock, delay_time);
-    coro_await_task_loop(*ctx, *coro_pin_async, 150).wait();
+    coro_await_task_loop(*ctx, *coro_pin_async, 150).sync_wait();
 
     hal::delay(clock, delay_time);
-    coro_await_task_loop_deeper(*ctx, *coro_pin_async, 130).wait();
+    coro_await_task_loop_deeper(*ctx, *coro_pin_async, 130).sync_wait();
 
     hal::delay(clock, delay_time);
-    coro_await_task_loop_deeper(*ctx, *sync_coro_pin, 120).wait();
+    coro_await_task_loop_deeper(*ctx, *sync_coro_pin, 120).sync_wait();
 
     hal::delay(clock, delay_time);
-    coro_await_task_loop(*ctx, *sync_coro_pin, 100).wait();
+    coro_await_task_loop(*ctx, *sync_coro_pin, 100).sync_wait();
 
     fast_uptime_overhead = fast_measure_timing_overhead();
 
@@ -630,6 +629,7 @@ void application(resource_list& p_map)
     }
 
     hal::delay(clock, delay_time * 15);
+#endif
   }
 }
 

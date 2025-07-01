@@ -19,6 +19,7 @@
 #include <libhal-arm-mcu/stm32f1/clock.hpp>
 #include <libhal-arm-mcu/stm32f1/constants.hpp>
 #include <libhal-arm-mcu/stm32f1/gpio.hpp>
+#include <libhal-arm-mcu/stm32f1/independent_watchdog.hpp>
 #include <libhal-arm-mcu/stm32f1/input_pin.hpp>
 #include <libhal-arm-mcu/stm32f1/output_pin.hpp>
 #include <libhal-arm-mcu/stm32f1/spi.hpp>
@@ -36,6 +37,29 @@
 #include <libhal/units.hpp>
 
 #include <resource_list.hpp>
+
+static auto stm_watchdog = hal::stm32f1::independent_watchdog();
+
+void hal::watchdog::start()
+{
+  stm_watchdog.start();
+};
+void hal::watchdog::reset()
+{
+  stm_watchdog.reset();
+}
+void hal::watchdog::set_countdown_time(hal::time_duration p_wait_time)
+{
+  stm_watchdog.set_countdown_time(p_wait_time);
+}
+bool hal::watchdog::check_flag()
+{
+  return stm_watchdog.check_flag();
+}
+void hal::watchdog::clear_flag()
+{
+  stm_watchdog.clear_flag();
+}
 
 constexpr bool use_bit_bang_spi = false;
 constexpr bool use_libhal_4_pwm = false;
@@ -193,4 +217,6 @@ void initialize_platform(resource_list& p_resources)
       "- System will operate normally if CAN is NOT required.\n\n");
   }
 #endif
+  static auto watchdog = hal::watchdog();
+  p_resources.watchdog = &watchdog;
 }

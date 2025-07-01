@@ -30,7 +30,30 @@
 #include <libhal-arm-mcu/startup.hpp>
 #include <libhal-arm-mcu/system_control.hpp>
 
+#include <libhal/error.hpp>
 #include <resource_list.hpp>
+
+void hal::watchdog::start()
+{
+  throw hal::operation_not_supported(nullptr);
+};
+void hal::watchdog::reset()
+{
+  throw hal::operation_not_supported(nullptr);
+}
+void hal::watchdog::set_countdown_time(
+  [[maybe_unused]] hal::time_duration p_wait_time)
+{
+  throw hal::operation_not_supported(nullptr);
+}
+bool hal::watchdog::check_flag()
+{
+  throw hal::operation_not_supported(nullptr);
+}
+void hal::watchdog::clear_flag()
+{
+  throw hal::operation_not_supported(nullptr);
+}
 
 void initialize_platform(resource_list& p_resources)
 {

@@ -30,6 +30,7 @@ libhal_build_demos(
   pwm16
   spi
   blank
+  watchdog
   # stream_dac
   timer
 

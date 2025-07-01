@@ -31,6 +31,24 @@
 #include <libhal/stream_dac.hpp>
 #include <libhal/timer.hpp>
 #include <libhal/zero_copy_serial.hpp>
+#pragma once
+
+#include <libhal/units.hpp>
+
+namespace hal {
+
+class watchdog
+{
+public:
+  void start();
+  void reset();
+  void set_countdown_time(hal::time_duration p_wait_time);
+  bool check_flag();
+  void clear_flag();
+  virtual ~watchdog() = default;
+};
+
+}  // namespace hal
 
 struct resource_list
 {
@@ -60,6 +78,7 @@ struct resource_list
   std::optional<hal::output_pin*> spi_chip_select;
   std::optional<hal::stream_dac_u8*> stream_dac;
   std::optional<hal::dac*> dac;
+  std::optional<hal::watchdog*> watchdog;
 };
 
 // Each application file should have this function implemented

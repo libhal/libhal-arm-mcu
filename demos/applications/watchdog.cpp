@@ -13,13 +13,15 @@
 // limitations under the License.
 
 #include <array>
+
 #include <cmath>
+
 #include <libhal-util/serial.hpp>
 #include <libhal-util/steady_clock.hpp>
-
 #include <libhal/can.hpp>
 #include <libhal/timeout.hpp>
 #include <libhal/units.hpp>
+
 #include <resource_list.hpp>
 
 void application(resource_list& p_map)
@@ -29,7 +31,7 @@ void application(resource_list& p_map)
 
   auto& console = *p_map.console.value();
   auto& watchdog = *p_map.watchdog.value();
-  hal::time_duration const wait_time = 5s;
+  constexpr auto wait_time = 5s;
 
   if (watchdog.check_flag()) {
     hal::print(console, "Reset by watchdog\n");

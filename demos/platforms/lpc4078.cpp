@@ -41,11 +41,9 @@ void hal::watchdog::reset()
 {
   throw hal::operation_not_supported(nullptr);
 }
-void hal::watchdog::set_countdown_time(hal::time_duration p_wait_time)
+void hal::watchdog::set_countdown_time([[maybe_unused]] hal::time_duration p_wait_time)
 {
-  if (p_wait_time == p_wait_time) {  // so compiler dosen't freakout
-    throw hal::operation_not_supported(nullptr);
-  }
+  throw hal::operation_not_supported(nullptr);
 }
 bool hal::watchdog::check_flag()
 {

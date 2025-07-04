@@ -30,17 +30,23 @@ To get started with libhal, follow the
 ## 📡 Installing Profiles
 
 Profiles define which platform you mean to build your project against. These
-profiles are needed for code and demos in this repo and for applications that
-wish to execute on an arm mcu supported by this library. The following will
-install the conan profiles for arm mcus and the compiler.
+profiles are needed by the conan files to determine which files to build for
+demos and for libraries. In order to build binaries using libhal for ARM
+microcontrollers, you'll need to install both the ARM GNU toolchain and the ARM
+MCU profiles.
 
 ```bash
 conan config install -sf conan/profiles/v1 -tf profiles https://github.com/libhal/arm-gnu-toolchain.git
 conan config install -sf conan/profiles/v1 -tf profiles https://github.com/libhal/libhal-arm-mcu.git
 ```
 
-Note that running these commands multiple times is safe. The command will
-simply overwrite the old files with the latest files.
+The first command installs the ARM GNU compiler profiles, while the second adds
+the ARM MCU platform profiles to your conan `profiles` directory. Note that
+running these commands multiple times is safe - they will simply overwrite the
+old files with the latest versions.
+
+Now that you have the profiles installed, you can build demos and libraries for
+ARM microcontrollers.
 
 ## 🏗️ Building Demo Applications
 

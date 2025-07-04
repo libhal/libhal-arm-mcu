@@ -112,6 +112,7 @@ class libhal_arm_mcu_conan(ConanFile):
                 self.append_linker_using_platform(platform)
 
     def package_id(self):
+        self.info.python_requires.major_mode()
         del self.info.options.use_picolibc
         del self.info.options.use_libhal_exceptions
         del self.info.options.platform

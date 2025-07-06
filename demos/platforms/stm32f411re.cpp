@@ -23,61 +23,211 @@
 #include <libhal-arm-mcu/stm32f411/spi.hpp>
 #include <libhal-arm-mcu/stm32f411/uart.hpp>
 #include <libhal-arm-mcu/system_control.hpp>
+#include <libhal-exceptions/control.hpp>
 #include <libhal/initializers.hpp>
+#include <libhal/input_pin.hpp>
 #include <libhal/output_pin.hpp>
 #include <libhal/units.hpp>
 
+#include <libhal/pointers.hpp>
 #include <resource_list.hpp>
 
-void hal::watchdog::start()
+namespace resources {
+using namespace hal::literals;
+
+std::pmr::polymorphic_allocator<> driver_allocator()
 {
-  throw hal::operation_not_supported(nullptr);
-};
-void hal::watchdog::reset()
-{
-  throw hal::operation_not_supported(nullptr);
+  static std::array<hal::byte, 1024> driver_memory{};
+  static std::pmr::monotonic_buffer_resource resource(
+    driver_memory.data(),
+    driver_memory.size(),
+    std::pmr::null_memory_resource());
+  return &resource;
 }
-void hal::watchdog::set_countdown_time(
-  [[maybe_unused]] hal::time_duration p_wait_time)
+
+hal::v5::optional_ptr<hal::cortex_m::dwt_counter> clock_ptr;
+hal::v5::strong_ptr<hal::steady_clock> clock()
 {
-  throw hal::operation_not_supported(nullptr);
+  if (not clock_ptr) {
+    auto const cpu_frequency =
+      hal::stm32f411::frequency(hal::stm32f411::peripheral::cpu);
+    clock_ptr = hal::v5::make_strong_ptr<hal::cortex_m::dwt_counter>(
+      driver_allocator(), cpu_frequency / 8);
+  }
+  return clock_ptr;
 }
-bool hal::watchdog::check_flag()
+
+hal::v5::strong_ptr<hal::serial> console()
 {
-  throw hal::operation_not_supported(nullptr);
+  return hal::v5::make_strong_ptr<hal::stm32f411::uart>(
+    driver_allocator(),
+    hal::port<2>,
+    hal::buffer<128>,
+    hal::serial::settings{ .baud_rate = 115200 });
 }
-void hal::watchdog::clear_flag()
+
+hal::v5::strong_ptr<hal::zero_copy_serial> zero_copy_serial()
 {
   throw hal::operation_not_supported(nullptr);
 }
 
-void initialize_platform(resource_list& p_resources)
+hal::v5::optional_ptr<hal::output_pin> led_ptr;
+hal::v5::strong_ptr<hal::output_pin> status_led()
 {
-  using namespace hal::literals;
-  hal::stm32f411::maximum_speed_using_internal_oscillator();
+  if (not led_ptr) {
+    led_ptr = hal::v5::make_strong_ptr<hal::stm32f411::output_pin>(
+      driver_allocator(), hal::stm32f411::peripheral::gpio_a, 5);
+  }
+  return led_ptr;
+}
 
-  auto const cpu_frequency =
-    hal::stm32f411::frequency(hal::stm32f411::peripheral::cpu);
-  static hal::cortex_m::dwt_counter steady_clock(cpu_frequency / 8);
+hal::v5::strong_ptr<hal::can_transceiver> can_transceiver()
+{
+  throw hal::operation_not_supported(nullptr);
+}
 
-  static hal::stm32f411::input_pin button(
+hal::v5::strong_ptr<hal::can_bus_manager> can_bus_manager()
+{
+  throw hal::operation_not_supported(nullptr);
+}
+
+hal::v5::strong_ptr<hal::can_interrupt> can_interrupt()
+{
+  throw hal::operation_not_supported(nullptr);
+}
+
+hal::v5::strong_ptr<hal::adc> adc()
+{
+  throw hal::operation_not_supported(nullptr);
+}
+
+hal::v5::strong_ptr<hal::input_pin> input_pin()
+{
+  return hal::v5::make_strong_ptr<hal::stm32f411::input_pin>(
+    driver_allocator(),
     hal::stm32f411::peripheral::gpio_c,
     13,
-    { .resistor = hal::pin_resistor::pull_up });
-  static hal::stm32f411::output_pin led(hal::stm32f411::peripheral::gpio_a, 5);
+    hal::input_pin::settings{ .resistor = hal::pin_resistor::pull_up });
+}
 
-  static hal::stm32f411::spi spi(hal::runtime{}, 2, {});
-  static hal::stm32f411::output_pin chip_select(
-    hal::stm32f411::peripheral::gpio_b, 13);
+hal::v5::strong_ptr<hal::i2c> i2c()
+{
+  throw hal::operation_not_supported(nullptr);
+}
 
-  static hal::stm32f411::uart uart2(
-    hal::port<2>, hal::buffer<128>, { .baud_rate = 115200 });
-  p_resources.console = &uart2;
-  p_resources.reset = []() { hal::cortex_m::reset(); };
-  p_resources.status_led = &led;
-  p_resources.clock = &steady_clock;
-  p_resources.input_pin = &button;
-  p_resources.spi = &spi;
-  p_resources.spi_chip_select = &chip_select;
-  return;
+hal::v5::strong_ptr<hal::interrupt_pin> interrupt_pin()
+{
+  throw hal::operation_not_supported(nullptr);
+}
+
+hal::v5::strong_ptr<hal::pwm> pwm()
+{
+  throw hal::operation_not_supported(nullptr);
+}
+
+hal::v5::strong_ptr<hal::timer> timed_interrupt()
+{
+  throw hal::operation_not_supported(nullptr);
+}
+
+hal::v5::strong_ptr<hal::pwm16_channel> pwm_channel()
+{
+  throw hal::operation_not_supported(nullptr);
+}
+
+hal::v5::strong_ptr<hal::pwm_group_manager> pwm_frequency()
+{
+  throw hal::operation_not_supported(nullptr);
+}
+
+hal::v5::strong_ptr<hal::spi> spi()
+{
+  return hal::v5::make_strong_ptr<hal::stm32f411::spi>(
+    driver_allocator(), hal::runtime{}, 2, hal::spi::settings{});
+}
+
+hal::v5::strong_ptr<hal::output_pin> spi_chip_select()
+{
+  return hal::v5::make_strong_ptr<hal::stm32f411::output_pin>(
+    driver_allocator(), hal::stm32f411::peripheral::gpio_b, 13);
+}
+
+hal::v5::strong_ptr<hal::stream_dac_u8> stream_dac()
+{
+  throw hal::operation_not_supported(nullptr);
+}
+
+hal::v5::strong_ptr<hal::dac> dac()
+{
+  throw hal::operation_not_supported(nullptr);
+}
+
+// Watchdog implementation using custom interface
+class stm32f411re_watchdog : public custom::watchdog
+{
+public:
+  void start() override
+  {
+    throw hal::operation_not_supported(nullptr);
+  }
+
+  void reset() override
+  {
+    throw hal::operation_not_supported(nullptr);
+  }
+
+  void set_countdown_time(hal::time_duration) override
+  {
+    throw hal::operation_not_supported(nullptr);
+  }
+
+  bool check_flag() override
+  {
+    throw hal::operation_not_supported(nullptr);
+  }
+
+  void clear_flag() override
+  {
+    throw hal::operation_not_supported(nullptr);
+  }
+};
+
+hal::v5::strong_ptr<custom::watchdog> watchdog()
+{
+  return hal::v5::make_strong_ptr<stm32f411re_watchdog>(driver_allocator());
+}
+
+[[noreturn]] void terminate_handler() noexcept
+{
+  if (not led_ptr && not clock_ptr) {
+    // spin here until debugger is connected
+    while (true) {
+      continue;
+    }
+  }
+
+  // Otherwise, blink the led in a pattern
+  auto status_led = resources::status_led();
+  auto clock = resources::clock();
+
+  while (true) {
+    using namespace std::chrono_literals;
+    status_led->level(false);
+    hal::delay(*clock, 100ms);
+    status_led->level(true);
+    hal::delay(*clock, 100ms);
+    status_led->level(false);
+    hal::delay(*clock, 100ms);
+    status_led->level(true);
+    hal::delay(*clock, 1000ms);
+  }
+}
+
+}  // namespace resources
+
+void initialize_platform()
+{
+  using namespace hal::literals;
+  hal::set_terminate(resources::terminate_handler);
+  hal::stm32f411::maximum_speed_using_internal_oscillator();
 }

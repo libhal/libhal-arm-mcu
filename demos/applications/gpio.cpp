@@ -16,21 +16,21 @@
 
 #include <resource_list.hpp>
 
-void application(resource_list& p_map)
+void application()
 {
-  auto& clock = *p_map.clock.value();
-  auto& led = *p_map.status_led.value();
-  auto& button = *p_map.input_pin.value();
+  auto clock = resources::clock();
+  auto led = resources::status_led();
+  auto button = resources::input_pin();
 
   while (true) {
     // Checking level for the lpc40xx drivers NEVER generates an error so this
     // is fine.
-    if (button.level()) {
+    if (button->level()) {
       using namespace std::chrono_literals;
-      led.level(false);
-      hal::delay(clock, 200ms);
-      led.level(true);
-      hal::delay(clock, 200ms);
+      led->level(false);
+      hal::delay(*clock, 200ms);
+      led->level(true);
+      hal::delay(*clock, 200ms);
     }
   }
 }

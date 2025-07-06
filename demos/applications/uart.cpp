@@ -19,24 +19,24 @@
 #include <libhal/timeout.hpp>
 #include <resource_list.hpp>
 
-void application(resource_list& p_map)
+void application()
 {
   using namespace std::chrono_literals;
   using namespace hal::literals;
 
-  auto& clock = *p_map.clock.value();
-  auto& console = *p_map.console.value();
+  auto clock = resources::clock();
+  auto console = resources::console();
 
   while (true) {
     using namespace std::chrono_literals;
     using namespace std::string_view_literals;
 
     std::string_view message = "Hello, World!\n";
-    hal::print(console, message);
+    hal::print(*console, message);
     // Echo anything received
     std::array<hal::byte, 64> read_buffer;
-    console.write(console.read(read_buffer).data);
+    console->write(console->read(read_buffer).data);
 
-    hal::delay(clock, 1s);
+    hal::delay(*clock, 1s);
   }
 }

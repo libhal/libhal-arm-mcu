@@ -17,42 +17,42 @@
 
 #include <resource_list.hpp>
 
-void application(resource_list& p_map)
+void application()
 {
   using namespace std::chrono_literals;
   using namespace hal::literals;
 
-  auto& pwm = *p_map.pwm.value();
-  auto& clock = *p_map.clock.value();
-  auto& console = *p_map.console.value();
+  auto pwm = resources::pwm();
+  auto clock = resources::clock();
+  auto console = resources::console();
 
   while (true) {
-    pwm.duty_cycle(0.0f);
-    pwm.frequency(1.0_kHz);
-    hal::print(console, "Sweeping duty cycle from 0 to 1 \n");
-    hal::delay(clock, 1s);
+    pwm->duty_cycle(0.0f);
+    pwm->frequency(1.0_kHz);
+    hal::print(*console, "Sweeping duty cycle from 0 to 1 \n");
+    hal::delay(*clock, 1s);
     float constexpr duty_cycle_step_count = 20;
     float const duty_cycle_step = 1 / duty_cycle_step_count;
     for (float duty_cycle = 0; duty_cycle < 1; duty_cycle += duty_cycle_step) {
-      hal::print<64>(console, ">> Duty: %.2f \n", duty_cycle);
-      pwm.duty_cycle(duty_cycle);
-      hal::delay(clock, 100ms);
+      hal::print<64>(*console, ">> Duty: %.2f \n", duty_cycle);
+      pwm->duty_cycle(duty_cycle);
+      hal::delay(*clock, 100ms);
     }
 
-    pwm.duty_cycle(0.0f);
+    pwm->duty_cycle(0.0f);
 
-    hal::print(console, "Sweeping frequency from 1kHz to 20kHz\n");
-    hal::print(console, ">> pwm Duty Cycle = 50%\n");
-    hal::delay(clock, 1s);
-    pwm.duty_cycle(1.0f / 2);  // 50% duty cycle
+    hal::print(*console, "Sweeping frequency from 1kHz to 20kHz\n");
+    hal::print(*console, ">> pwm Duty Cycle = 50%\n");
+    hal::delay(*clock, 1s);
+    pwm->duty_cycle(1.0f / 2);  // 50% duty cycle
 
     for (float multiplier = 1; multiplier < 20; multiplier++) {
       float frequency = 1000 /* Hz */ * multiplier;
-      pwm.frequency(frequency);
-      hal::print<64>(console, ">> Freq: %f Hz\n", frequency);
-      hal::delay(clock, 100ms);
+      pwm->frequency(frequency);
+      hal::print<64>(*console, ">> Freq: %f Hz\n", frequency);
+      hal::delay(*clock, 100ms);
     }
 
-    hal::print(console, "\n");
+    hal::print(*console, "\n");
   }
 }

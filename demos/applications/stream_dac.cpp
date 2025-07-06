@@ -17,13 +17,13 @@
 
 #include "resources/uniq-BOMBORA.u8.pcm.hpp"
 
-void application(resource_list& p_map)
+void application()
 {
-  auto& dac = *p_map.stream_dac.value();
+  auto dac = resources::stream_dac();
 
   while (true) {
     // Change to 8'000.0f for LOFI
-    dac.write({
+    dac->write({
       .sample_rate = 16'000.0f,
       .data = uniq_BOMBORA_u8_pcm,
     });

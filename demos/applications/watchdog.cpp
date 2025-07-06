@@ -24,36 +24,36 @@
 
 #include <resource_list.hpp>
 
-void application(resource_list& p_map)
+void application()
 {
   using namespace std::chrono_literals;
   using namespace hal::literals;
 
-  auto& console = *p_map.console.value();
-  auto& watchdog = *p_map.watchdog.value();
+  auto console = resources::console();
+  auto watchdog = resources::watchdog();
   constexpr auto wait_time = 5s;
 
-  if (watchdog.check_flag()) {
-    hal::print(console, "Reset by watchdog\n");
-    watchdog.clear_flag();
+  if (watchdog->check_flag()) {
+    hal::print(*console, "Reset by watchdog\n");
+    watchdog->clear_flag();
   } else {
-    hal::print(console, "Non-watchdog reset\n");
+    hal::print(*console, "Non-watchdog reset\n");
   }
 
   try {
-    watchdog.set_countdown_time(wait_time);
-    watchdog.start();
+    watchdog->set_countdown_time(wait_time);
+    watchdog->start();
   } catch (hal::operation_not_supported e) {
-    hal::print(console, "invalid time\n");
+    hal::print(*console, "invalid time\n");
   }
 
-  hal::print(console, "Type somehting into the console to pet the watchdog\n");
+  hal::print(*console, "Type somehting into the console to pet the watchdog\n");
   while (true) {
     std::array<hal::byte, 64> read_buffer;
-    auto read = console.read(read_buffer).data;
+    auto read = console->read(read_buffer).data;
     if (!read.empty()) {
-      hal::print(console, "woof!\n");
-      watchdog.reset();
+      hal::print(*console, "woof!\n");
+      watchdog->reset();
     }
   }
 }

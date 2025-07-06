@@ -18,56 +18,14 @@
 
 #include <resource_list.hpp>
 
-resource_list resources{};
-
-[[noreturn]] void terminate_handler() noexcept
-{
-  if (resources.console) {
-    hal::print(*resources.console.value(), "☠️ APPLICATION TERMINATED ☠️\n\n");
-  }
-
-  if (resources.status_led && resources.clock) {
-    auto& led = *resources.status_led.value();
-    auto& clock = *resources.clock.value();
-
-    while (true) {
-      using namespace std::chrono_literals;
-      led.level(false);
-      hal::delay(clock, 100ms);
-      led.level(true);
-      hal::delay(clock, 100ms);
-      led.level(false);
-      hal::delay(clock, 100ms);
-      led.level(true);
-      hal::delay(clock, 1000ms);
-    }
-  }
-
-  // spin here forever
-  while (true) {
-    continue;
-  }
-}
-
 int main()
 {
-  hal::set_terminate(terminate_handler);
-
-  initialize_platform(resources);
-
-  try {
-    application(resources);
-  } catch (std::bad_optional_access const& e) {
-    if (resources.console) {
-      hal::print(*resources.console.value(),
-                 "A resource required by the application was not available!\n"
-                 "Calling terminate!\n");
-    }
-  }  // Allow any other exceptions to terminate the application
-
+  initialize_platform();
+  application();
   std::terminate();
 }
 
+// libhal-arm-mcu specific APIs defined to reduce code size
 extern "C"
 {
   // This gets rid of an issue with libhal-exceptions in Debug mode.

@@ -19,49 +19,49 @@
 
 #include <resource_list.hpp>
 
-void application(resource_list& p_map)
+void application()
 {
   using namespace std::chrono_literals;
   using namespace hal::literals;
 
-  auto& pwm_channel = *p_map.pwm_channel.value();
-  auto& pwm_frequency = *p_map.pwm_frequency.value();
-  auto& console = *p_map.console.value();
-  auto& clock = *p_map.clock.value();
+  auto pwm_channel = resources::pwm_channel();
+  auto pwm_frequency = resources::pwm_frequency();
+  auto console = resources::console();
+  auto clock = resources::clock();
 
   while (true) {
-    pwm_channel.duty_cycle(0);
-    pwm_frequency.frequency(1.0_kHz);
-    hal::print(console,
+    pwm_channel->duty_cycle(0);
+    pwm_frequency->frequency(1.0_kHz);
+    hal::print(*console,
                "Sweeping duty cycle from 0% (0x0000) to 100% (0xFFFF)\n");
     hal::print<32>(
-      console, ">> pwm Frequency = %" PRIu32 "Hz\n", pwm_channel.frequency());
-    hal::delay(clock, 1s);
+      *console, ">> pwm Frequency = %" PRIu32 "Hz\n", pwm_channel->frequency());
+    hal::delay(*clock, 1s);
     auto constexpr duty_cycle_step_count = 20;
     hal::u16 const duty_cycle_step = 0xFFFF / duty_cycle_step_count;
     for (hal::u32 duty_cycle = 0; duty_cycle < 0xFFFF;
          duty_cycle += duty_cycle_step) {
       hal::print<64>(
-        console, ">> Duty: 0x%04" PRIX32 " / 0xFFFF \n", duty_cycle);
-      pwm_channel.duty_cycle(duty_cycle);
-      hal::delay(clock, 100ms);
+        *console, ">> Duty: 0x%04" PRIX32 " / 0xFFFF \n", duty_cycle);
+      pwm_channel->duty_cycle(duty_cycle);
+      hal::delay(*clock, 100ms);
     }
 
-    pwm_channel.duty_cycle(0);
+    pwm_channel->duty_cycle(0);
 
-    hal::print(console, "Sweeping frequency from 1kHz to 20kHz\n");
-    hal::print(console, ">> pwm Duty Cycle = 50%\n");
-    hal::delay(clock, 1s);
-    pwm_channel.duty_cycle(0xFFFF / 2);  // 50% duty cycle
+    hal::print(*console, "Sweeping frequency from 1kHz to 20kHz\n");
+    hal::print(*console, ">> pwm Duty Cycle = 50%\n");
+    hal::delay(*clock, 1s);
+    pwm_channel->duty_cycle(0xFFFF / 2);  // 50% duty cycle
 
     for (hal::u32 multiplier = 1; multiplier < 20; multiplier++) {
       auto frequency = 1000 /* Hz */ * multiplier;
-      pwm_frequency.frequency(frequency);
+      pwm_frequency->frequency(frequency);
       hal::print<64>(
-        console, ">> Freq: %" PRIu32 "Hz\n", pwm_channel.frequency());
-      hal::delay(clock, 100ms);
+        *console, ">> Freq: %" PRIu32 "Hz\n", pwm_channel->frequency());
+      hal::delay(*clock, 100ms);
     }
 
-    hal::print(console, "\n");
+    hal::print(*console, "\n");
   }
 }

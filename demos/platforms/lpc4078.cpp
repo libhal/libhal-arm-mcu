@@ -29,86 +29,193 @@
 #include <libhal-arm-mcu/lpc40/uart.hpp>
 #include <libhal-arm-mcu/startup.hpp>
 #include <libhal-arm-mcu/system_control.hpp>
-
+#include <libhal-exceptions/control.hpp>
+#include <libhal-util/steady_clock.hpp>
 #include <libhal/error.hpp>
+
+#include <libhal/pointers.hpp>
 #include <resource_list.hpp>
 
-void hal::watchdog::start()
+namespace resources {
+using namespace hal::literals;
+
+std::pmr::polymorphic_allocator<> driver_allocator()
 {
-  throw hal::operation_not_supported(nullptr);
-};
-void hal::watchdog::reset()
-{
-  throw hal::operation_not_supported(nullptr);
+  static std::array<hal::byte, 1024> driver_memory{};
+  static std::pmr::monotonic_buffer_resource resource(
+    driver_memory.data(),
+    driver_memory.size(),
+    std::pmr::null_memory_resource());
+  return &resource;
 }
-void hal::watchdog::set_countdown_time(
-  [[maybe_unused]] hal::time_duration p_wait_time)
+
+hal::v5::optional_ptr<hal::cortex_m::dwt_counter> clock_ptr;
+hal::v5::strong_ptr<hal::steady_clock> clock()
 {
-  throw hal::operation_not_supported(nullptr);
+  if (not clock_ptr) {
+    clock_ptr = hal::v5::make_strong_ptr<hal::cortex_m::dwt_counter>(
+      driver_allocator(),
+      hal::lpc40::get_frequency(hal::lpc40::peripheral::cpu));
+  }
+  return clock_ptr;
 }
-bool hal::watchdog::check_flag()
+hal::v5::strong_ptr<hal::adc> adc()
 {
-  throw hal::operation_not_supported(nullptr);
+  return hal::v5::make_strong_ptr<hal::lpc40::adc>(
+    resources::driver_allocator(), hal::channel<4>);
 }
-void hal::watchdog::clear_flag()
+hal::v5::strong_ptr<hal::serial> console()
+{
+  static std::array<hal::byte, 64> uart0_buffer{};
+  return hal::v5::make_strong_ptr<hal::lpc40::uart>(driver_allocator(),
+                                                    0,
+                                                    uart0_buffer,
+                                                    hal::serial::settings{
+                                                      .baud_rate = 115200,
+                                                    });
+}
+
+hal::v5::optional_ptr<hal::lpc40::output_pin> led_ptr;
+hal::v5::strong_ptr<hal::output_pin> status_led()
+{
+  if (not led_ptr) {
+    led_ptr = hal::v5::make_strong_ptr<hal::lpc40::output_pin>(
+      driver_allocator(), 1, 10);
+  }
+  return led_ptr;
+}
+
+hal::v5::strong_ptr<hal::i2c> i2c()
+{
+  return hal::v5::make_strong_ptr<hal::lpc40::i2c>(driver_allocator(),
+                                                   2,
+                                                   hal::i2c::settings{
+                                                     .clock_rate = 100.0_kHz,
+                                                   });
+}
+
+hal::v5::strong_ptr<hal::pwm> pwm()
+{
+  return hal::v5::make_strong_ptr<hal::lpc40::pwm>(
+    resources::driver_allocator(), 1, 6);
+}
+
+hal::v5::strong_ptr<hal::can_transceiver> can_transceiver()
 {
   throw hal::operation_not_supported(nullptr);
 }
 
-void initialize_platform(resource_list& p_resources)
+hal::v5::strong_ptr<hal::can_bus_manager> can_bus_manager()
+{
+  throw hal::operation_not_supported(nullptr);
+}
+
+hal::v5::strong_ptr<hal::can_identifier_filter> can_identifier_filter()
+{
+  throw hal::operation_not_supported(nullptr);
+}
+
+hal::v5::strong_ptr<hal::spi> spi()
+{
+  return hal::v5::make_strong_ptr<hal::lpc40::dma_spi>(driver_allocator(), 2);
+}
+hal::v5::strong_ptr<hal::output_pin> spi_chip_select()
+{
+  return hal::v5::make_strong_ptr<hal::lpc40::output_pin>(
+    driver_allocator(), 1, 8);
+}
+hal::v5::strong_ptr<hal::stream_dac_u8> stream_dac()
+{
+  return hal::v5::make_strong_ptr<hal::lpc40::stream_dac_u8>(
+    driver_allocator());
+}
+hal::v5::strong_ptr<hal::input_pin> input_pin()
+{
+  return hal::v5::make_strong_ptr<hal::lpc40::input_pin>(
+    driver_allocator(), 0, 29);
+}
+hal::v5::strong_ptr<hal::interrupt_pin> interrupt_pin()
+{
+  return hal::v5::make_strong_ptr<hal::lpc40::interrupt_pin>(
+    driver_allocator(), 0, 29);
+}
+
+hal::v5::strong_ptr<hal::timer> timed_interrupt()
+{
+  throw hal::operation_not_supported(nullptr);
+}
+
+hal::v5::strong_ptr<hal::pwm16_channel> pwm_channel()
+{
+  throw hal::operation_not_supported(nullptr);
+}
+hal::v5::strong_ptr<hal::pwm_group_manager> pwm_frequency()
+{
+  throw hal::operation_not_supported(nullptr);
+}
+hal::v5::strong_ptr<hal::dac> dac()
+{
+  return hal::v5::make_strong_ptr<hal::lpc40::dac>(driver_allocator());
+}
+class lpc4078_watchdog : public custom::watchdog
+{
+  void start() override
+  {
+    throw hal::operation_not_supported(nullptr);
+  };
+  void reset() override
+  {
+    throw hal::operation_not_supported(nullptr);
+  }
+  void set_countdown_time(hal::time_duration) override
+  {
+    throw hal::operation_not_supported(nullptr);
+  }
+  bool check_flag() override
+  {
+    throw hal::operation_not_supported(nullptr);
+  }
+  void clear_flag() override
+  {
+    throw hal::operation_not_supported(nullptr);
+  }
+};
+
+hal::v5::strong_ptr<custom::watchdog> watchdog()
+{
+  return hal::v5::make_strong_ptr<lpc4078_watchdog>(driver_allocator());
+}
+
+[[noreturn]] void terminate_handler() noexcept
+{
+  if (not led_ptr && not clock_ptr) {
+    // spin here until debugger is connected
+    while (true) {
+      continue;
+    }
+  }
+
+  // Otherwise, blink the led in a pattern
+  auto status_led = resources::status_led();
+  auto clock = resources::clock();
+
+  while (true) {
+    using namespace std::chrono_literals;
+    status_led->level(false);
+    hal::delay(*clock, 100ms);
+    status_led->level(true);
+    hal::delay(*clock, 100ms);
+    status_led->level(false);
+    hal::delay(*clock, 100ms);
+    status_led->level(true);
+    hal::delay(*clock, 1000ms);
+  }
+}
+}  // namespace resources
+
+void initialize_platform()
 {
   using namespace hal::literals;
-
-  p_resources.reset = []() { hal::cortex_m::reset(); };
-
-  // Set the MCU to the maximum clock speed
+  hal::set_terminate(resources::terminate_handler);
   hal::lpc40::maximum(12.0_MHz);
-
-  static hal::lpc40::output_pin led(1, 10);
-  p_resources.status_led = &led;
-
-  static hal::cortex_m::dwt_counter counter(
-    hal::lpc40::get_frequency(hal::lpc40::peripheral::cpu));
-  p_resources.clock = &counter;
-
-  static std::array<hal::byte, 64> receive_buffer{};
-  static hal::lpc40::uart uart0(0,
-                                receive_buffer,
-                                hal::serial::settings{
-                                  .baud_rate = 115200,
-                                });
-  p_resources.console = &uart0;
-
-  static hal::lpc40::can can(2,
-                             hal::can::settings{
-                               .baud_rate = 1.0_kHz,
-                             });
-  // p_resources.can = &can;
-
-  static hal::lpc40::adc adc4(hal::channel<4>);
-  p_resources.adc = &adc4;
-
-  static hal::lpc40::input_pin input_pin(0, 29);
-  p_resources.input_pin = &input_pin;
-
-  static hal::lpc40::i2c i2c2(2);
-  p_resources.i2c = &i2c2;
-
-  static hal::lpc40::interrupt_pin interrupt_pin(0, 29);
-  p_resources.interrupt_pin = &interrupt_pin;
-
-  static hal::lpc40::pwm pwm(1, 6);
-  p_resources.pwm = &pwm;
-
-  static hal::lpc40::dma_spi spi2(2);
-  p_resources.spi = &spi2;
-
-  static hal::lpc40::output_pin chip_select(1, 8);
-  p_resources.spi_chip_select = &chip_select;
-
-  static hal::lpc40::stream_dac_u8 stream_dac;
-  p_resources.stream_dac = &stream_dac;
-
-  static hal::lpc40::dac dac;
-  p_resources.dac = &dac;
 }

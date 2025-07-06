@@ -18,24 +18,24 @@
 
 #include <resource_list.hpp>
 
-void application(resource_list& p_map)
+void application()
 {
-  auto& dac = *p_map.dac.value();
-  auto& counter = *p_map.clock.value();
-  auto& uart0 = *p_map.console.value();
+  auto dac = resources::dac();
+  auto clock = resources::clock();
+  auto console = resources::console();
   while (true) {
-    using namespace std::chrono_literals;
+    using namespace std::literals;
     float f1 = 0.0f;
     float f2 = 0.5f;
     float f3 = 1.0f;
-    dac.write(f1);
-    hal::print<32>(uart0, "Written %f\n", f1);
-    hal::delay(counter, 5s);
-    dac.write(f2);
-    hal::print<32>(uart0, "Written %f\n", f2);
-    hal::delay(counter, 5s);
-    dac.write(f3);
-    hal::print<32>(uart0, "Written %f\n", f3);
-    hal::delay(counter, 5s);
+    dac->write(f1);
+    hal::print<32>(*console, "Written %f\n", f1);
+    hal::delay(*clock, 5s);
+    dac->write(f2);
+    hal::print<32>(*console, "Written %f\n", f2);
+    hal::delay(*clock, 5s);
+    dac->write(f3);
+    hal::print<32>(*console, "Written %f\n", f3);
+    hal::delay(*clock, 5s);
   }
 }

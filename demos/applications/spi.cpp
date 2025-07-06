@@ -18,19 +18,19 @@
 
 #include <resource_list.hpp>
 
-void application(resource_list& p_map)
+void application()
 {
   using namespace std::chrono_literals;
   using namespace hal::literals;
 
-  auto& clock = *p_map.clock.value();
-  auto& console = *p_map.console.value();
-  auto& spi = *p_map.spi.value();
-  auto& chip_select = *p_map.spi_chip_select.value();
+  auto clock = resources::clock();
+  auto console = resources::console();
+  auto spi = resources::spi();
+  auto chip_select = resources::spi_chip_select();
 
-  chip_select.level(true);
+  chip_select->level(true);
 
-  hal::print(console, "Starting SPI Application...\n");
+  hal::print(*console, "Starting SPI Application...\n");
 
   while (true) {
     using namespace std::literals;
@@ -38,53 +38,53 @@ void application(resource_list& p_map)
     std::array<hal::byte, 4> const payload{ 0xDE, 0xAD, 0xBE, 0xEF };
     std::array<hal::byte, 8> buffer{};
 
-    hal::print(console, "Write operation\n");
-    chip_select.level(false);
-    hal::write(spi, payload);
-    chip_select.level(true);
-    hal::delay(clock, 1s);
+    hal::print(*console, "Write operation\n");
+    chip_select->level(false);
+    hal::write(*spi, payload);
+    chip_select->level(true);
+    hal::delay(*clock, 1s);
 
-    hal::print(console, "Read operation: [ ");
-    chip_select.level(false);
-    hal::read(spi, buffer);
-    chip_select.level(true);
+    hal::print(*console, "Read operation: [ ");
+    chip_select->level(false);
+    hal::read(*spi, buffer);
+    chip_select->level(true);
 
     for (auto const& byte : buffer) {
-      hal::print<32>(console, "0x%02X ", byte);
+      hal::print<32>(*console, "0x%02X ", byte);
     }
 
-    hal::print(console, "]\n");
-    hal::delay(clock, 1s);
+    hal::print(*console, "]\n");
+    hal::delay(*clock, 1s);
 
-    hal::print(console, "Full-duplex transfer\n");
-    chip_select.level(false);
-    spi.transfer(payload, buffer);
-    chip_select.level(true);
-    hal::delay(clock, 1s);
+    hal::print(*console, "Full-duplex transfer\n");
+    chip_select->level(false);
+    spi->transfer(payload, buffer);
+    chip_select->level(true);
+    hal::delay(*clock, 1s);
 
-    hal::print(console, "Half-duplex transfer\n");
-    chip_select.level(false);
-    hal::write_then_read(spi, payload, buffer);
-    chip_select.level(true);
-    hal::delay(clock, 1s);
+    hal::print(*console, "Half-duplex transfer\n");
+    chip_select->level(false);
+    hal::write_then_read(*spi, payload, buffer);
+    chip_select->level(true);
+    hal::delay(*clock, 1s);
 
     {
       std::array read_manufacturer_id{ hal::byte{ 0x9F } };
       std::array<hal::byte, 4> id_data{};
 
-      chip_select.level(false);
-      hal::delay(clock, 250ns);  // wait at least 250ns
-      hal::write_then_read(spi, read_manufacturer_id, id_data, 0xA5);
-      chip_select.level(true);
+      chip_select->level(false);
+      hal::delay(*clock, 250ns);  // wait at least 250ns
+      hal::write_then_read(*spi, read_manufacturer_id, id_data, 0xA5);
+      chip_select->level(true);
 
-      hal::print(console, "SPI Flash Memory ID info: ");
-      hal::print(console, "[ ");
+      hal::print(*console, "SPI Flash Memory ID info: ");
+      hal::print(*console, "[ ");
       for (auto const& byte : id_data) {
-        hal::print<32>(console, "0x%02X ", byte);
+        hal::print<32>(*console, "0x%02X ", byte);
       }
-      hal::print(console, "]\n");
+      hal::print(*console, "]\n");
     }
 
-    hal::delay(clock, 1s);
+    hal::delay(*clock, 1s);
   }
 }

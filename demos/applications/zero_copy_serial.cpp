@@ -75,41 +75,41 @@ void print(hal::zero_copy_serial& p_serial,
   p_serial.write(hal::as_bytes(buffer).first(length));
 }
 
-void application(resource_list& p_map)
+void application()
 {
   using namespace std::chrono_literals;
   using namespace hal::literals;
 
-  auto& clock = *p_map.clock.value();
-  auto& console = *p_map.zero_copy_serial.value();
+  auto clock = resources::clock();
+  auto console = resources::zero_copy_serial();
 
-  auto previous_cursor = console.receive_cursor();
+  auto previous_cursor = console->receive_cursor();
 
   while (true) {
     using namespace std::chrono_literals;
     using namespace std::string_view_literals;
 
     std::string_view message = "Hello, World!\n";
-    print(console, message);
+    print(*console, message);
 
-    auto const new_cursor = console.receive_cursor();
-    print<64>(console, "cursor = %zu\n", new_cursor);
+    auto const new_cursor = console->receive_cursor();
+    print<64>(*console, "cursor = %zu\n", new_cursor);
 
     hal::usize byte_count = 0;
     if (new_cursor < previous_cursor) {
-      byte_count = console.receive_buffer().size() - new_cursor;
+      byte_count = console->receive_buffer().size() - new_cursor;
       // Echo anything received
-      console.write(
-        console.receive_buffer().subspan(previous_cursor, byte_count));
+      console->write(
+        console->receive_buffer().subspan(previous_cursor, byte_count));
       previous_cursor = 0;
     } else {
       byte_count = new_cursor - previous_cursor;
       // Echo anything received
-      console.write(
-        console.receive_buffer().subspan(previous_cursor, byte_count));
+      console->write(
+        console->receive_buffer().subspan(previous_cursor, byte_count));
       previous_cursor = new_cursor;
     }
 
-    hal::delay(clock, 1s);
+    hal::delay(*clock, 1s);
   }
 }

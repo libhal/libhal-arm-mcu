@@ -17,16 +17,16 @@
 
 #include <resource_list.hpp>
 
-void application(resource_list& p_map)
+void application()
 {
-  auto& clock = *p_map.clock.value();
-  auto& led = *p_map.status_led.value();
+  auto clock = resources::clock();
+  auto led = resources::status_led();
 
   while (true) {
     using namespace std::chrono_literals;
-    led.level(false);
-    hal::delay(clock, 500ms);
-    led.level(true);
-    hal::delay(clock, 500ms);
+    led->level(false);
+    hal::delay(*clock, 500ms);
+    led->level(true);
+    hal::delay(*clock, 500ms);
   }
 }

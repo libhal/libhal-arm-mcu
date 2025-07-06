@@ -19,23 +19,23 @@
 
 #include <resource_list.hpp>
 
-void application(resource_list& p_map)
+void application()
 {
-  auto& clock = *p_map.clock.value();
-  auto& console = *p_map.console.value();
-  auto& adc = *p_map.adc.value();
+  auto clock = resources::clock();
+  auto console = resources::console();
+  auto adc = resources::adc();
 
-  hal::print(console, "ADC Application Starting...\n");
+  hal::print(*console, "ADC Application Starting...\n");
 
   while (true) {
     using namespace std::chrono_literals;
-    auto percent = adc.read();
+    auto percent = adc->read();
     // Get current uptime
-    auto uptime = clock.uptime();
-    hal::print<128>(console,
+    auto uptime = clock->uptime();
+    hal::print<128>(*console,
                     "%" PRId32 "%%: %" PRIu32 "ns\n",
                     static_cast<std::int32_t>(percent * 100),
                     static_cast<std::uint32_t>(uptime));
-    hal::delay(clock, 100ms);
+    hal::delay(*clock, 100ms);
   }
 }

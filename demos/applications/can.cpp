@@ -37,27 +37,27 @@ void print_can_message(hal::serial& p_console,
                   p_message.payload[7]);
 }
 
-void application(resource_list& p_map)
+void application()
 {
   using namespace hal::literals;
 
-  auto& clock = *p_map.clock.value();
-  auto& can_transceiver = *p_map.can_transceiver.value();
-  auto& can_bus_manager = *p_map.can_bus_manager.value();
-  auto& can_interrupt = *p_map.can_interrupt.value();
-  auto& console = *p_map.console.value();
+  auto clock = resources::clock();
+  auto can_transceiver = resources::can_transceiver();
+  auto can_bus_manager = resources::can_bus_manager();
+  auto can_interrupt = resources::can_interrupt();
+  auto console = resources::console();
 
   // Change the CAN baudrate here.
   static constexpr auto baudrate = 100.0_kHz;
 
-  hal::print(console, "Starting CAN demo!\n");
+  hal::print(*console, "Starting CAN demo!\n");
 
-  can_bus_manager.baud_rate(baudrate);
+  can_bus_manager->baud_rate(baudrate);
 
-  can_interrupt.on_receive([&console](hal::can_interrupt::on_receive_tag,
-                                      hal::can_message const& p_message) {
-    hal::print(console, "Printing can message from interrupt!\n");
-    print_can_message(console, p_message);
+  can_interrupt->on_receive([&console](hal::can_interrupt::on_receive_tag,
+                                       hal::can_message const& p_message) {
+    hal::print(*console, "Printing can message from interrupt!\n");
+    print_can_message(*console, p_message);
   });
 
   hal::u32 receive_cursor = 0;
@@ -97,25 +97,25 @@ void application(resource_list& p_map)
       },
     };
 
-    hal::print(console, "Sending payload(s)...\n");
+    hal::print(*console, "Sending payload(s)...\n");
 
-    can_transceiver.send(standard_message);
-    can_transceiver.send(standard_message2);
-    can_transceiver.send(extended_message);
-    can_transceiver.send(extended_message2);
+    can_transceiver->send(standard_message);
+    can_transceiver->send(standard_message2);
+    can_transceiver->send(extended_message);
+    can_transceiver->send(extended_message2);
 
-    hal::delay(clock, 1s);
+    hal::delay(*clock, 1s);
 
-    hal::print(console,
+    hal::print(*console,
                "Printing received messages stored in circular buffer...\n");
-    auto const buffer = can_transceiver.receive_buffer();
-    auto cursor = can_transceiver.receive_cursor();
+    auto const buffer = can_transceiver->receive_buffer();
+    auto cursor = can_transceiver->receive_cursor();
     for (; receive_cursor != cursor;
          receive_cursor = (receive_cursor + 1) % buffer.size()) {
-      print_can_message(console, buffer[receive_cursor]);
-      cursor = can_transceiver.receive_cursor();
+      print_can_message(*console, buffer[receive_cursor]);
+      cursor = can_transceiver->receive_cursor();
     }
 
-    hal::print(console, "Printing done.\n\n");
+    hal::print(*console, "Printing done.\n\n");
   }
 }

@@ -18,13 +18,13 @@
 
 #include <resource_list.hpp>
 
-void application(resource_list& p_map)
+void application()
 {
-  auto& clock = *p_map.clock.value();
-  auto& console = *p_map.console.value();
-  auto& i2c = *p_map.i2c.value();
+  auto clock = resources::clock();
+  auto console = resources::console();
+  auto i2c = resources::i2c();
 
-  hal::print(console, "Application starting!\n");
+  hal::print(*console, "Application starting!\n");
 
   while (true) {
     using namespace std::literals;
@@ -32,17 +32,17 @@ void application(resource_list& p_map)
     constexpr hal::byte first_i2c_address = 0x08;
     constexpr hal::byte last_i2c_address = 0x78;
 
-    hal::print(console, "Devices Found: ");
+    hal::print(*console, "Devices Found: ");
 
     for (hal::byte address = first_i2c_address; address < last_i2c_address;
          address++) {
       // This can only fail if the device is not present
-      if (hal::probe(i2c, address)) {
-        hal::print<12>(console, "0x%02X ", address);
+      if (hal::probe(*i2c, address)) {
+        hal::print<12>(*console, "0x%02X ", address);
       }
     }
 
-    print(console, "\n");
-    hal::delay(clock, 1s);
+    hal::print(*console, "\n");
+    hal::delay(*clock, 1s);
   }
 }

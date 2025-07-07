@@ -54,6 +54,22 @@ std::pmr::polymorphic_allocator<> driver_allocator()
   return &resource;
 }
 
+auto& gpio_a()
+{
+  static hal::stm32f1::gpio<st_peripheral::gpio_a> gpio;
+  return gpio;
+}
+auto& gpio_b()
+{
+  static hal::stm32f1::gpio<st_peripheral::gpio_b> gpio;
+  return gpio;
+}
+auto& gpio_c()
+{
+  static hal::stm32f1::gpio<st_peripheral::gpio_c> gpio;
+  return gpio;
+}
+
 hal::v5::optional_ptr<hal::cortex_m::dwt_counter> clock_ptr;
 hal::v5::strong_ptr<hal::steady_clock> clock()
 {
@@ -75,10 +91,7 @@ hal::v5::optional_ptr<hal::output_pin> led_ptr;
 hal::v5::strong_ptr<hal::output_pin> status_led()
 {
   if (not led_ptr) {
-    static auto gpio_c =
-      hal::v5::make_strong_ptr<hal::stm32f1::gpio<st_peripheral::gpio_c>>(
-        driver_allocator());
-    auto led = gpio_c->acquire_output_pin(13);
+    auto led = gpio_c().acquire_output_pin(13);
     led_ptr = hal::v5::make_strong_ptr<decltype(led)>(driver_allocator(),
                                                       std::move(led));
   }
@@ -95,22 +108,6 @@ hal::v5::strong_ptr<hal::adc> adc()
                                                  std::move(pb0));
 #endif
   throw hal::operation_not_supported(nullptr);
-}
-
-auto& gpio_a()
-{
-  static hal::stm32f1::gpio<st_peripheral::gpio_a> gpio;
-  return gpio;
-}
-auto& gpio_b()
-{
-  static hal::stm32f1::gpio<st_peripheral::gpio_b> gpio;
-  return gpio;
-}
-auto& gpio_c()
-{
-  static hal::stm32f1::gpio<st_peripheral::gpio_c> gpio;
-  return gpio;
 }
 
 hal::v5::strong_ptr<hal::i2c> i2c()
@@ -139,14 +136,20 @@ hal::v5::strong_ptr<hal::spi> spi()
 
 hal::v5::strong_ptr<hal::output_pin> spi_chip_select()
 {
-  return hal::v5::make_strong_ptr<hal::stm32f1::output_pin>(
-    driver_allocator(), 'A', 4);
+  return hal::v5::make_strong_ptr<decltype(gpio_a().acquire_output_pin(4))>(
+    driver_allocator(), gpio_a().acquire_output_pin(4));
 }
 
 hal::v5::strong_ptr<hal::input_pin> input_pin()
 {
-  return hal::v5::make_strong_ptr<hal::stm32f1::input_pin>(
-    driver_allocator(), 'B', 4);
+  return hal::v5::make_strong_ptr<decltype(gpio_b().acquire_input_pin(4))>(
+    driver_allocator(), gpio_b().acquire_input_pin(4));
+}
+
+auto& timer1()
+{
+  static hal::stm32f1::advanced_timer<st_peripheral::timer1> timer1{};
+  return timer1;
 }
 
 hal::v5::strong_ptr<hal::timer> timed_interrupt()
@@ -160,17 +163,10 @@ hal::v5::strong_ptr<hal::timer> timed_interrupt()
   throw hal::operation_not_supported(nullptr);
 }
 
-auto& timer1()
-{
-  static hal::stm32f1::advanced_timer<st_peripheral::timer1> timer1{};
-  return timer1;
-}
-
 hal::v5::strong_ptr<hal::pwm> pwm()
 {
-  static hal::stm32f1::advanced_timer<st_peripheral::timer1> pwm_timer;
   static auto timer_old_pwm =
-    pwm_timer.acquire_pwm(hal::stm32f1::timer1_pin::pa8);
+    timer1().acquire_pwm(hal::stm32f1::timer1_pin::pa8);
   return hal::v5::make_strong_ptr<decltype(timer_old_pwm)>(
     driver_allocator(), std::move(timer_old_pwm));
 }
@@ -185,8 +181,7 @@ hal::v5::strong_ptr<hal::pwm16_channel> pwm_channel()
 
 hal::v5::strong_ptr<hal::pwm_group_manager> pwm_frequency()
 {
-  static hal::stm32f1::advanced_timer<st_peripheral::timer1> pwm_timer;
-  auto timer_pwm_frequency = pwm_timer.acquire_pwm_group_frequency();
+  auto timer_pwm_frequency = timer1().acquire_pwm_group_frequency();
   return hal::v5::make_strong_ptr<decltype(timer_pwm_frequency)>(
     driver_allocator(), std::move(timer_pwm_frequency));
 }
@@ -294,7 +289,6 @@ void initialize_platform()
 {
   using namespace hal::literals;
   hal::set_terminate(resources::terminate_handler);
-
   // Set the MCU to the maximum clock speed
   hal::stm32f1::maximum_speed_using_internal_oscillator();
   hal::stm32f1::release_jtag_pins();

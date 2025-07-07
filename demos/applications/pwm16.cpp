@@ -24,8 +24,8 @@ void application()
   using namespace std::chrono_literals;
   using namespace hal::literals;
 
-  auto pwm_channel = resources::pwm_channel();
   auto pwm_frequency = resources::pwm_frequency();
+  auto pwm_channel = resources::pwm_channel();
   auto console = resources::console();
   auto clock = resources::clock();
 

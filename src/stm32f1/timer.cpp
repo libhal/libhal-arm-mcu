@@ -22,6 +22,7 @@
 #include <libhal-util/enum.hpp>
 #include <libhal-util/static_callable.hpp>
 #include <libhal/error.hpp>
+#include <libhal/pointers.hpp>
 #include <libhal/units.hpp>
 
 #include "../stm32_generic/timer.hpp"
@@ -85,7 +86,7 @@ void* peripheral_to_general_register(peripheral p_id)
 }
 }  // namespace
 
-timer::timer(void* p_reg, manager_data* p_manager_data_ptr)
+timer::timer(void* p_reg, timer_manager_data* p_manager_data_ptr)
   : m_timer(unsafe{})
   , m_manager_data_ptr(p_manager_data_ptr)
 {
@@ -99,12 +100,12 @@ timer::timer(void* p_reg, manager_data* p_manager_data_ptr)
                      peripheral_interrupt_params.irq,
                      peripheral_interrupt_params.handler);
 
-  m_manager_data_ptr->m_timer_usage = manager_data::timer_usage::callback_timer;
+  m_manager_data_ptr->m_usage = timer_manager_data::usage::callback_timer;
 }
 
 timer::~timer()
 {
-  m_manager_data_ptr->m_timer_usage = manager_data::timer_usage::uninitialized;
+  m_manager_data_ptr->m_usage = timer_manager_data::usage::uninitialized;
   reset_peripheral(m_manager_data_ptr->m_id);
 }
 
@@ -268,8 +269,8 @@ general_purpose_timer_manager::~general_purpose_timer_manager()
 
 hal::stm32f1::timer advanced_timer_manager::acquire_timer()
 {
-  if (m_manager_data.m_timer_usage !=
-      manager_data::timer_usage::uninitialized) {
+  if (m_manager_data.current_usage() !=
+      timer_manager_data::usage::uninitialized) {
     safe_throw(hal::device_or_resource_busy(this));
   }
 
@@ -279,8 +280,8 @@ hal::stm32f1::timer advanced_timer_manager::acquire_timer()
 
 hal::stm32f1::timer general_purpose_timer_manager::acquire_timer()
 {
-  if (m_manager_data.m_timer_usage !=
-      manager_data::timer_usage::uninitialized) {
+  if (m_manager_data.current_usage() !=
+      timer_manager_data::usage::uninitialized) {
     safe_throw(hal::device_or_resource_busy(this));
   }
 
@@ -291,10 +292,10 @@ hal::stm32f1::timer general_purpose_timer_manager::acquire_timer()
 hal::stm32f1::pwm_group_frequency
 advanced_timer_manager::acquire_pwm_group_frequency()
 {
-  if (m_manager_data.m_timer_usage !=
-        manager_data::timer_usage::uninitialized &&
-      m_manager_data.m_timer_usage !=
-        manager_data::timer_usage::pwm_generator) {
+  if (m_manager_data.current_usage() !=
+        timer_manager_data::usage::uninitialized &&
+      m_manager_data.current_usage() !=
+        timer_manager_data::usage::pwm_generator) {
     safe_throw(hal::device_or_resource_busy(this));
   }
 
@@ -305,10 +306,10 @@ advanced_timer_manager::acquire_pwm_group_frequency()
 hal::stm32f1::pwm_group_frequency
 general_purpose_timer_manager::acquire_pwm_group_frequency()
 {
-  if (m_manager_data.m_timer_usage !=
-        manager_data::timer_usage::uninitialized &&
-      m_manager_data.m_timer_usage !=
-        manager_data::timer_usage::pwm_generator) {
+  if (m_manager_data.current_usage() !=
+        timer_manager_data::usage::uninitialized &&
+      m_manager_data.current_usage() !=
+        timer_manager_data::usage::pwm_generator) {
     safe_throw(hal::device_or_resource_busy(this));
   }
 
@@ -319,10 +320,10 @@ general_purpose_timer_manager::acquire_pwm_group_frequency()
 hal::stm32f1::pwm16_channel advanced_timer_manager::acquire_pwm16_channel(
   timer_pins p_pin)
 {
-  if (m_manager_data.m_timer_usage !=
-        manager_data::timer_usage::uninitialized &&
-      m_manager_data.m_timer_usage !=
-        manager_data::timer_usage::pwm_generator) {
+  if (m_manager_data.current_usage() !=
+        timer_manager_data::usage::uninitialized &&
+      m_manager_data.current_usage() !=
+        timer_manager_data::usage::pwm_generator) {
     safe_throw(hal::device_or_resource_busy(this));
   }
 
@@ -335,10 +336,10 @@ hal::stm32f1::pwm16_channel advanced_timer_manager::acquire_pwm16_channel(
 hal::stm32f1::pwm16_channel
 general_purpose_timer_manager::acquire_pwm16_channel(timer_pins p_pin)
 {
-  if (m_manager_data.m_timer_usage !=
-        manager_data::timer_usage::uninitialized &&
-      m_manager_data.m_timer_usage !=
-        manager_data::timer_usage::pwm_generator) {
+  if (m_manager_data.current_usage() !=
+        timer_manager_data::usage::uninitialized &&
+      m_manager_data.current_usage() !=
+        timer_manager_data::usage::pwm_generator) {
     safe_throw(hal::device_or_resource_busy(this));
   }
 
@@ -350,9 +351,9 @@ general_purpose_timer_manager::acquire_pwm16_channel(timer_pins p_pin)
 
 hal::stm32f1::pwm advanced_timer_manager::acquire_pwm(timer_pins p_pin)
 {
-  if (m_manager_data.m_timer_usage !=
-        manager_data::timer_usage::uninitialized &&
-      m_manager_data.m_timer_usage != manager_data::timer_usage::old_pwm) {
+  if (m_manager_data.current_usage() !=
+        timer_manager_data::usage::uninitialized &&
+      m_manager_data.current_usage() != timer_manager_data::usage::old_pwm) {
     safe_throw(hal::device_or_resource_busy(this));
   }
 
@@ -364,9 +365,9 @@ hal::stm32f1::pwm advanced_timer_manager::acquire_pwm(timer_pins p_pin)
 
 hal::stm32f1::pwm general_purpose_timer_manager::acquire_pwm(timer_pins p_pin)
 {
-  if (m_manager_data.m_timer_usage !=
-        manager_data::timer_usage::uninitialized &&
-      m_manager_data.m_timer_usage != manager_data::timer_usage::old_pwm) {
+  if (m_manager_data.current_usage() !=
+        timer_manager_data::usage::uninitialized &&
+      m_manager_data.current_usage() != timer_manager_data::usage::old_pwm) {
     safe_throw(hal::device_or_resource_busy(this));
   }
 

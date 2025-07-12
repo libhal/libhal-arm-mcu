@@ -165,21 +165,43 @@ constexpr pin_information determine_pin_info(
 namespace hal::stm32f1 {
 
 pwm_group_frequency::pwm_group_frequency(void* p_reg,
-                                         manager_data* p_manager_data_ptr)
+                                         timer_manager_data* p_manager_data_ptr)
   : m_pwm_frequency(unsafe{}, p_reg)
   , m_manager_data_ptr(p_manager_data_ptr)
 {
-  m_manager_data_ptr->m_timer_usage = manager_data::timer_usage::pwm_generator;
+  m_manager_data_ptr->m_usage = timer_manager_data::usage::pwm_generator;
   m_manager_data_ptr->m_resource_count++;
+}
+
+pwm_group_frequency::pwm_group_frequency(pwm_group_frequency&& p_other) noexcept
+  : m_pwm_frequency(std::move(p_other.m_pwm_frequency))
+{
+  m_manager_data_ptr = std::exchange(p_other.m_manager_data_ptr, nullptr);
+}
+
+pwm_group_frequency& pwm_group_frequency::operator=(
+  pwm_group_frequency&& p_other) noexcept
+{
+  if (this == &p_other) {
+    return *this;
+  }
+
+  m_pwm_frequency = std::move(p_other.m_pwm_frequency);
+  m_manager_data_ptr = std::exchange(p_other.m_manager_data_ptr, nullptr);
+
+  return *this;
 }
 
 pwm_group_frequency::~pwm_group_frequency()
 {
+  if (m_manager_data_ptr == nullptr) {
+    return;
+  }
+
   m_manager_data_ptr->m_resource_count--;
 
   if (m_manager_data_ptr->m_resource_count.load() == 0) {
-    m_manager_data_ptr->m_timer_usage =
-      manager_data::timer_usage::uninitialized;
+    m_manager_data_ptr->m_usage = timer_manager_data::usage::uninitialized;
     reset_peripheral(m_manager_data_ptr->m_id);
   }
 }
@@ -194,7 +216,7 @@ void pwm_group_frequency::driver_frequency(u32 p_frequency)
 }
 
 pwm16_channel::pwm16_channel(void* p_reg,
-                             manager_data* p_manager_data_ptr,
+                             timer_manager_data* p_manager_data_ptr,
                              bool p_is_advanced,
                              timer_pins p_pin)
   : m_pwm(unsafe{})
@@ -215,12 +237,32 @@ pwm16_channel::pwm16_channel(void* p_reg,
                      .is_advanced = p_is_advanced,
                    });
 
-  m_manager_data_ptr->m_timer_usage = manager_data::timer_usage::pwm_generator;
+  m_manager_data_ptr->m_usage = timer_manager_data::usage::pwm_generator;
   m_manager_data_ptr->m_resource_count++;
 }
+pwm16_channel::pwm16_channel(pwm16_channel&& p_other) noexcept
+  : m_pwm(std::move(p_other.m_pwm))
+{
+  m_pin = p_other.m_pin;
+  m_manager_data_ptr = std::exchange(p_other.m_manager_data_ptr, nullptr);
+}
 
+pwm16_channel& pwm16_channel::operator=(pwm16_channel&& p_other) noexcept
+{
+  if (this == &p_other) {
+    return *this;
+  }
+  m_pwm = std::move(p_other.m_pwm);
+  m_pin = p_other.m_pin;
+  m_manager_data_ptr = std::exchange(p_other.m_manager_data_ptr, nullptr);
+  return *this;
+}
 pwm16_channel::~pwm16_channel()
 {
+  if (m_manager_data_ptr == nullptr) {
+    return;
+  }
+
   pin_information pin_info =
     determine_pin_info(m_pin, m_manager_data_ptr->m_id);
   reset_pin(pin_info.pin_select);
@@ -228,8 +270,7 @@ pwm16_channel::~pwm16_channel()
   m_manager_data_ptr->m_resource_count--;
 
   if (m_manager_data_ptr->m_resource_count.load() == 0) {
-    m_manager_data_ptr->m_timer_usage =
-      manager_data::timer_usage::uninitialized;
+    m_manager_data_ptr->m_usage = timer_manager_data::usage::uninitialized;
     reset_peripheral(m_manager_data_ptr->m_id);
   }
 }
@@ -246,7 +287,7 @@ void pwm16_channel::driver_duty_cycle(u16 p_duty_cycle)
 }
 
 pwm::pwm(void* p_reg,
-         manager_data* p_manager_data_ptr,
+         timer_manager_data* p_manager_data_ptr,
          bool p_is_advanced,
          stm32f1::timer_pins p_pin)
   : m_pwm(unsafe{})
@@ -268,12 +309,38 @@ pwm::pwm(void* p_reg,
                      .is_advanced = p_is_advanced,
                    });
 
-  m_manager_data_ptr->m_timer_usage = manager_data::timer_usage::old_pwm;
+  m_manager_data_ptr->m_usage = timer_manager_data::usage::old_pwm;
   m_manager_data_ptr->m_resource_count++;
+}
+
+pwm::pwm(pwm&& p_other) noexcept
+  : m_pwm(std::move(p_other.m_pwm))
+  , m_pwm_frequency(std::move(p_other.m_pwm_frequency))
+  , m_pin(p_other.m_pin)
+  , m_manager_data_ptr(p_other.m_manager_data_ptr)
+{
+  m_manager_data_ptr = std::exchange(p_other.m_manager_data_ptr, nullptr);
+}
+
+pwm& pwm::operator=(pwm&& p_other) noexcept
+{
+  if (this == &p_other) {
+    return *this;
+  }
+
+  m_pwm = std::move(p_other.m_pwm);
+  m_pwm_frequency = std::move(p_other.m_pwm_frequency);
+  m_pin = p_other.m_pin;
+  m_manager_data_ptr = std::exchange(p_other.m_manager_data_ptr, nullptr);
+
+  return *this;
 }
 
 pwm::~pwm()
 {
+  if (m_manager_data_ptr == nullptr) {
+    return;
+  }
   pin_information pin_info =
     determine_pin_info(m_pin, m_manager_data_ptr->m_id);
   reset_pin(pin_info.pin_select);
@@ -281,8 +348,7 @@ pwm::~pwm()
   m_manager_data_ptr->m_resource_count--;
 
   if (m_manager_data_ptr->m_resource_count.load() == 0) {
-    m_manager_data_ptr->m_timer_usage =
-      manager_data::timer_usage::uninitialized;
+    m_manager_data_ptr->m_usage = timer_manager_data::usage::uninitialized;
     reset_peripheral(m_manager_data_ptr->m_id);
   }
 }

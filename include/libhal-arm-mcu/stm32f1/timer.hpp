@@ -15,6 +15,7 @@
 #pragma once
 
 #include <atomic>
+#include <memory_resource>
 #include <optional>
 #include <type_traits>
 
@@ -25,6 +26,7 @@
 #include <libhal-arm-mcu/stm32f1/constants.hpp>
 #include <libhal-util/bit.hpp>
 #include <libhal-util/enum.hpp>
+#include <libhal/pointers.hpp>
 #include <libhal/pwm.hpp>
 #include <libhal/timer.hpp>
 #include <libhal/units.hpp>
@@ -212,11 +214,42 @@ consteval auto get_pwm_timer_type()
     return std::type_identity<void>();
   }
 }
+
 /**
  * @brief Used to store the state of the timer assigned to the manager.
  */
-struct manager_data
+struct timer_manager_data
 {
+public:
+  enum class usage : u8
+  {
+    uninitialized,
+    old_pwm,
+    pwm_generator,
+    callback_timer
+  };
+  /**
+   * @brief Tracks how many resources are currently tied to the timer
+   *
+   * @return auto
+   */
+  auto resource_count() const
+  {
+    return m_resource_count.load();
+  }
+
+  /// Tracks how many resources are currently tied to the
+
+  /**
+   * @brief Indicates what kind of usage the timer is currently configured for.
+   *
+   * @return auto
+   */
+  auto current_usage() const
+  {
+    return m_usage;
+  }
+
 private:
   friend class timer;
   friend class pwm_group_frequency;
@@ -225,24 +258,15 @@ private:
   friend class advanced_timer_manager;
   friend class general_purpose_timer_manager;
 
-  enum class timer_usage
-  {
-    uninitialized,
-    old_pwm,
-    pwm_generator,
-    callback_timer
-  };
-  /// Indicates what kind of usage the timer is currently configured for.
-  timer_usage m_timer_usage{};
-  /// Tracks how many resources are currently tied to the
-  std::atomic<u8> m_resource_count;
   /// Indicates which timer is assigned to this manager.
   peripheral m_id;
+  /// Tracks how many resources are currently tied to the
+  std::atomic<u8> m_resource_count{ 0 };
+  /// Indicates what kind of usage the timer is currently configured for.
+  usage m_usage = usage::uninitialized;
 
-  manager_data(peripheral p_id)
-    : m_timer_usage(timer_usage::uninitialized)
-    , m_resource_count(0)
-    , m_id(p_id)
+  timer_manager_data(peripheral p_id)
+    : m_id(p_id)
   {
   }
 };
@@ -254,7 +278,7 @@ class general_purpose_timer_manager;
 /**
  * @brief This class implements the `hal::timer` interface.
  *
- * Can schedule function callbacks to occur via interupt after a designated
+ * Can schedule function callbacks to occur via interrupt after a designated
  * amount of time.
  *
  */
@@ -290,7 +314,7 @@ private:
    * @param p_reg - The address of the selected timer.
    * @param p_manager_data - Pointer to access the managers state information.
    */
-  timer(void* p_reg, manager_data* p_manager_data_ptr);
+  timer(void* p_reg, timer_manager_data* p_manager_data_ptr);
 
   bool driver_is_running() override;
   void driver_cancel() override;
@@ -320,7 +344,7 @@ private:
   /// timer.
   hal::stm32_generic::timer m_timer;
   /// Pointer to access the managers state information.
-  manager_data* m_manager_data_ptr;
+  timer_manager_data* m_manager_data_ptr;
   /// The function to be used inside the ISR handler for the callback.
   std::optional<hal::callback<void(void)>> m_callback;
 };
@@ -340,9 +364,8 @@ public:
 
   pwm_group_frequency(pwm_group_frequency const& p_other) = delete;
   pwm_group_frequency& operator=(pwm_group_frequency const& p_other) = delete;
-  pwm_group_frequency(pwm_group_frequency&& p_other) noexcept = default;
-  pwm_group_frequency& operator=(pwm_group_frequency&& p_other) noexcept =
-    default;
+  pwm_group_frequency(pwm_group_frequency&& p_other) noexcept;
+  pwm_group_frequency& operator=(pwm_group_frequency&& p_other) noexcept;
   ~pwm_group_frequency() override;
 
 private:
@@ -356,7 +379,7 @@ private:
    * @param p_manager_data_ptr is a pointer to access the managers state
    * information.
    */
-  pwm_group_frequency(void* p_reg, manager_data* p_manager_data_ptr);
+  pwm_group_frequency(void* p_reg, timer_manager_data* p_manager_data_ptr);
 
   void driver_frequency(u32 p_hertz) override;
 
@@ -364,7 +387,7 @@ private:
   /// control the timer.
   hal::stm32_generic::pwm_group_frequency m_pwm_frequency;
   /// Pointer to access the managers state information.
-  manager_data* m_manager_data_ptr;
+  timer_manager_data* m_manager_data_ptr;
 };
 
 /**
@@ -383,8 +406,8 @@ public:
 
   pwm16_channel(pwm16_channel const& p_other) = delete;
   pwm16_channel& operator=(pwm16_channel const& p_other) = delete;
-  pwm16_channel(pwm16_channel&& p_other) noexcept = default;
-  pwm16_channel& operator=(pwm16_channel&& p_other) noexcept = default;
+  pwm16_channel(pwm16_channel&& p_other) noexcept;
+  pwm16_channel& operator=(pwm16_channel&& p_other) noexcept;
   ~pwm16_channel() override;
 
 private:
@@ -400,7 +423,7 @@ private:
    * @param p_pin is the pin to be used for the pwm channel.
    */
   pwm16_channel(void* p_reg,
-                manager_data* p_manager_data_ptr,
+                timer_manager_data* p_manager_data_ptr,
                 bool p_is_advanced,
                 timer_pins p_pin);
 
@@ -412,7 +435,7 @@ private:
   /// The pin being used for the channel.
   timer_pins m_pin;
   /// Pointer to access the managers state information.
-  manager_data* m_manager_data_ptr;
+  timer_manager_data* m_manager_data_ptr;
 };
 
 /**
@@ -431,8 +454,8 @@ public:
 
   pwm(pwm const& p_other) = delete;
   pwm& operator=(pwm const& p_other) = delete;
-  pwm(pwm&& p_other) noexcept = default;
-  pwm& operator=(pwm&& p_other) noexcept = default;
+  pwm(pwm&& p_other) noexcept;
+  pwm& operator=(pwm&& p_other) noexcept;
   ~pwm() override;
 
 private:
@@ -448,7 +471,7 @@ private:
    * @param p_pin is the pin to be used for the pwm channel.
    */
   pwm(void* p_reg,
-      manager_data* p_manager_data_ptr,
+      timer_manager_data* p_manager_data_ptr,
       bool p_is_advanced,
       timer_pins p_pin);
 
@@ -464,7 +487,7 @@ private:
   /// The pin being used for the channel.
   timer_pins m_pin;
   /// Pointer to access the managers state information.
-  manager_data* m_manager_data_ptr;
+  timer_manager_data* m_manager_data_ptr;
 };
 
 /**
@@ -547,7 +570,7 @@ protected:
 private:
   /// Stores the state information about the timer thats assigned to this
   /// manager.
-  manager_data m_manager_data;
+  timer_manager_data m_manager_data;
 };
 
 /**
@@ -609,6 +632,15 @@ public:
   {
     return advanced_timer_manager::acquire_pwm(static_cast<timer_pins>(p_pin));
   }
+
+private:
+  friend hal::v5::strong_ptr<hal::pwm16_channel> acquire_pwm16_channel(
+    std::pmr::polymorphic_allocator<> p_allocator,
+    advanced_timer_manager m_manager);
+
+  friend hal::v5::strong_ptr<hal::pwm_group_manager> acquire_pwm_group_manager(
+    std::pmr::polymorphic_allocator<> p_allocator,
+    advanced_timer_manager m_manager);
 };
 
 /**
@@ -695,7 +727,7 @@ protected:
 private:
   /// Stores the state information about the timer thats assigned to this
   /// manager.
-  manager_data m_manager_data;
+  timer_manager_data m_manager_data;
 };
 
 /**
@@ -765,6 +797,14 @@ public:
     return general_purpose_timer_manager::acquire_pwm(
       static_cast<timer_pins>(p_pin));
   }
-};
 
+private:
+  friend hal::v5::strong_ptr<hal::pwm16_channel> acquire_pwm16_channel(
+    std::pmr::polymorphic_allocator<> p_allocator,
+    advanced_timer_manager m_manager);
+
+  friend hal::v5::strong_ptr<hal::pwm_group_manager> acquire_pwm_group_manager(
+    std::pmr::polymorphic_allocator<> p_allocator,
+    advanced_timer_manager m_manager);
+};
 }  // namespace hal::stm32f1

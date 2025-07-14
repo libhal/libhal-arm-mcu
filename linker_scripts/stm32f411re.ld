@@ -19,4 +19,4 @@ __flash_size  = 512K;
 __ram         = 0x20000000;
 __ram_size    = 128K;
 
-INCLUDE "standard.ld"
+INCLUDE picolibcpp.ld

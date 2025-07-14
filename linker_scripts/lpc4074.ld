@@ -20,4 +20,4 @@ __ram = 0x10000000;
 __ram_size = 32K;
 __stack_size = 1K;
 
-INCLUDE "standard.ld"
+INCLUDE picolibcpp.ld

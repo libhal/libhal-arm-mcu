@@ -204,6 +204,11 @@ hal::v5::strong_ptr<hal::can_identifier_filter> can_identifier_filter()
   throw hal::operation_not_supported(nullptr);
 }
 
+hal::v5::strong_ptr<hal::can_interrupt> can_interrupt()
+{
+  throw hal::operation_not_supported(nullptr);
+}
+
 hal::v5::strong_ptr<hal::interrupt_pin> interrupt_pin()
 {
   throw hal::operation_not_supported(nullptr);

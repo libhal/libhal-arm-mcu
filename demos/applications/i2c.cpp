@@ -24,7 +24,12 @@ void application()
   auto console = resources::console();
   auto i2c = resources::i2c();
 
-  hal::print(*console, "Application starting!\n");
+  hal::print(*console, "Starting I2C Probe Demonstration!\n\n");
+  hal::print(
+    *console,
+    "This application will probe the entire i2c address space looking for a\n"
+    "response. When it gets one it will print it out. This demonstration \n"
+    "can be used to identify the addresses of devices on your i2c bus.\n");
 
   while (true) {
     using namespace std::literals;
@@ -32,7 +37,7 @@ void application()
     constexpr hal::byte first_i2c_address = 0x08;
     constexpr hal::byte last_i2c_address = 0x78;
 
-    hal::print(*console, "Devices Found: ");
+    hal::print(*console, "I2C devices found: ");
 
     for (hal::byte address = first_i2c_address; address < last_i2c_address;
          address++) {

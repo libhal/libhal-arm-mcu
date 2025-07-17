@@ -14,7 +14,9 @@
 
 #pragma once
 
+#include <libhal-arm-mcu/interrupt.hpp>
 #include <libhal/input_pin.hpp>
+#include <libhal/interrupt_pin.hpp>
 #include <libhal/output_pin.hpp>
 
 #include "constants.hpp"
@@ -48,10 +50,14 @@ public:
 
   class input;
   class output;
+  class interrupt;
 
   input acquire_input_pin(u8 p_pin, input_pin::settings const& p_settings = {});
   output acquire_output_pin(u8 p_pin,
                             output_pin::settings const& p_settings = {});
+  interrupt acquire_interrupt_pin(
+    u8 p_pin,
+    interrupt_pin::settings const& p_settings = {});
 
 private:
   gpio_manager(peripheral p_select);
@@ -125,4 +131,27 @@ private:
 
   pin_select m_pin;
 };
+
+class gpio_manager::interrupt final : public hal::interrupt_pin
+{
+public:
+  template<peripheral port>
+  interrupt(gpio<port> const&, u8 p_pin, settings const& p_settings = {})
+    : interrupt(port, p_pin, p_settings)
+  {
+  }
+
+private:
+  friend class gpio_manager;
+
+  interrupt(peripheral p_port, u8 p_pin, settings const& p_settings);
+
+  void driver_configure(settings const& p_settings) override;
+  void driver_on_trigger(hal::callback<handler> p_callback) override;
+
+  cortex_m::irq_t get_irq();
+
+  pin_select m_pin;
+};
+
 }  // namespace hal::stm32f1

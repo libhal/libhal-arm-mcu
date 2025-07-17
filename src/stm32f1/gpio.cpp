@@ -11,12 +11,15 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+#include <bit>
+#include <optional>
 
 #include <libhal-arm-mcu/stm32f1/constants.hpp>
 #include <libhal-arm-mcu/stm32f1/gpio.hpp>
 #include <libhal-util/bit.hpp>
 #include <libhal-util/enum.hpp>
 #include <libhal/error.hpp>
+#include <libhal/interrupt_pin.hpp>
 #include <libhal/units.hpp>
 
 #include "pin.hpp"
@@ -24,6 +27,56 @@
 
 namespace hal::stm32f1 {
 namespace {
+struct exti_reg_t
+{
+  /// Offset: 0x00 Interrupt Mask Register (R/W)
+  u32 volatile interrupt_mask;
+  /// Offset: 0x04 Event Mask Register (R/W)
+  u32 volatile event_mask;
+  /// Offset: 0x08 Rising Trigger Selection Register (R/W)
+  u32 volatile rising_trigger_selection;
+  /// Offset: 0x0C Falling Trigger Selection Register (R/W)
+  u32 volatile falling_trigger_selection;
+  /// Offset: 0x10 Software Interrupt Event Register Register (R/W)
+  u32 volatile software_interrupt_event;
+  /// Offset: 0x14 Pending Register (RC/W1)
+  u32 volatile pending;
+};
+
+constexpr std::uintptr_t stm_exti_addr = 0x4001'0400UL;
+// NOLINTNEXTLINE(performance-no-int-to-ptr)
+inline auto* exti_reg = reinterpret_cast<exti_reg_t*>(stm_exti_addr);
+
+std::array<std::optional<hal::callback<void(bool)>>, 16>
+  interrupt_handlers = {};
+
+void external_interrupt_isr()
+{
+  // Find first interrupt to service
+  static constexpr auto pr_mask = hal::bit_mask::from(0, 15);
+  auto pending_reg = bit_extract(pr_mask, exti_reg->pending);
+  int pin_index = std::countr_zero(pending_reg);
+
+  if (pin_index <= 15 && interrupt_handlers[pin_index]) {
+    // Determine which port is selected for given pin
+    int const afio_exticr_num = pin_index / 4;
+    int const afio_exti_bit_offset = (pin_index % 4) * 4;
+    auto const port_mask =
+      hal::bit_mask::from(afio_exti_bit_offset, afio_exti_bit_offset + 3);
+    auto const port =
+      bit_extract(port_mask, alternative_function_io->exticr[afio_exticr_num]);
+
+    // Grab input pin value
+    auto const& gpio_reg = hal::stm32f1::gpio_reg('A' + port);
+    auto const pin_value = bit_extract(bit_mask::from(pin_index), gpio_reg.idr);
+
+    // Call and handle callback
+    (*interrupt_handlers[pin_index])(pin_value);
+    auto const pending_mask = hal::bit_mask::from(pin_index);
+    hal::bit_modify(exti_reg->pending).set(pending_mask);
+  }
+}
+
 u8 peripheral_to_letter(peripheral p_peripheral)
 {
   // The numeric value of `peripheral::gpio_a` to ``peripheral::gpio_g` are
@@ -52,6 +105,13 @@ gpio_manager::input gpio_manager::acquire_input_pin(
 gpio_manager::output gpio_manager::acquire_output_pin(
   u8 p_pin,
   output_pin::settings const& p_settings)
+{
+  return { m_port, p_pin, p_settings };
+}
+
+gpio_manager::interrupt gpio_manager::acquire_interrupt_pin(
+  u8 p_pin,
+  interrupt_pin::settings const& p_settings)
 {
   return { m_port, p_pin, p_settings };
 }
@@ -121,5 +181,103 @@ bool gpio_manager::output::driver_level()
   auto const& reg = gpio_reg(m_pin.port);
   auto const pin_value = bit_extract(bit_mask::from(m_pin.pin), reg.idr);
   return static_cast<bool>(pin_value);
+}
+
+gpio_manager::interrupt::interrupt(peripheral p_port,
+                                   u8 p_pin,
+                                   interrupt_pin::settings const& p_settings)
+  : m_pin({ .port = peripheral_to_letter(p_port), .pin = p_pin })
+{
+  throw_if_pin_is_unavailable(m_pin);
+  gpio_manager::interrupt::driver_configure(p_settings);
+}
+
+void gpio_manager::interrupt::driver_configure(settings const& p_settings)
+{
+  // Verify EXTI not already in use
+  auto const exti_mask = hal::bit_mask::from(m_pin.pin);
+  auto interrupt_enabled = bit_extract(exti_mask, exti_reg->interrupt_mask);
+  auto event_enabled = bit_extract(exti_mask, exti_reg->event_mask);
+  if (interrupt_enabled || event_enabled) {
+    hal::safe_throw(hal::device_or_resource_busy(this));
+  }
+
+  if (p_settings.resistor == pin_resistor::pull_up) {
+    configure_pin(m_pin, input_pull_up);
+  } else if (p_settings.resistor == pin_resistor::pull_down) {
+    configure_pin(m_pin, input_pull_down);
+  } else {
+    configure_pin(m_pin, input_float);
+  }
+
+  // Select port
+  int const afio_exticr_num = m_pin.pin / 4;
+  int const afio_exti_bit_offset = (m_pin.pin % 4) * 4;
+  auto const port_mask =
+    hal::bit_mask::from(afio_exti_bit_offset, afio_exti_bit_offset + 3);
+  hal::bit_modify(alternative_function_io->exticr[afio_exticr_num]).insert(port_mask, static_cast<u8>(m_pin.port - 'A'));
+
+  // Config EXTI
+  hal::bit_modify(exti_reg->interrupt_mask).set(exti_mask);
+  if (p_settings.trigger == trigger_edge::rising ||
+      p_settings.trigger == trigger_edge::both) {
+    hal::bit_modify(exti_reg->rising_trigger_selection).set(exti_mask);
+  }
+  if (p_settings.trigger == trigger_edge::falling ||
+      p_settings.trigger == trigger_edge::both) {
+    hal::bit_modify(exti_reg->falling_trigger_selection).set(exti_mask);
+  }
+
+  // Some EXTI's share the same IRQ, this skips enabling if this is the case.
+  auto irq = get_irq();
+  if (not hal::cortex_m::is_interrupt_enabled(irq)) {
+    cortex_m::enable_interrupt(irq, external_interrupt_isr);
+  }
+}
+
+void gpio_manager::interrupt::driver_on_trigger(
+  hal::callback<interrupt_pin::handler> p_callback)
+{
+  interrupt_handlers[m_pin.pin] = p_callback;
+}
+
+cortex_m::irq_t gpio_manager::interrupt::get_irq()
+{
+  switch (m_pin.pin) {
+    case 0:
+      return static_cast<cortex_m::irq_t>(irq::exti0);
+    case 1:
+      return static_cast<cortex_m::irq_t>(irq::exti1);
+    case 2:
+      return static_cast<cortex_m::irq_t>(irq::exti2);
+    case 3:
+      return static_cast<cortex_m::irq_t>(irq::exti3);
+    case 4:
+      return static_cast<cortex_m::irq_t>(irq::exti4);
+    case 5:
+      [[fallthrough]];
+    case 6:
+      [[fallthrough]];
+    case 7:
+      [[fallthrough]];
+    case 8:
+      [[fallthrough]];
+    case 9:
+      return static_cast<cortex_m::irq_t>(irq::exti9_5);
+    case 10:
+      [[fallthrough]];
+    case 11:
+      [[fallthrough]];
+    case 12:
+      [[fallthrough]];
+    case 13:
+      [[fallthrough]];
+    case 14:
+      [[fallthrough]];
+    case 15:
+      [[fallthrough]];
+    default:
+      return static_cast<cortex_m::irq_t>(irq::exti15_10);
+  }
 }
 }  // namespace hal::stm32f1

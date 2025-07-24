@@ -100,14 +100,9 @@ hal::v5::strong_ptr<hal::output_pin> status_led()
 
 hal::v5::strong_ptr<hal::adc> adc()
 {
-#if 0
   static hal::atomic_spin_lock adc_lock;
   static hal::stm32f1::adc<st_peripheral::adc1> adc(adc_lock);
-  auto pb0 = adc.acquire_channel(hal::stm32f1::adc_pins::pb0);
-  return hal::v5::make_strong_ptr<decltype(pb0)>(driver_allocator(),
-                                                 std::move(pb0));
-#endif
-  throw hal::operation_not_supported(nullptr);
+  return hal::acquire_adc(driver_allocator(), adc, hal::stm32f1::adc_pins::pb0);
 }
 
 hal::v5::strong_ptr<hal::i2c> i2c()

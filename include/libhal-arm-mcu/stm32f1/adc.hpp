@@ -17,6 +17,7 @@
 #include <libhal-arm-mcu/stm32f1/constants.hpp>
 #include <libhal/adc.hpp>
 #include <libhal/lock.hpp>
+#include <libhal/pointers.hpp>
 #include <libhal/units.hpp>
 
 namespace hal::stm32f1 {
@@ -125,13 +126,14 @@ public:
    */
   template<peripheral id>
   channel(stm32f1::adc<id>& p_adc, adc_pins p_pin)
-    : channel(p_adc, p_pin)
+    : m_manager(&p_adc)
+    , m_pin(p_pin)
   {
   }
   channel(channel const& p_other) = delete;
   channel& operator=(channel const& p_other) = delete;
-  channel(channel&& p_other) noexcept = delete;
-  channel& operator=(channel&& p_other) noexcept = delete;
+  channel(channel&& p_other) noexcept = default;
+  channel& operator=(channel&& p_other) noexcept = default;
   ~channel() override;
 
 private:
@@ -152,4 +154,18 @@ private:
   /// The pin that is used for this channel.
   adc_pins m_pin;
 };
+
+template<peripheral id>
+hal::v5::strong_ptr<adc_manager::channel> acquire_adc(
+  std::pmr::polymorphic_allocator<> p_allocator,
+  stm32f1::adc<id>& p_adc,
+  adc_pins p_pin)
+{
+  return hal::v5::make_strong_ptr<hal::stm32f1::adc_manager::channel>(
+    p_allocator, p_adc, p_pin);
+}
 }  // namespace hal::stm32f1
+
+namespace hal {
+using hal::stm32f1::acquire_adc;
+}

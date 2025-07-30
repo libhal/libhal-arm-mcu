@@ -16,6 +16,7 @@
 
 #include <libhal-arm-mcu/stm32f1/constants.hpp>
 #include <libhal-arm-mcu/stm32f1/gpio.hpp>
+#include <libhal-arm-mcu/stm32f1/interrupt.hpp>
 #include <libhal-util/bit.hpp>
 #include <libhal-util/enum.hpp>
 #include <libhal/error.hpp>
@@ -55,7 +56,7 @@ void external_interrupt_isr()
   // Find first interrupt to service
   static constexpr auto pr_mask = hal::bit_mask::from(0, 15);
   auto pending_reg = bit_extract(pr_mask, exti_reg->pending);
-  int pin_index = std::countr_zero(pending_reg);
+  auto const pin_index = std::countr_zero(pending_reg);
 
   if (pin_index <= 15 && interrupt_handlers[pin_index]) {
     // Determine which port is selected for given pin
@@ -189,19 +190,44 @@ gpio_manager::interrupt::interrupt(peripheral p_port,
   : m_pin({ .port = peripheral_to_letter(p_port), .pin = p_pin })
 {
   throw_if_pin_is_unavailable(m_pin);
-  gpio_manager::interrupt::driver_configure(p_settings);
+  setup_interrupt();
+  driver_configure(p_settings);
 }
 
-void gpio_manager::interrupt::driver_configure(settings const& p_settings)
+void gpio_manager::interrupt::setup_interrupt()
 {
-  // Verify EXTI not already in use
+  // Verify EXTI line is not already in use
   auto const exti_mask = hal::bit_mask::from(m_pin.pin);
-  auto interrupt_enabled = bit_extract(exti_mask, exti_reg->interrupt_mask);
-  auto event_enabled = bit_extract(exti_mask, exti_reg->event_mask);
+  auto const interrupt_enabled =
+    bit_extract(exti_mask, exti_reg->interrupt_mask);
+  auto const event_enabled = bit_extract(exti_mask, exti_reg->event_mask);
   if (interrupt_enabled || event_enabled) {
     hal::safe_throw(hal::device_or_resource_busy(this));
   }
 
+  // Determine location of port selection for given pin and set the port
+  int const afio_exticr_num = m_pin.pin / 4;
+  int const afio_exti_bit_offset = (m_pin.pin % 4) * 4;
+  auto const port_mask =
+    hal::bit_mask::from(afio_exti_bit_offset, afio_exti_bit_offset + 3);
+  hal::bit_modify(alternative_function_io->exticr[afio_exticr_num])
+    .insert(port_mask, static_cast<u8>(m_pin.port - 'A'));
+
+  initialize_interrupts();
+  // Some EXTI lines share the same IRQ, this skips enabling if this is the
+  // case.
+  auto const irq = get_irq();
+  if (not hal::cortex_m::is_interrupt_enabled(irq)) {
+    cortex_m::enable_interrupt(irq, external_interrupt_isr);
+  }
+}
+
+void gpio_manager::interrupt::driver_configure(settings const& p_settings)
+{
+  auto const exti_mask = hal::bit_mask::from(m_pin.pin);
+  hal::bit_modify(exti_reg->interrupt_mask).clear(exti_mask);
+
+  reset_pin(m_pin);
   if (p_settings.resistor == pin_resistor::pull_up) {
     configure_pin(m_pin, input_pull_up);
   } else if (p_settings.resistor == pin_resistor::pull_down) {
@@ -210,29 +236,18 @@ void gpio_manager::interrupt::driver_configure(settings const& p_settings)
     configure_pin(m_pin, input_float);
   }
 
-  // Select port
-  int const afio_exticr_num = m_pin.pin / 4;
-  int const afio_exti_bit_offset = (m_pin.pin % 4) * 4;
-  auto const port_mask =
-    hal::bit_mask::from(afio_exti_bit_offset, afio_exti_bit_offset + 3);
-  hal::bit_modify(alternative_function_io->exticr[afio_exticr_num]).insert(port_mask, static_cast<u8>(m_pin.port - 'A'));
-
-  // Config EXTI
-  hal::bit_modify(exti_reg->interrupt_mask).set(exti_mask);
-  if (p_settings.trigger == trigger_edge::rising ||
-      p_settings.trigger == trigger_edge::both) {
+  if (p_settings.trigger == trigger_edge::rising) {
     hal::bit_modify(exti_reg->rising_trigger_selection).set(exti_mask);
-  }
-  if (p_settings.trigger == trigger_edge::falling ||
-      p_settings.trigger == trigger_edge::both) {
+    hal::bit_modify(exti_reg->falling_trigger_selection).clear(exti_mask);
+  } else if (p_settings.trigger == trigger_edge::falling) {
+    hal::bit_modify(exti_reg->rising_trigger_selection).clear(exti_mask);
+    hal::bit_modify(exti_reg->falling_trigger_selection).set(exti_mask);
+  } else {
+    hal::bit_modify(exti_reg->rising_trigger_selection).set(exti_mask);
     hal::bit_modify(exti_reg->falling_trigger_selection).set(exti_mask);
   }
 
-  // Some EXTI's share the same IRQ, this skips enabling if this is the case.
-  auto irq = get_irq();
-  if (not hal::cortex_m::is_interrupt_enabled(irq)) {
-    cortex_m::enable_interrupt(irq, external_interrupt_isr);
-  }
+  hal::bit_modify(exti_reg->interrupt_mask).set(exti_mask);
 }
 
 void gpio_manager::interrupt::driver_on_trigger(

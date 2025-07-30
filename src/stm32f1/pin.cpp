@@ -26,11 +26,20 @@ namespace hal::stm32f1 {
 namespace {
 /// Returns a bit mask indicating where the config bits are in the config
 /// registers.
-bit_mask mask(u8 p_pin)
+bit_mask config_mask(u8 p_pin)
 {
   return {
     .position = static_cast<uint32_t>((p_pin * 4) % 32),
     .width = 4,
+  };
+}
+/// Returns a bit mask indicating where the odr bit is in the output data
+/// register.
+bit_mask odr_mask(u8 p_pin)
+{
+  return {
+    .position = static_cast<uint32_t>(p_pin),
+    .width = 1,
   };
 }
 
@@ -42,6 +51,12 @@ uint32_t volatile& config_register(pin_select const& p_pin_select)
     return gpio_reg(p_pin_select.port).crl;
   }
   return gpio_reg(p_pin_select.port).crh;
+}
+
+/// Returns the output data register for the specific pin.
+uint32_t volatile& odr_register(pin_select const& p_pin_select)
+{
+  return gpio_reg(p_pin_select.port).odr;
 }
 
 void safely_power_on(pin_select const& p_pin_select)
@@ -96,7 +111,7 @@ bool is_pin_reset(pin_select p_pin_select)
 {
   auto& config_reg = config_register(p_pin_select);
   auto const current_configuration =
-    bit_extract(mask(p_pin_select.pin), config_reg);
+    bit_extract(config_mask(p_pin_select.pin), config_reg);
 
   return reset_pin_config == current_configuration;
 }
@@ -118,6 +133,7 @@ void throw_if_pin_is_unavailable(pin_select p_pin_select)
 void configure_pin(pin_select p_pin_select, pin_config_t p_config)
 {
   auto& config_reg = config_register(p_pin_select);
+  auto& odr_reg = odr_register(p_pin_select);
   safely_power_on(p_pin_select);
   throw_if_pin_is_unavailable(p_pin_select);
 
@@ -127,14 +143,15 @@ void configure_pin(pin_select p_pin_select, pin_config_t p_config)
                         .insert<mode>(p_config.MODE)
                         .get();
 
-  bit_modify(config_reg).insert(mask(p_pin_select.pin), config);
+  bit_modify(config_reg).insert(config_mask(p_pin_select.pin), config);
+  bit_modify(odr_reg).insert(odr_mask(p_pin_select.pin), p_config.PxODR);
 }
 
 void reset_pin(pin_select p_pin_select)
 {
   auto& config_reg = config_register(p_pin_select);
   config_reg = bit_modify(config_reg)
-                 .insert(mask(p_pin_select.pin), reset_pin_config)
+                 .insert(config_mask(p_pin_select.pin), reset_pin_config)
                  .to<u32>();
 }
 

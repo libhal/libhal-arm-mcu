@@ -146,6 +146,7 @@ private:
 
   interrupt(peripheral p_port, u8 p_pin, settings const& p_settings);
 
+  void setup_interrupt();
   void driver_configure(settings const& p_settings) override;
   void driver_on_trigger(hal::callback<handler> p_callback) override;
 

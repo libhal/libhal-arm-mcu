@@ -28,7 +28,7 @@ struct alternative_function_io_t
 {
   u32 volatile evcr;
   u32 volatile mapr;
-  std::array<u32, 4> volatile exticr;
+  std::array<u32 volatile, 4> exticr;
   u32 reserved0;
   u32 volatile mapr2;
 };

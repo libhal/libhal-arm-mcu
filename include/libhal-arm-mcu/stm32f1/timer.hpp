@@ -19,6 +19,7 @@
 #include <optional>
 #include <type_traits>
 
+#include "libhal-arm-mcu/stm32_generic/quadrature_encoder.hpp"
 #include <libhal-arm-mcu/interrupt.hpp>
 #include <libhal-arm-mcu/stm32_generic/pwm.hpp>
 #include <libhal-arm-mcu/stm32_generic/timer.hpp>
@@ -28,6 +29,7 @@
 #include <libhal-util/enum.hpp>
 #include <libhal/pointers.hpp>
 #include <libhal/pwm.hpp>
+#include <libhal/rotation_sensor.hpp>
 #include <libhal/timer.hpp>
 #include <libhal/units.hpp>
 
@@ -226,7 +228,8 @@ public:
     uninitialized,
     old_pwm,
     pwm_generator,
-    callback_timer
+    callback_timer,
+    quadrature_encoder
   };
   /**
    * @brief Tracks how many resources are currently tied to the timer
@@ -257,6 +260,7 @@ private:
   friend class pwm;
   friend class advanced_timer_manager;
   friend class general_purpose_timer_manager;
+  friend class quadrature_encoder;
 
   /// Indicates which timer is assigned to this manager.
   peripheral m_id;
@@ -489,6 +493,37 @@ private:
   /// Pointer to access the managers state information.
   timer_manager_data* m_manager_data_ptr;
 };
+/**
+ * @brief This class implements the `hal::rotation_sensor` interface
+ *
+ * It gets an input from a quadrature encoder motor and measures the amount turn
+ * using 2 channels as input.
+ *
+ * Each Quadrature Encoder must use channel 1 and 2 from the same timer.
+ */
+class quadrature_encoder : public hal::rotation_sensor
+{
+public:
+  friend class hal::stm32f1::advanced_timer_manager;
+  friend class hal::stm32f1::general_purpose_timer_manager;
+
+  quadrature_encoder(quadrature_encoder const& p_other) = delete;
+  quadrature_encoder& operator=(quadrature_encoder const& p_other) = delete;
+  quadrature_encoder(quadrature_encoder&& p_other) noexcept;
+  quadrature_encoder& operator=(quadrature_encoder&& p_other) noexcept;
+  ~quadrature_encoder() override;
+
+private:
+  quadrature_encoder(timer_pins channel1,
+                     timer_pins channel2,
+                     hal::stm32f1::peripheral p_select,
+                     void* p_reg,
+                     timer_manager_data* p_manager_data_ptr);
+
+  read_t driver_read() override;
+  hal::stm32_generic::quadrature_encoder m_encoder;
+  timer_manager_data* m_manager_data_ptr;
+};
 
 /**
  * @brief This class is used to do any timer operations for timers 1 and 8.
@@ -567,6 +602,19 @@ protected:
    */
   [[nodiscard]] hal::stm32f1::pwm acquire_pwm(timer_pins p_pin);
 
+  /**
+   * @brief Creates a quadrature encoder object used to measure the rotation of
+   * a motor that gives out quadrature encoder feedback.
+   *
+   * @return hal::stm32f1::quadrature_encoder object.
+   *
+   * @throws hal::device_or_resource_busy - if timer is already being used with
+   * a conflicting resource
+   */
+  [[nodiscard]] hal::stm32f1::quadrature_encoder acquire_quadrature_encoder(
+    timer_pins p_pin1,
+    timer_pins p_pin2);
+
 private:
   /// Stores the state information about the timer thats assigned to this
   /// manager.
@@ -633,12 +681,24 @@ public:
     return advanced_timer_manager::acquire_pwm(static_cast<timer_pins>(p_pin));
   }
 
+  [[nodiscard]] hal::stm32f1::quadrature_encoder acquire_quadrature_encoder(
+    pin_type p_pin1,
+    pin_type p_pin2)
+  {
+    return advanced_timer_manager::acquire_quadrature_encoder(
+      static_cast<timer_pins>(p_pin1), static_cast<timer_pins>(p_pin2));
+  }
+
 private:
   friend hal::v5::strong_ptr<hal::pwm16_channel> acquire_pwm16_channel(
     std::pmr::polymorphic_allocator<> p_allocator,
     advanced_timer_manager m_manager);
 
   friend hal::v5::strong_ptr<hal::pwm_group_manager> acquire_pwm_group_manager(
+    std::pmr::polymorphic_allocator<> p_allocator,
+    advanced_timer_manager m_manager);
+
+  friend hal::v5::strong_ptr<hal::rotation_sensor> acquire_quadrature_encoder(
     std::pmr::polymorphic_allocator<> p_allocator,
     advanced_timer_manager m_manager);
 };
@@ -724,6 +784,19 @@ protected:
   [[nodiscard]] hal::stm32f1::pwm16_channel acquire_pwm16_channel(
     timer_pins p_pin);
 
+  /**
+   * @brief Creates a quadrature encoder object used to measure the rotation of
+   * a motor that gives out quadrature encoder feedback.
+   *
+   * @return hal::stm32f1::quadrature_encoder object.
+   *
+   * @throws hal::device_or_resource_busy - if timer is already being used with
+   * a conflicting resource
+   */
+  [[nodiscard]] hal::stm32f1::quadrature_encoder acquire_quadrature_encoder(
+    timer_pins p_pin1,
+    timer_pins p_pin2);
+
 private:
   /// Stores the state information about the timer thats assigned to this
   /// manager.
@@ -798,13 +871,25 @@ public:
       static_cast<timer_pins>(p_pin));
   }
 
+  [[nodiscard]] hal::stm32f1::quadrature_encoder acquire_quadrature_encoder(
+    pin_type p_pin1,
+    pin_type p_pin2)
+  {
+    return general_purpose_timer_manager::acquire_quadrature_encoder(
+      static_cast<timer_pins>(p_pin1), static_cast<timer_pins>(p_pin2));
+  }
+
 private:
   friend hal::v5::strong_ptr<hal::pwm16_channel> acquire_pwm16_channel(
     std::pmr::polymorphic_allocator<> p_allocator,
-    advanced_timer_manager m_manager);
+    general_purpose_timer_manager m_manager);
 
   friend hal::v5::strong_ptr<hal::pwm_group_manager> acquire_pwm_group_manager(
     std::pmr::polymorphic_allocator<> p_allocator,
-    advanced_timer_manager m_manager);
+    general_purpose_timer_manager m_manager);
+
+  friend hal::v5::strong_ptr<hal::rotation_sensor> acquire_quadrature_encoder(
+    std::pmr::polymorphic_allocator<> p_allocator,
+    general_purpose_timer_manager m_manager);
 };
 }  // namespace hal::stm32f1

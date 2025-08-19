@@ -377,6 +377,35 @@ hal::stm32f1::pwm general_purpose_timer_manager::acquire_pwm(timer_pins p_pin)
            p_pin };
 }
 
+hal::stm32f1::quadrature_encoder
+general_purpose_timer_manager::acquire_quadrature_encoder(timer_pins p_pin1,
+                                                          timer_pins p_pin2)
+{
+  if (m_manager_data.current_usage() !=
+      timer_manager_data::usage::uninitialized) {
+    safe_throw(hal::device_or_resource_busy(this));
+  }
+  return { p_pin1,
+           p_pin2,
+           m_manager_data.m_id,
+           peripheral_to_general_register(m_manager_data.m_id),
+           &m_manager_data };
+}
+
+hal::stm32f1::quadrature_encoder
+advanced_timer_manager::acquire_quadrature_encoder(timer_pins p_pin1,
+                                                   timer_pins p_pin2)
+{
+  if (m_manager_data.current_usage() !=
+      timer_manager_data::usage::uninitialized) {
+    safe_throw(hal::device_or_resource_busy(this));
+  }
+  return { p_pin1,
+           p_pin2,
+           m_manager_data.m_id,
+           peripheral_to_general_register(m_manager_data.m_id),
+           &m_manager_data };
+}
 // Tell the compiler which instances to generate
 template class advanced_timer<peripheral::timer1>;
 template class advanced_timer<peripheral::timer8>;

@@ -47,6 +47,7 @@ libhal_test_and_make_library(
   # stm32_generic
   src/stm32_generic/i2c.cpp
   src/stm32_generic/pwm.cpp
+  src/stm32_generic/quadrature_encoder.cpp
   src/stm32_generic/spi.cpp
   src/stm32_generic/timer.cpp
   src/stm32_generic/uart.cpp
@@ -62,6 +63,7 @@ libhal_test_and_make_library(
   src/stm32f1/pin.cpp
   src/stm32f1/power.cpp
   src/stm32f1/pwm.cpp
+  src/stm32f1/quadrature_encoder.cpp
   src/stm32f1/timer.cpp
   src/stm32f1/uart.cpp
   src/stm32f1/spi.cpp

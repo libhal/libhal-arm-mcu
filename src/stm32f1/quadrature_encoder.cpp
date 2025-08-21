@@ -151,8 +151,10 @@ quadrature_encoder::read_t quadrature_encoder::driver_read()
 
 quadrature_encoder::~quadrature_encoder()
 {
-  m_manager_data_ptr->m_usage = timer_manager_data::usage::uninitialized;
-  reset_peripheral(m_manager_data_ptr->m_id);
+  if (m_manager_data_ptr) {
+    m_manager_data_ptr->m_usage = timer_manager_data::usage::uninitialized;
+    reset_peripheral(m_manager_data_ptr->m_id);
+  }
 }
 
 }  // namespace hal::stm32f1

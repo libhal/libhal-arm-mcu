@@ -475,22 +475,17 @@ void usb::interrupt_handler() noexcept
       std::visit(
         [](auto&& p_callback) {
           using T = std::decay_t<decltype(p_callback)>;
-          if constexpr (std::is_same_v<T,
-                                       hal::callback<void(ctrl_receive_tag)>>) {
+          auto constexpr is_control_tag =
+            std::is_same_v<T, hal::callback<void(ctrl_receive_tag)>>;
+          if constexpr (is_control_tag) {
             p_callback(ctrl_receive_tag{});
           } else if constexpr (std::is_same_v<
                                  T,
-                                 hal::callback<void(bulk_receive_tag)>>) {
-            p_callback(bulk_receive_tag{});
-          } else if constexpr (std::is_same_v<
-                                 T,
-                                 hal::callback<void(interrupt_receive_tag)>>) {
-            p_callback(interrupt_receive_tag{});
+                                 hal::callback<void(out_receive_tag)>>) {
+            p_callback(out_receive_tag{});
           } else {
-            auto constexpr is_same =
-              not std::is_same_v<T, hal::callback<void(ctrl_receive_tag)>>;
-            static_assert(hal::error::invalid_option<is_same>,
-                          "USB RX Out callback vistor is non-exhaustive!");
+            static_assert(hal::error::invalid_option<is_control_tag>,
+                          "USB RX Out callback visitor is non-exhaustive!");
           }
         },
         m_out_callbacks[endpoint_id]);
@@ -686,31 +681,11 @@ void usb::fill_endpoint(hal::u8 p_endpoint,
     wait_for_endpoint_transfer_completion(p_endpoint);
     descriptor.tx_count = 0;
   }
+}
 
-#if 0
-  // FIX THIS needs to fill buffer not what it is doing now.
-  while (not p_data.empty()) {
-    auto tx_iter = tx_span.begin();
-    auto const min = std::min(p_data.size(), static_cast<size_t>(p_max_length));
-
-    descriptor.tx_count++;
-
-    auto const even_min = min & ~1;
-    for (std::size_t i = 0; i < even_min; i += 2) {
-      u32 temp = (p_data[i + 1] << 8) | p_data[i];
-      *(tx_iter++) = temp;
-    }
-    if (min & 1) {
-      u32 temp = p_data[min - 1];
-      *tx_iter = temp;
-    }
-
-    set_tx_stat(p_endpoint, stat::valid);
-    wait_for_endpoint_transfer_completion(p_endpoint);
-
-    data = data.subspan(min);
-  }
-#endif
+void usb::set_callback(hal::u8 p_endpoint, callback_variant_t const& p_callback)
+{
+  m_out_callbacks[p_endpoint] = p_callback;
 }
 
 void usb::write_to_endpoint(u8 p_endpoint, std::span<hal::byte const> p_data)
@@ -855,6 +830,26 @@ struct interface_select
   using type = std::conditional_t<out, type_out, type_in>;
 };
 
+template<typename Interface>
+constexpr auto to_endpoint_type() -> endpoint_type
+{
+  constexpr auto is_interrupt =
+    std::is_same_v<Interface, hal::v5::usb_interrupt_out_endpoint> ||
+    std::is_same_v<Interface, hal::v5::usb_interrupt_in_endpoint>;
+  constexpr auto is_bulk =
+    std::is_same_v<Interface, hal::v5::usb_bulk_out_endpoint> ||
+    std::is_same_v<Interface, hal::v5::usb_bulk_in_endpoint>;
+
+  static_assert(
+    is_bulk || is_interrupt,
+    "Only bulk and interrupt OUT endpoints are supported by this library");
+
+  if (is_interrupt) {
+    return endpoint_type::interrupt;
+  }
+  return endpoint_type::bulk;
+};
+
 /**
  * @brief USB Interrupt IN Endpoint Interface
  *
@@ -867,8 +862,9 @@ struct interface_select
  * - Transmitting small amounts of data with guaranteed latency
  * - Ideal for devices like keyboards, mice, or game controllers
  */
-template<endpoint_type e_type>
-class in_endpoint : public interface_select<e_type, false>::type
+
+template<hal::v5::in_endpoint_type Interface>
+class in_endpoint : public Interface
 {
 public:
   ~in_endpoint() override = default;
@@ -879,7 +875,7 @@ public:
   {
     auto const endpoint = m_endpoint_number;
     endpoint_descriptor_block(endpoint).setup_in_endpoint_for(endpoint);
-    set_endpoint_address_and_type(endpoint, e_type);
+    set_endpoint_address_and_type(endpoint, to_endpoint_type<Interface>());
     set_rx_stat(0, stat::stall);
   }
 
@@ -920,11 +916,12 @@ private:
   u8 m_endpoint_number;
 };
 
-template<endpoint_type e_type>
-class out_endpoint : public interface_select<e_type, true>::type
+template<hal::v5::out_endpoint_type Interface>
+class out_endpoint : public Interface
 {
 public:
-  using interface = interface_select<endpoint_type::bulk, true>::type;
+  using rx_tag = typename Interface::on_receive_tag;
+
   ~out_endpoint() override = default;
 
   out_endpoint(hal::v5::strong_ptr<usb> const& p_usb, u8 p_endpoint_number)
@@ -945,14 +942,13 @@ private:
   {
     auto const endpoint = m_endpoint_number;
     endpoint_descriptor_block(endpoint).setup_out_endpoint_for(endpoint);
-    set_endpoint_address_and_type(endpoint, endpoint_type::interrupt);
+    set_endpoint_address_and_type(endpoint, to_endpoint_type<Interface>());
     set_rx_stat(m_endpoint_number, stat::stall);
   }
 
-  void driver_on_receive(
-    hal::callback<void(interface::on_receive_tag)> const& p_callback) override
+  void driver_on_receive(hal::callback<void(rx_tag)> const& p_callback) override
   {
-    m_usb->m_out_callbacks[m_endpoint_number] = p_callback;
+    m_usb->set_callback(m_endpoint_number, p_callback);
   }
 
   [[nodiscard]] hal::v5::usb_endpoint_info driver_info() const override
@@ -1001,10 +997,13 @@ acquire_usb_interrupt_endpoint(std::pmr::polymorphic_allocator<> p_allocator,
 {
   auto const endpoint_assignment = p_usb->m_endpoints_allocated++;
 
-  auto out = hal::v5::make_strong_ptr<out_endpoint<endpoint_type::interrupt>>(
-    p_allocator, p_usb, endpoint_assignment);
-  auto in = hal::v5::make_strong_ptr<in_endpoint<endpoint_type::interrupt>>(
-    p_allocator, p_usb, endpoint_assignment);
+  auto out =
+    hal::v5::make_strong_ptr<out_endpoint<hal::v5::usb_interrupt_out_endpoint>>(
+      p_allocator, p_usb, endpoint_assignment);
+
+  auto in =
+    hal::v5::make_strong_ptr<in_endpoint<hal::v5::usb_interrupt_in_endpoint>>(
+      p_allocator, p_usb, endpoint_assignment);
 
   return std::make_pair(out, in);
 }
@@ -1016,10 +1015,13 @@ acquire_usb_bulk_endpoint(std::pmr::polymorphic_allocator<> p_allocator,
 {
   auto const endpoint_assignment = p_usb->m_endpoints_allocated++;
 
-  auto out = hal::v5::make_strong_ptr<out_endpoint<endpoint_type::bulk>>(
-    p_allocator, p_usb, endpoint_assignment);
-  auto in = hal::v5::make_strong_ptr<in_endpoint<endpoint_type::bulk>>(
-    p_allocator, p_usb, endpoint_assignment);
+  auto out =
+    hal::v5::make_strong_ptr<out_endpoint<hal::v5::usb_bulk_out_endpoint>>(
+      p_allocator, p_usb, endpoint_assignment);
+
+  auto in =
+    hal::v5::make_strong_ptr<in_endpoint<hal::v5::usb_bulk_in_endpoint>>(
+      p_allocator, p_usb, endpoint_assignment);
 
   return std::make_pair(out, in);
 }

@@ -29,14 +29,9 @@ class usb
 {
 public:
   using ctrl_receive_tag = hal::v5::usb_control_endpoint::on_receive_tag;
-  using bulk_receive_tag = hal::v5::usb_bulk_out_endpoint::on_receive_tag;
-  using interrupt_receive_tag =
-    hal::v5::usb_interrupt_out_endpoint::on_receive_tag;
-
-  using callback_variant_t =
-    std::variant<hal::callback<void(ctrl_receive_tag)>,
-                 hal::callback<void(bulk_receive_tag)>,
-                 hal::callback<void(interrupt_receive_tag)>>;
+  using out_receive_tag = hal::v5::usb_out_endpoint::on_receive_tag;
+  using callback_variant_t = std::variant<hal::callback<void(ctrl_receive_tag)>,
+                                          hal::callback<void(out_receive_tag)>>;
 
   static constexpr std::size_t usb_endpoint_count = 8;
 
@@ -60,8 +55,7 @@ public:
                       std::span<hal::byte> p_buffer,
                       u16& p_bytes_read);
   void wait_for_endpoint_transfer_completion(hal::u8 p_endpoint);
-
-  std::array<callback_variant_t, usb_endpoint_count> m_out_callbacks;
+  void set_callback(hal::u8 p_endpoint, callback_variant_t const& p_callback);
 
   // Starts at 1 because endpoint 0 is always occupied by the control endpoint
   hal::u8 m_endpoints_allocated = 1;
@@ -73,6 +67,7 @@ private:
   friend class interrupt_out_endpoint;
   friend class bulk_out_endpoint;
 
+  std::array<callback_variant_t, usb_endpoint_count> m_out_callbacks;
   hal::steady_clock* m_clock;
   hal::time_duration m_write_timeout;
   std::uint16_t m_available_endpoint_memory;

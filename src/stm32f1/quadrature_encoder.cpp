@@ -1,3 +1,17 @@
+// Copyright 2024 - 2025 Khalil Estell and the libhal contributors
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 #include <libhal/error.hpp>
 #include <utility>
 
@@ -9,6 +23,7 @@
 #include "stm32f1/pin.hpp"
 
 namespace hal::stm32f1 {
+
 int get_channel_from_pin(hal::stm32f1::timer_pins p_pin,
                          hal::stm32f1::peripheral p_select)
 {
@@ -118,8 +133,8 @@ quadrature_encoder::quadrature_encoder(hal::stm32f1::timer_pins p_pin1,
   : m_encoder(hal::unsafe{})
   , m_manager_data_ptr(p_manager_data_ptr)
 {
-  u8 channel_a = get_channel_from_pin(p_pin1, p_select);
-  u8 channel_b = get_channel_from_pin(p_pin2, p_select);
+  u8 const channel_a = get_channel_from_pin(p_pin1, p_select);
+  u8 const channel_b = get_channel_from_pin(p_pin2, p_select);
   if (channel_a >= 3 || channel_b >= 3) {
     // only channels 1 and 2 are allowed for quadrature encoder mode.
     hal::safe_throw(hal::operation_not_permitted(this));

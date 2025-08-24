@@ -19,9 +19,9 @@
 #include <optional>
 #include <type_traits>
 
-#include "libhal-arm-mcu/stm32_generic/quadrature_encoder.hpp"
 #include <libhal-arm-mcu/interrupt.hpp>
 #include <libhal-arm-mcu/stm32_generic/pwm.hpp>
+#include <libhal-arm-mcu/stm32_generic/quadrature_encoder.hpp>
 #include <libhal-arm-mcu/stm32_generic/timer.hpp>
 #include <libhal-arm-mcu/stm32f1/clock.hpp>
 #include <libhal-arm-mcu/stm32f1/constants.hpp>
@@ -493,6 +493,7 @@ private:
   /// Pointer to access the managers state information.
   timer_manager_data* m_manager_data_ptr;
 };
+
 /**
  * @brief This class implements the `hal::rotation_sensor` interface
  *
@@ -514,8 +515,8 @@ public:
   ~quadrature_encoder() override;
 
 private:
-  quadrature_encoder(timer_pins channel1,
-                     timer_pins channel2,
+  quadrature_encoder(hal::stm32f1::timer_pins p_pin1,
+                     hal::stm32f1::timer_pins p_pin2,
                      hal::stm32f1::peripheral p_select,
                      void* p_reg,
                      timer_manager_data* p_manager_data_ptr);
@@ -524,7 +525,6 @@ private:
   hal::stm32_generic::quadrature_encoder m_encoder;
   timer_manager_data* m_manager_data_ptr;
 };
-
 /**
  * @brief This class is used to do any timer operations for timers 1 and 8.
  *
@@ -606,10 +606,17 @@ protected:
    * @brief Creates a quadrature encoder object used to measure the rotation of
    * a motor that gives out quadrature encoder feedback.
    *
-   * @return hal::stm32f1::quadrature_encoder object.
+   * @param encoder_pins The pins must be part of the same timer and they must
+   * correspond to channel 1 and 2 respectively. Any channel other than channel
+   * 1 and 2 will throw an hal::operation_not_permitted error. If the channels
+   * are flipped, it will result degrees counted in the wrong direction.
+   *
+   * @return hal::v5::strong_ptr<hal::rotation_sensor> object.
    *
    * @throws hal::device_or_resource_busy - if timer is already being used with
-   * a conflicting resource
+   * a conflicting resource.
+   * @throws hal::operation_not_permitted error - if any of the channels are not
+   * 1 and 2.
    */
   [[nodiscard]] hal::stm32f1::quadrature_encoder acquire_quadrature_encoder(
     timer_pins p_pin1,
@@ -635,6 +642,16 @@ template<peripheral select>
 class advanced_timer final : public advanced_timer_manager
 {
 public:
+  /**
+   * @brief These are the 2 pins that correspond to channel a and b. It is
+   * important for the pins to be in the correct order otherwise the counter
+   * will work in the opposite direction.
+   */
+  struct encoder_pins
+  {
+    hal::stm32f1::timer_pins channel_a_pin;
+    hal::stm32f1::timer_pins channel_b_pin;
+  };
   static_assert(
     select == peripheral::timer1 or select == peripheral::timer8,
     "Only timer 1 or 8 is allowed as advanced timers for this driver.");
@@ -682,11 +699,11 @@ public:
   }
 
   [[nodiscard]] hal::stm32f1::quadrature_encoder acquire_quadrature_encoder(
-    pin_type p_pin1,
-    pin_type p_pin2)
+    encoder_pins p_encoder_pins)
   {
     return advanced_timer_manager::acquire_quadrature_encoder(
-      static_cast<timer_pins>(p_pin1), static_cast<timer_pins>(p_pin2));
+      static_cast<timer_pins>(p_encoder_pins.channel_a_pin),
+      static_cast<timer_pins>(p_encoder_pins.channel_b_pin));
   }
 
 private:
@@ -788,10 +805,17 @@ protected:
    * @brief Creates a quadrature encoder object used to measure the rotation of
    * a motor that gives out quadrature encoder feedback.
    *
-   * @return hal::stm32f1::quadrature_encoder object.
+   * @param encoder_pins The pins must be part of the same timer and they must
+   * correspond to channel 1 and 2 respectively. Any channel other than channel
+   * 1 and 2 will throw an hal::operation_not_permitted error. If the channels
+   * are flipped, it will result degrees counted in the wrong direction.
+   *
+   * @return hal::v5::strong_ptr<hal::rotation_sensor>
    *
    * @throws hal::device_or_resource_busy - if timer is already being used with
-   * a conflicting resource
+   * a conflicting resource.
+   * @throws hal::operation_not_permitted error - if any of the channels are not
+   * 1 and 2.
    */
   [[nodiscard]] hal::stm32f1::quadrature_encoder acquire_quadrature_encoder(
     timer_pins p_pin1,
@@ -818,6 +842,17 @@ template<peripheral select>
 class general_purpose_timer : public general_purpose_timer_manager
 {
 public:
+  /**
+   * @brief These are the 2 pins that correspond to channel a and b. It is
+   * important for the pins to be in the correct order otherwise the counter
+   * will work in the opposite direction.
+   */
+  struct encoder_pins
+  {
+    hal::stm32f1::timer_pins channel_a_pin;
+    hal::stm32f1::timer_pins channel_b_pin;
+  };
+
   static_assert(
     select == peripheral::timer2 or select == peripheral::timer3 or
       select == peripheral::timer4 or select == peripheral::timer5 or
@@ -872,11 +907,11 @@ public:
   }
 
   [[nodiscard]] hal::stm32f1::quadrature_encoder acquire_quadrature_encoder(
-    pin_type p_pin1,
-    pin_type p_pin2)
+    encoder_pins p_encoder_pins)
   {
     return general_purpose_timer_manager::acquire_quadrature_encoder(
-      static_cast<timer_pins>(p_pin1), static_cast<timer_pins>(p_pin2));
+      static_cast<timer_pins>(p_encoder_pins.channel_a_pin),
+      static_cast<timer_pins>(p_encoder_pins.channel_b_pin));
   }
 
 private:

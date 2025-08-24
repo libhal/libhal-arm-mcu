@@ -1,7 +1,36 @@
-using ctrl_receive_tag =
-  hal::experimental::usb_control_endpoint::on_receive_tag;
-using bulk_receive_tag =
-  hal::experimental::usb_bulk_out_endpoint::on_receive_tag;
+// Copyright 2024 - 2025 Khalil Estell and the libhal contributors
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+#include <cmath>
+
+#include <array>
+
+#include <libhal-util/serial.hpp>
+#include <libhal-util/steady_clock.hpp>
+#include <libhal-util/usb.hpp>
+#include <libhal/pointers.hpp>
+#include <libhal/scatter_span.hpp>
+#include <libhal/timeout.hpp>
+#include <libhal/units.hpp>
+#include <libhal/usb.hpp>
+
+#include <libhal-arm-mcu/stm32f1/usb.hpp>
+
+#include <resource_list.hpp>
+
+using ctrl_receive_tag = hal::v5::usb_control_endpoint::on_receive_tag;
+using bulk_receive_tag = hal::v5::usb_bulk_out_endpoint::on_receive_tag;
 
 bool host_command_available = false;
 
@@ -11,14 +40,14 @@ void control_endpoint_handler(ctrl_receive_tag)
 }
 
 namespace hal {
-void write_and_flush(hal::experimental::in_endpoint_type auto& p_endpoint,
+void write_and_flush(hal::v5::in_endpoint_type auto& p_endpoint,
                      std::span<std::span<byte const>> p_data)
 {
   p_endpoint.write(p_data);
   p_endpoint.flush();
 }
 
-void write_and_flush(hal::experimental::in_endpoint_type auto& p_endpoint,
+void write_and_flush(hal::v5::in_endpoint_type auto& p_endpoint,
                      std::span<byte const> p_data)
 {
   p_endpoint.write(p_data);
@@ -26,11 +55,10 @@ void write_and_flush(hal::experimental::in_endpoint_type auto& p_endpoint,
 }
 }  // namespace hal
 
-void write_string_descriptor(
-  hal::experimental::usb_control_endpoint& p_control_endpoint,
-  hal::u8 p_descriptor_index,
-  std::size_t p_length,
-  std::span<std::u16string_view> p_strings)
+void write_string_descriptor(hal::v5::usb_control_endpoint& p_control_endpoint,
+                             hal::u8 p_descriptor_index,
+                             std::size_t p_length,
+                             std::span<std::u16string_view> p_strings)
 {
   // Our span of strings is zero indexed and p_descriptor_index is 1 indexed
   // with respect to the p_string.
@@ -49,133 +77,47 @@ void write_string_descriptor(
 
   auto const header_write_length = std::min(header.size(), p_length);
 
-  p_control_endpoint.write(std::span(header).first(header_write_length));
+  p_control_endpoint.write(
+    hal::v5::make_scatter_bytes(std::span(header).first(header_write_length)));
   p_length -= header_write_length;  // deduce the amount written
 
   auto const string_write_length = std::min(str_span.size(), p_length);
   if (string_write_length > 0) {
     str_span = str_span.first(string_write_length);
-    p_control_endpoint.write(str_span);
+    p_control_endpoint.write(hal::v5::make_scatter_bytes(str_span));
   }
 
-  p_control_endpoint.flush();
+  p_control_endpoint.write({});
 }
 
-void initialize_platform(resource_list& p_resource)
+void application()
 {
   using namespace hal::literals;
 
-  p_resource.reset = []() { hal::cortex_m::reset(); };
-  hal::stm32f1::release_jtag_pins();
+  auto clock = resources::clock();
+  auto console = resources::console();
+  auto allocator = resources::driver_allocator();
+  auto spi = resources::spi();
+  auto chip_select = resources::spi_chip_select();
 
-  hal::stm32f1::configure_clocks(hal::stm32f1::clock_tree{
-    .high_speed_external = 8.0_MHz,
-    .pll = {
-      .enable = true,
-      .source = hal::stm32f1::pll_source::high_speed_external,
-      .multiply = hal::stm32f1::pll_multiply::multiply_by_9,
-      .usb = {
-        .divider = hal::stm32f1::usb_divider::divide_by_1_point_5,
-      }
-    },
-    .system_clock = hal::stm32f1::system_clock_select::pll,
-    .ahb = {
-      .divider = hal::stm32f1::ahb_divider::divide_by_1,
-      .apb1 = {
-        .divider = hal::stm32f1::apb_divider::divide_by_2,
-      },
-      .apb2 = {
-        .divider = hal::stm32f1::apb_divider::divide_by_1,
-        .adc = {
-          .divider = hal::stm32f1::adc_divider::divide_by_6,
-        }
-      },
-    },
-  });
-  hal::stm32f1::activate_mco_pa8(
-    hal::stm32f1::mco_source::pll_clock_divided_by_2);
-
-  auto cpu_frequency = hal::stm32f1::frequency(hal::stm32f1::peripheral::cpu);
-  static hal::cortex_m::dwt_counter steady_clock(cpu_frequency);
-  p_resource.clock = &steady_clock;
-
-  static hal::stm32f1::uart uart1(hal::port<1>, hal::buffer<128>);
-  p_resource.console = &uart1;
-
-#if 0
-  static hal::stm32f1::can_peripheral_manager can(
-    100_kHz, hal::stm32f1::can_pins::pb9_pb8, {}, true);
-
-  static std::array<hal::can_message, 8> receive_buffer{};
-  static auto can_transceiver = can.acquire_transceiver(receive_buffer);
-  p_resource.can_transceiver = &can_transceiver;
-
-  static auto can_bus_manager = can.acquire_bus_manager();
-  p_resource.can_bus_manager = &can_bus_manager;
-
-  static auto can_interrupt = can.acquire_interrupt();
-  p_resource.can_interrupt = &can_interrupt;
-
-  // Allow all messages
-  static auto mask_id_filters_x2 = can.acquire_mask_filter();
-  mask_id_filters_x2.filter[0].allow({ { .id = 0, .mask = 0 } });
-#endif
-
-  static hal::stm32f1::output_pin led('C', 13);
-  p_resource.status_led = &led;
-
-  // pin G0 on the STM micromod is port B, pin 4
-  static hal::stm32f1::input_pin input_pin('B', 4);
-  p_resource.input_pin = &input_pin;
-
-  static hal::stm32f1::output_pin sda_output_pin('A', 0);
-  static hal::stm32f1::output_pin scl_output_pin('A', 15);
-
-  sda_output_pin.configure({
-    .resistor = hal::pin_resistor::pull_up,
-    .open_drain = true,
-  });
-  scl_output_pin.configure({
-    .resistor = hal::pin_resistor::pull_up,
-    .open_drain = true,
-  });
-  static hal::bit_bang_i2c::pins bit_bang_pins{
-    .sda = &sda_output_pin,
-    .scl = &scl_output_pin,
-  };
-  static hal::bit_bang_i2c bit_bang_i2c(bit_bang_pins, steady_clock);
-  p_resource.i2c = &bit_bang_i2c;
-
-  static hal::stm32f1::output_pin spi_chip_select('A', 4);
-  p_resource.spi_chip_select = &spi_chip_select;
-
-#if 0
-  static hal::stm32f1::spi spi1(hal::bus<1>,
-                                {
-                                  .clock_rate = 250.0_kHz,
-                                  .clock_polarity = false,
-                                  .clock_phase = false,
-                                });
-  p_resource.spi = &spi1;
-#endif
-
-  hal::print(uart1, "USB test starting in init...\n");
+  hal::print(*console, "USB test starting in init...\n");
 
   using namespace std::chrono_literals;
-  static hal::stm32f1::usb usb(steady_clock, 100ms);
-  hal::print(uart1, "USB\n");
+  auto usb =
+    hal::v5::make_strong_ptr<hal::stm32f1::usb>(allocator, *clock, 100ms);
+  hal::print(*console, "USB\n");
 
-  static auto usb_manager = usb.acquire_manager();
-  static auto control_endpoint = usb.acquire_control_endpoint();
-  static auto serial_data_ep = usb.acquire_bulk_endpoint();
-  static auto status_ep = usb.acquire_interrupt_endpoint();
-  hal::print(uart1, "ctrl\n");
+  auto control_endpoint = hal::acquire_usb_control_endpoint(allocator, usb);
+  auto serial_data_ep = hal::acquire_usb_bulk_endpoint(allocator, usb);
+  auto status_ep = hal::acquire_usb_interrupt_endpoint(allocator, usb);
 
-  control_endpoint.on_receive(control_endpoint_handler);
-  hal::print(uart1, "ctrl -> on_receive\n");
+  hal::print(*console, "ctrl\n");
 
-  usb_manager.connect(true);
-  hal::print(uart1, "connect\n");
+  control_endpoint->on_receive(control_endpoint_handler);
+  hal::print(*console, "ctrl -> on_receive\n");
+
+  control_endpoint->connect(true);
+  hal::print(*console, "connect\n");
 
   // Device Descriptor (18 bytes)
   uint8_t const device_descriptor[] = {
@@ -256,11 +198,11 @@ void initialize_platform(resource_list& p_resource)
     0x01,  // bDataInterface
 
     // Endpoint Descriptor (Control IN)
-    0x07,                            // bLength
-    0x05,                            // bDescriptorType (Endpoint)
-    status_ep.second.info().number,  // bEndpointAddress (IN 2)
-    0x03,                            // bmAttributes (Interrupt)
-    static_cast<hal::u8>(status_ep.second.info().size),
+    0x07,                             // bLength
+    0x05,                             // bDescriptorType (Endpoint)
+    status_ep.second->info().number,  // bEndpointAddress (IN 2)
+    0x03,                             // bmAttributes (Interrupt)
+    static_cast<hal::u8>(status_ep.second->info().size),
     0x00,  // wMaxPacketSize 16
     0x10,  // bInterval (16 ms)
 
@@ -276,42 +218,42 @@ void initialize_platform(resource_list& p_resource)
     0x00,  // iInterface (String Index)
 
     // Endpoint Descriptor (Data OUT)
-    0x07,                                // bLength
-    0x05,                                // bDescriptorType (Endpoint)
-    serial_data_ep.first.info().number,  // bEndpointAddress (OUT + 1)
-    0x02,                                // bmAttributes (Bulk)
-    static_cast<hal::u8>(serial_data_ep.first.info().size),
+    0x07,                                 // bLength
+    0x05,                                 // bDescriptorType (Endpoint)
+    serial_data_ep.first->info().number,  // bEndpointAddress (OUT + 1)
+    0x02,                                 // bmAttributes (Bulk)
+    static_cast<hal::u8>(serial_data_ep.first->info().size),
     0x00,  // wMaxPacketSize 16
     0x00,  // bInterval (Ignored for Bulk)
 
     // Endpoint Descriptor (Data IN)
-    0x07,                                 // bLength
-    0x05,                                 // bDescriptorType (Endpoint)
-    serial_data_ep.second.info().number,  // bEndpointAddress (IN + 1)
-    0x02,                                 // bmAttributes (Bulk)
-    static_cast<hal::u8>(serial_data_ep.second.info().size),
+    0x07,                                  // bLength
+    0x05,                                  // bDescriptorType (Endpoint)
+    serial_data_ep.second->info().number,  // bEndpointAddress (IN + 1)
+    0x02,                                  // bmAttributes (Bulk)
+    static_cast<hal::u8>(serial_data_ep.second->info().size),
     0x00,  // wMaxPacketSize 16
     0x00   // bInterval (Ignored for Bulk)
   };
 
-  hal::print<64>(uart1,
-                 ">>>> status_ep.second.info().number = 0x%02X\n",
-                 status_ep.second.info().number);
-  hal::print<64>(uart1,
-                 ">>>> status_ep.second.info().size = %d\n",
-                 status_ep.second.info().size);
-  hal::print<64>(uart1,
-                 ">>>> serial_data_ep.first.info().number = 0x%02X\n",
-                 serial_data_ep.first.info().number);
-  hal::print<64>(uart1,
-                 ">>>> serial_data_ep.first.info().size = %d\n",
-                 serial_data_ep.first.info().size);
-  hal::print<64>(uart1,
-                 ">>>> serial_data_ep.second.info().number = 0x%02X\n",
-                 serial_data_ep.second.info().number);
-  hal::print<64>(uart1,
-                 ">>>> serial_data_ep.second.info().size = %d\n",
-                 serial_data_ep.second.info().size);
+  hal::print<64>(*console,
+                 ">>>> status_ep.second->info().number = 0x%02X\n",
+                 status_ep.second->info().number);
+  hal::print<64>(*console,
+                 ">>>> status_ep.second->info().size = %d\n",
+                 status_ep.second->info().size);
+  hal::print<64>(*console,
+                 ">>>> serial_data_ep.first->info().number = 0x%02X\n",
+                 serial_data_ep.first->info().number);
+  hal::print<64>(*console,
+                 ">>>> serial_data_ep.first->info().size = %d\n",
+                 serial_data_ep.first->info().size);
+  hal::print<64>(*console,
+                 ">>>> serial_data_ep.second->info().number = 0x%02X\n",
+                 serial_data_ep.second->info().number);
+  hal::print<64>(*console,
+                 ">>>> serial_data_ep.second->info().size = %d\n",
+                 serial_data_ep.second->info().size);
 
   // String Descriptor 0 (Language ID)
   std::array<hal::u8, 4> const lang_descriptor{
@@ -344,7 +286,7 @@ void initialize_platform(resource_list& p_resource)
 
   bool serial_data_available = false;
 
-  serial_data_ep.first.on_receive([&serial_data_available](bulk_receive_tag) {
+  serial_data_ep.first->on_receive([&serial_data_available](bulk_receive_tag) {
     serial_data_available = true;
   });
 
@@ -366,39 +308,44 @@ void initialize_platform(resource_list& p_resource)
   });
 
   // Wait for the message number to increment
-  auto deadline = hal::future_deadline(steady_clock, 1s);
+  auto deadline = hal::future_deadline(*clock, 1s);
   bool port_connected = false;
 
-  auto handle_serial =
-    [&serial_data_available, &port_connected, deadline]() mutable {
-      if (serial_data_available) {
-        // Drain endpoint of content...
-        serial_data_available = false;
-        // NOTE: Pulling out only 3 bytes isn't for memory reduction but to see
-        // how well the read() API pulls data out from the endpoint memory. This
-        // was used to find bugs with odd numbered buffer sizes.
-        std::array<hal::u8, 3> buffer{};
-        auto data_received = serial_data_ep.first.read(buffer);
-        while (not data_received.empty()) {
-          uart1.write(data_received);
-          data_received = serial_data_ep.first.read(buffer);
-        }
+  auto handle_serial = [&serial_data_available,
+                        &port_connected,
+                        deadline,
+                        &serial_data_ep,
+                        &console]() mutable {
+    if (serial_data_available) {
+      // Drain endpoint of content...
+      serial_data_available = false;
+      // NOTE: Pulling out only 3 bytes isn't for memory reduction but to see
+      // how well the read() API pulls data out from the endpoint memory. This
+      // was used to find bugs with odd numbered buffer sizes.
+      std::array<hal::u8, 3> buffer{};
+      auto data_received = serial_data_ep.first->read(
+        hal::v5::make_writable_scatter_bytes(buffer));
+      while (data_received != 0) {
+        hal::write(*console, data_received);
+        data_received = serial_data_ep.first->read(
+          hal::v5::make_writable_scatter_bytes(buffer));
       }
-      // Send a '.' every second
-      if (deadline < steady_clock.uptime()) {
-        using namespace std::string_view_literals;
-        try {
-          hal::write_and_flush(serial_data_ep.second, hal::as_bytes("."sv));
-          hal::print(uart1, ">");
-          deadline = hal::future_deadline(steady_clock, 1s);
-        } catch (hal::timed_out const&) {
-          hal::print(
-            uart1, "\n\n\033[48;5;9mEP TIMEOUT! PORT DISCONNECTED!\033[0m\n\n");
-          port_connected = false;
-          return;
-        }
+    }
+    // Send a '.' every second
+    if (deadline < clock.uptime()) {
+      using namespace std::string_view_literals;
+      try {
+        hal::v5::write_and_flush(serial_data_ep.second, hal::as_bytes("."sv));
+        hal::print(*console, ">");
+        deadline = hal::future_deadline(clock, 1s);
+      } catch (hal::timed_out const&) {
+        hal::print(*console,
+                   "\n\n\033[48;5;9mEP TIMEOUT! PORT DISCONNECTED!\033[0m\n\n");
+        port_connected = false;
+        return;
       }
-    };
+    }
+  };
 
   hal::u8 configuration = 0;
 
@@ -411,7 +358,7 @@ void initialize_platform(resource_list& p_resource)
         if (bmRequestType == 0xA1) {  // Direction: Device to Host
           // Send current line coding
           hal::write_and_flush(control_endpoint, line_coding);
-          hal::print(uart1, "CDC_GET_LINE_CODING\n");
+          hal::print(*console, "CDC_GET_LINE_CODING\n");
           return true;
         }
         break;
@@ -425,18 +372,18 @@ void initialize_platform(resource_list& p_resource)
             }
 
             std::array<hal::u8, 8> rx_buffer;
-            auto const host_command = control_endpoint.read(rx_buffer);
+            auto const host_command = control_endpoint->read(rx_buffer);
             if (host_command.empty()) {
               continue;
             }
 
             host_command_available = false;
 
-            hal::print(uart1, "{{ ");
+            hal::print(*console, "{{ ");
             for (auto const byte : host_command) {
-              hal::print<8>(uart1, "0x%" PRIx8 ", ", byte);
+              hal::print<8>(*console, "0x%" PRIx8 ", ", byte);
             }
-            hal::print(uart1, "}}\n");
+            hal::print(*console, "}}\n");
             std::copy_n(
               host_command.begin(), line_coding.size(), line_coding.begin());
             control_endpoint.flush();
@@ -445,7 +392,7 @@ void initialize_platform(resource_list& p_resource)
           // NOTE: there is no proper location to decide when a port is
           // connected.
           port_connected = true;
-          hal::print(uart1, "CDC_SET_LINE_CODING+\n");
+          hal::print(*console, "CDC_SET_LINE_CODING+\n");
           return true;
         }
         break;
@@ -460,7 +407,7 @@ void initialize_platform(resource_list& p_resource)
           // Handle control line state change
           // Most basic implementation just returns success
           control_endpoint.flush();
-          hal::print<32>(uart1, "DTR = %d, RTS = %d\n", dtr, rts);
+          hal::print<32>(*console, "DTR = %d, RTS = %d\n", dtr, rts);
           return true;
         }
         break;
@@ -470,7 +417,7 @@ void initialize_platform(resource_list& p_resource)
           // wValue contains break duration in milliseconds
           // Most basic implementation just returns success
           control_endpoint.flush();
-          hal::print(uart1, "SEND_BREAK\n");
+          hal::print(*console, "SEND_BREAK\n");
           return true;
         }
         break;
@@ -481,8 +428,8 @@ void initialize_platform(resource_list& p_resource)
 
   auto command_count = 0;
 
-  std::array<std::array<hal::experimental::usb_endpoint*, 2>, 2> map = {
-    std::array<hal::experimental::usb_endpoint*, 2>{
+  std::array<std::array<hal::v5::usb_endpoint*, 2>, 2> map = {
+    std::array<hal::v5::usb_endpoint*, 2>{
       &serial_data_ep.first,
       &serial_data_ep.second,
     },
@@ -502,7 +449,7 @@ void initialize_platform(resource_list& p_resource)
     }
 
     std::array<hal::u8, 8> rx_buffer{};
-    auto const buffer = control_endpoint.read(rx_buffer);
+    auto const buffer = control_endpoint->read(rx_buffer);
     if (buffer.empty()) {
       host_command_available = false;
       continue;
@@ -511,7 +458,7 @@ void initialize_platform(resource_list& p_resource)
     host_command_available = false;
     auto print_buffer = [&buffer]() {
       for (auto const byte : buffer) {
-        hal::print<8>(uart1, "0x%" PRIx8 ", ", byte);
+        hal::print<8>(*console, "0x%" PRIx8 ", ", byte);
       }
     };
 
@@ -525,7 +472,7 @@ void initialize_platform(resource_list& p_resource)
       if (bmRequestType == 0x00 && bRequest == 0x05) {
         control_endpoint.flush();
         usb_manager.set_address(buffer[2]);
-        hal::print<32>(uart1, "ZLP+SET_ADDR[%d]\n", buffer[2]);
+        hal::print<32>(*console, "ZLP+SET_ADDR[%d]\n", buffer[2]);
       } else if (bmRequestType == 0x00 && bRequest == 0x09) {
         hal::u8 const descriptor_index = buffer[2];
         // SET_CONFIGURATION
@@ -533,30 +480,32 @@ void initialize_platform(resource_list& p_resource)
         control_endpoint.flush();
         serial_data_ep.first.reset();
         status_ep.first.reset();
-        hal::print<16>(uart1, "SC%" PRIu8 "\n", descriptor_index);
+        hal::print<16>(*console, "SC%" PRIu8 "\n", descriptor_index);
       } else if (bmRequestType == 0x80) {  // Device-to-host
         if (bRequest == 0x06) {            // GET_DESCRIPTOR
           hal::u8 const descriptor_index = buffer[2];
           hal::u8 const descriptor_type = buffer[3];
           switch (descriptor_type) {
             case 0x01: {  // Device Descriptor
-              hal::print<16>(uart1, "DD%" PRIu16 "\n", wLength);
+              hal::print<16>(*console, "DD%" PRIu16 "\n", wLength);
               hal::write_and_flush(control_endpoint,
                                    std::span(device_descriptor).first(wLength));
-              hal::print(uart1, "DD+\n");
+              hal::print(*console, "DD+\n");
               break;
             }
             case 0x02:  // Configuration Descriptor
             {
-              hal::print<32>(uart1, "CD%" PRIu16 "\n", wLength);
+              hal::print<32>(*console, "CD%" PRIu16 "\n", wLength);
               hal::write_and_flush(control_endpoint,
                                    std::span(config_descriptor).first(wLength));
-              hal::print(uart1, "CD+\n");
+              hal::print(*console, "CD+\n");
               break;
             }
             case 0x03: {  // String Descriptor
-              hal::print<16>(
-                uart1, "S%" PRIu8 ":%" PRIu16 "\n", descriptor_index, wLength);
+              hal::print<16>(*console,
+                             "S%" PRIu8 ":%" PRIu16 "\n",
+                             descriptor_index,
+                             wLength);
               if (descriptor_index == 0) {
                 auto const first =
                   std::min(lang_descriptor.size(), size_t{ wLength });
@@ -567,11 +516,11 @@ void initialize_platform(resource_list& p_resource)
                 write_string_descriptor(
                   control_endpoint, descriptor_index, wLength, strings);
               }
-              hal::print(uart1, "S+\n");
+              hal::print(*console, "S+\n");
               break;
             }
             default:
-              hal::print(uart1, "bmRequestType?\n");
+              hal::print(*console, "bmRequestType?\n");
               break;
           }
         }
@@ -580,12 +529,12 @@ void initialize_platform(resource_list& p_resource)
         // Class-specific request
         auto const handled = handle_cdc_setup(bmRequestType, bRequest, wValue);
         if (handled) {
-          hal::print(uart1, "CDC-CLASS+\n");
+          hal::print(*console, "CDC-CLASS+\n");
         } else {
-          hal::print(uart1, "CDC-CLASS!\n");
+          hal::print(*console, "CDC-CLASS!\n");
         }
       } else if (bmRequestType == 0x02) {
-        hal::print(uart1, "[EP");
+        hal::print(*console, "[EP");
 
         // Standard USB request codes
         constexpr hal::u8 get_status = 0x00;
@@ -594,36 +543,38 @@ void initialize_platform(resource_list& p_resource)
 
         auto const ep_select = wIndex & 0xF;
         auto const direction = hal::bit_extract<hal::bit_mask::from(7)>(wIndex);
-        hal::print<8>(uart1, "%" PRIu8 "]", wIndex);
+        hal::print<8>(*console, "%" PRIu8 "]", wIndex);
         auto& selected_ep = *map.at(ep_select).at(direction);
 
         switch (bRequest) {
           case get_status:
             hal::write_and_flush(
               control_endpoint,
-              std::to_array<hal::byte>({ selected_ep.info().stalled, 0 }));
-            hal::print<16>(
-              uart1, "STALLED: 0x%02" PRIx8 "\n", selected_ep.info().stalled);
+              std::to_array<hal::byte>({ selected_ep->info().stalled, 0 }));
+            hal::print<16>(*console,
+                           "STALLED: 0x%02" PRIx8 "\n",
+                           selected_ep->info().stalled);
             break;
           case clear_feature:
             selected_ep.stall(false);
             control_endpoint.flush();
-            hal::print(uart1, "CLEAR\n");
+            hal::print(*console, "CLEAR\n");
             break;
           case set_feature:
-            hal::print(uart1, "SET_FEATURE\n");
+            hal::print(*console, "SET_FEATURE\n");
             break;
           default:
-            hal::print<16>(uart1, "DEFAULT:0x%02X\n", bRequest);
+            hal::print<16>(*console, "DEFAULT:0x%02X\n", bRequest);
             break;
         }
-        hal::print(uart1, "\n");
+        hal::print(*console, "\n");
       }
 
-      hal::print<16>(uart1, "COMMAND[%zu]: {", command_count++);
+      hal::print<16>(*console, "COMMAND[%zu]: {", command_count++);
       print_buffer();
-      hal::print(uart1, "}\n\n");
+      hal::print(*console, "}\n\n");
     } catch (hal::timed_out const&) {
-      hal::print(uart1, "EP write operation timed out!\n");
+      hal::print(*console, "EP write operation timed out!\n");
     }
   }
+}

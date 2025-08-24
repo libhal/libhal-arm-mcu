@@ -296,6 +296,33 @@ void initialize_platform()
   using namespace hal::literals;
   hal::set_terminate(resources::terminate_handler);
   // Set the MCU to the maximum clock speed
-  hal::stm32f1::maximum_speed_using_internal_oscillator();
+
+  hal::stm32f1::configure_clocks(hal::stm32f1::clock_tree{
+    .high_speed_external = 8.0_MHz,
+    .pll = {
+      .enable = true,
+      .source = hal::stm32f1::pll_source::high_speed_external,
+      .multiply = hal::stm32f1::pll_multiply::multiply_by_9,
+      .usb = {
+        .divider = hal::stm32f1::usb_divider::divide_by_1_point_5,
+      }
+    },
+    .system_clock = hal::stm32f1::system_clock_select::pll,
+    .ahb = {
+      .divider = hal::stm32f1::ahb_divider::divide_by_1,
+      .apb1 = {
+        .divider = hal::stm32f1::apb_divider::divide_by_2,
+      },
+      .apb2 = {
+        .divider = hal::stm32f1::apb_divider::divide_by_1,
+        .adc = {
+          .divider = hal::stm32f1::adc_divider::divide_by_6,
+        }
+      },
+    },
+  });
+  hal::stm32f1::activate_mco_pa8(
+    hal::stm32f1::mco_source::pll_clock_divided_by_2);
+
   hal::stm32f1::release_jtag_pins();
 }

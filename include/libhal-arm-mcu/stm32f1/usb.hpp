@@ -17,6 +17,7 @@
 #include <memory_resource>
 #include <variant>
 
+#include <libhal/functional.hpp>
 #include <libhal/output_pin.hpp>
 #include <libhal/pointers.hpp>
 #include <libhal/steady_clock.hpp>
@@ -56,6 +57,8 @@ public:
                       u16& p_bytes_read);
   void wait_for_endpoint_transfer_completion(hal::u8 p_endpoint);
   void set_callback(hal::u8 p_endpoint, callback_variant_t const& p_callback);
+  void reset(u8 p_endpoint_number);
+  void zero_length_packet(u8 p_endpoint);
 
   // Starts at 1 because endpoint 0 is always occupied by the control endpoint
   hal::u8 m_endpoints_allocated = 1;

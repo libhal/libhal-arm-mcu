@@ -661,7 +661,8 @@ void usb::fill_endpoint(hal::u8 p_endpoint,
 {
   auto& descriptor = endpoint_descriptor_block(p_endpoint);
   auto const tx_span = descriptor.tx_span();
-  while (not p_data.empty()) {
+
+  do {
     while (descriptor.tx_count < p_max_length) {
       if (p_data.empty()) {
         return;
@@ -677,10 +678,14 @@ void usb::fill_endpoint(hal::u8 p_endpoint,
       descriptor.tx_count++;
     }
 
-    set_tx_stat(p_endpoint, stat::valid);
-    wait_for_endpoint_transfer_completion(p_endpoint);
-    descriptor.tx_count = 0;
-  }
+    // More data remaining, thus we need to ship this data off to the USB bus.
+    if (not p_data.empty()) {
+      set_tx_stat(p_endpoint, stat::valid);
+      wait_for_endpoint_transfer_completion(p_endpoint);
+      descriptor.tx_count = 0;
+      continue;
+    }
+  } while (not p_data.empty());
 }
 
 void usb::set_callback(hal::u8 p_endpoint, callback_variant_t const& p_callback)
@@ -775,12 +780,15 @@ private:
       .insert<device_address::address>(p_address);
   }
 
-  void driver_write(hal::v5::scatter_span<byte const> p_data) override
+  void driver_write(hal::v5::scatter_span<byte const> p_data_list) override
   {
     constexpr auto ctrl_endpoint = 0;
     set_rx_stat(ctrl_endpoint, stat::stall);
     set_tx_stat(ctrl_endpoint, stat::nak);
-    for (auto const& data : p_data) {
+    if (p_data_list.empty()) {
+      flush();
+    }
+    for (auto const& data : p_data_list) {
       m_usb->write_to_endpoint(ctrl_endpoint, data);
     }
   }
@@ -805,6 +813,11 @@ private:
     callback<void(on_receive_tag)> const& p_callback) override
   {
     m_usb->m_out_callbacks[0] = p_callback;
+  }
+
+  void driver_reset() override
+  {
+    reset();
   }
 
   hal::v5::strong_ptr<usb> m_usb;
@@ -853,9 +866,9 @@ constexpr auto to_endpoint_type() -> endpoint_type
 /**
  * @brief USB Interrupt IN Endpoint Interface
  *
- * This class represents an interrupt IN endpoint of a USB device. Interrupt IN
- * endpoints are used for small, time-sensitive data transfers from the device
- * to the host.
+ * This class represents an interrupt IN endpoint of a USB device. Interrupt
+ * IN endpoints are used for small, time-sensitive data transfers from the
+ * device to the host.
  *
  * Use cases:
  * - Sending periodic status updates
@@ -873,13 +886,18 @@ public:
     : m_usb(p_usb)
     , m_endpoint_number(p_endpoint_number)
   {
-    auto const endpoint = m_endpoint_number;
-    endpoint_descriptor_block(endpoint).setup_in_endpoint_for(endpoint);
-    set_endpoint_address_and_type(endpoint, to_endpoint_type<Interface>());
-    set_rx_stat(0, stat::stall);
+    reset();
   }
 
 private:
+  void reset()
+  {
+    auto const endpoint = m_endpoint_number;
+    endpoint_descriptor_block(endpoint).setup_in_endpoint_for(endpoint);
+    set_endpoint_address_and_type(endpoint, to_endpoint_type<Interface>());
+    set_rx_stat(m_endpoint_number, stat::stall);
+  }
+
   [[nodiscard]] bool stalled() const
   {
     return hal::bit_extract<endpoint::status_tx>(
@@ -888,6 +906,9 @@ private:
 
   void driver_write(hal::v5::scatter_span<hal::byte const> p_data_list) override
   {
+    if (p_data_list.empty()) {
+      m_usb->flush_endpoint(m_endpoint_number);
+    }
     for (auto const& data : p_data_list) {
       m_usb->write_to_endpoint(m_endpoint_number, data);
     }
@@ -909,6 +930,11 @@ private:
     } else {
       set_tx_stat(m_endpoint_number, stat::nak);
     }
+  }
+
+  void driver_reset() override
+  {
+    reset();
   }
 
   hal::v5::strong_ptr<usb> m_usb;
@@ -983,6 +1009,11 @@ private:
       }
     }
     return total_memory;
+  }
+
+  void driver_reset() override
+  {
+    reset();
   }
 
   hal::v5::strong_ptr<usb> m_usb;

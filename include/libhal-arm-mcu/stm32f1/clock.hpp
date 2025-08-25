@@ -116,9 +116,9 @@ enum class pll_source : std::uint8_t
 /// Available dividers for the USB peripheral
 enum class usb_divider : std::uint8_t
 {
-  divide_by_1 = 1,
   /// Divide by 1.5
   divide_by_1_point_5 = 0,
+  divide_by_1 = 1,
 };
 
 struct clock_tree

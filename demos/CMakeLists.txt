@@ -33,6 +33,7 @@ libhal_build_demos(
   watchdog
   # stream_dac
   timer
+  usb
 
   PACKAGES
   minimp3

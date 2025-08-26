@@ -20,6 +20,7 @@
 #include <libhal-util/bit.hpp>
 
 #include "power.hpp"
+#include "quadrature_encoder.hpp"
 #include "stm32f1/pin.hpp"
 
 namespace hal::stm32f1 {
@@ -125,11 +126,13 @@ int get_channel_from_pin(hal::stm32f1::timer_pins p_pin,
   }
   return channel;
 }
-quadrature_encoder::quadrature_encoder(hal::stm32f1::timer_pins p_pin1,
+quadrature_encoder::quadrature_encoder([[maybe_unused]] Key key,
+                                       hal::stm32f1::timer_pins p_pin1,
                                        hal::stm32f1::timer_pins p_pin2,
                                        hal::stm32f1::peripheral p_select,
                                        void* p_reg,
-                                       timer_manager_data* p_manager_data_ptr)
+                                       timer_manager_data* p_manager_data_ptr,
+                                       float p_pulses_per_rotation)
   : m_encoder(hal::unsafe{})
   , m_manager_data_ptr(p_manager_data_ptr)
 {
@@ -140,9 +143,12 @@ quadrature_encoder::quadrature_encoder(hal::stm32f1::timer_pins p_pin1,
     hal::safe_throw(hal::operation_not_permitted(this));
   }
   p_manager_data_ptr->m_usage = timer_manager_data::usage::quadrature_encoder;
-  m_encoder.initialize(
-    hal::unsafe{}, { .channel_a = channel_a, .channel_b = channel_b }, p_reg);
+  m_encoder.initialize(hal::unsafe{},
+                       { .channel_a = channel_a, .channel_b = channel_b },
+                       p_reg,
+                       p_pulses_per_rotation);
 }
+
 quadrature_encoder::quadrature_encoder(quadrature_encoder&& p_other) noexcept
   : m_encoder(std::move(p_other.m_encoder))
 {

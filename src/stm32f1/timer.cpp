@@ -23,12 +23,16 @@
 #include <libhal-util/static_callable.hpp>
 #include <libhal/error.hpp>
 #include <libhal/pointers.hpp>
+#include <libhal/rotation_sensor.hpp>
 #include <libhal/units.hpp>
+#include <memory_resource>
 
 #include "../stm32_generic/timer.hpp"
 #include "power.hpp"
+#include "quadrature_encoder.hpp"
 
 namespace hal::stm32f1 {
+
 // Advanced timer
 inline void* timer1 = reinterpret_cast<void*>(0x4001'2C00);
 // General purpose timers 2 - 5
@@ -377,35 +381,66 @@ hal::stm32f1::pwm general_purpose_timer_manager::acquire_pwm(timer_pins p_pin)
            p_pin };
 }
 
-hal::stm32f1::quadrature_encoder
-general_purpose_timer_manager::acquire_quadrature_encoder(timer_pins p_pin1,
-                                                          timer_pins p_pin2)
+template<typename... T>
+hal::v5::strong_ptr<hal::rotation_sensor> general_purpose_timer_manager::create(
+  std::pmr::polymorphic_allocator<> p_allocator,
+  T&&... args)
 {
-  if (m_manager_data.current_usage() !=
-      timer_manager_data::usage::uninitialized) {
-    safe_throw(hal::device_or_resource_busy(this));
-  }
-  return { p_pin1,
-           p_pin2,
-           m_manager_data.m_id,
-           peripheral_to_general_register(m_manager_data.m_id),
-           &m_manager_data };
+  return hal::v5::make_strong_ptr<hal::stm32f1::quadrature_encoder>(
+    p_allocator, quadrature_encoder::Key{ 0 }, ::std::forward<T>(args)...);
 }
 
-hal::stm32f1::quadrature_encoder
-advanced_timer_manager::acquire_quadrature_encoder(timer_pins p_pin1,
-                                                   timer_pins p_pin2)
+template<typename... T>
+hal::v5::strong_ptr<hal::rotation_sensor> advanced_timer_manager::create(
+  std::pmr::polymorphic_allocator<> p_allocator,
+  T&&... args)
+{
+  return hal::v5::make_strong_ptr<hal::stm32f1::quadrature_encoder>(
+    p_allocator, quadrature_encoder::Key{ 0 }, ::std::forward<T>(args)...);
+}
+
+hal::v5::strong_ptr<hal::rotation_sensor>
+general_purpose_timer_manager::acquire_quadrature_encoder(
+  std::pmr::polymorphic_allocator<> p_allocator,
+  timer_pins p_pin1,
+  timer_pins p_pin2,
+  float p_pulses_per_rotation)
 {
   if (m_manager_data.current_usage() !=
       timer_manager_data::usage::uninitialized) {
     safe_throw(hal::device_or_resource_busy(this));
   }
-  return { p_pin1,
-           p_pin2,
-           m_manager_data.m_id,
-           peripheral_to_general_register(m_manager_data.m_id),
-           &m_manager_data };
+  return general_purpose_timer_manager::create(
+    p_allocator,
+    p_pin1,
+    p_pin2,
+    m_manager_data.m_id,
+    peripheral_to_general_register(m_manager_data.m_id),
+    &m_manager_data,
+    p_pulses_per_rotation);
 }
+
+hal::v5::strong_ptr<hal::rotation_sensor>
+advanced_timer_manager::acquire_quadrature_encoder(
+  std::pmr::polymorphic_allocator<> p_allocator,
+  timer_pins p_pin1,
+  timer_pins p_pin2,
+  float p_pulses_per_rotation)
+{
+  if (m_manager_data.current_usage() !=
+      timer_manager_data::usage::uninitialized) {
+    safe_throw(hal::device_or_resource_busy(this));
+  }
+  return advanced_timer_manager::create(
+    p_allocator,
+    p_pin1,
+    p_pin2,
+    m_manager_data.m_id,
+    peripheral_to_general_register(m_manager_data.m_id),
+    &m_manager_data,
+    p_pulses_per_rotation);
+}
+
 // Tell the compiler which instances to generate
 template class advanced_timer<peripheral::timer1>;
 template class advanced_timer<peripheral::timer8>;

@@ -74,19 +74,21 @@ void setup_enable_register(int channel, timer_reg_t* p_reg)
 
 quadrature_encoder::quadrature_encoder(hal::unsafe,
                                        encoder_channels channels,
-                                       void* p_reg)
+                                       void* p_reg,
+                                       float p_pulses_per_rotation)
 {
-  initialize(hal::unsafe{}, channels, p_reg);
+  initialize(hal::unsafe{}, channels, p_reg, p_pulses_per_rotation);
 }
 quadrature_encoder::quadrature_encoder(hal::unsafe)
 {
 }
 void quadrature_encoder::initialize(unsafe,
                                     encoder_channels channels,
-                                    void* p_reg)
+                                    void* p_reg,
+                                    float p_pulses_per_rotation)
 {
   m_reg = p_reg;
-
+  m_pulses_per_rotation = p_pulses_per_rotation;
   timer_reg_t* timer_register = get_timer_reg(m_reg);
   constexpr auto set_encoder_mode = bit_mask::from<0, 2>();
   // encoder counts up/down on both TI1FP1 and TI2FP1 level
@@ -107,8 +109,11 @@ quadrature_encoder::read_t quadrature_encoder::driver_read()
 {
   read_t reading;
   timer_reg_t* timer_register = get_timer_reg(m_reg);
-
-  reading.angle = static_cast<float>(timer_register->counter_register);
+  i32 diff_pulses = static_cast<u16>(timer_register->counter_register) -
+                    0x8000;  // difference from start pos
+  // pulses * degrees / pulses = degrees.
+  reading.angle =
+    static_cast<float>(diff_pulses) * (360 / m_pulses_per_rotation);
   return reading;
 }
 }  // namespace hal::stm32_generic

@@ -495,37 +495,6 @@ private:
 };
 
 /**
- * @brief This class implements the `hal::rotation_sensor` interface
- *
- * It gets an input from a quadrature encoder motor and measures the amount turn
- * using 2 channels as input.
- *
- * Each Quadrature Encoder must use channel 1 and 2 from the same timer.
- */
-class quadrature_encoder : public hal::rotation_sensor
-{
-public:
-  friend class hal::stm32f1::advanced_timer_manager;
-  friend class hal::stm32f1::general_purpose_timer_manager;
-
-  quadrature_encoder(quadrature_encoder const& p_other) = delete;
-  quadrature_encoder& operator=(quadrature_encoder const& p_other) = delete;
-  quadrature_encoder(quadrature_encoder&& p_other) noexcept;
-  quadrature_encoder& operator=(quadrature_encoder&& p_other) noexcept;
-  ~quadrature_encoder() override;
-
-private:
-  quadrature_encoder(hal::stm32f1::timer_pins p_pin1,
-                     hal::stm32f1::timer_pins p_pin2,
-                     hal::stm32f1::peripheral p_select,
-                     void* p_reg,
-                     timer_manager_data* p_manager_data_ptr);
-
-  read_t driver_read() override;
-  hal::stm32_generic::quadrature_encoder m_encoder;
-  timer_manager_data* m_manager_data_ptr;
-};
-/**
  * @brief This class is used to do any timer operations for timers 1 and 8.
  *
  * This is the non-templated version that implements all the core functionality.
@@ -606,23 +575,30 @@ protected:
    * @brief Creates a quadrature encoder object used to measure the rotation of
    * a motor that gives out quadrature encoder feedback.
    *
-   * @param encoder_pins The pins must be part of the same timer and they must
-   * correspond to channel 1 and 2 respectively. Any channel other than channel
-   * 1 and 2 will throw an hal::operation_not_permitted error. If the channels
-   * are flipped, it will result degrees counted in the wrong direction.
-   *
-   * @return hal::v5::strong_ptr<hal::rotation_sensor> object.
+   * @param p_allocator Provide the resource that this can be allocated to.
+   * @param p_pin1 First timer pin corresponding to channel 1
+   * @param p_pin2 Second timer pin corresponding to channel 2
+   * @param p_pulses_per_rotation Cycles per revolution for the quadrature
+   encoder.
+
+   * @return hal::v5::strong_ptr<hal::rotation_sensor>
    *
    * @throws hal::device_or_resource_busy - if timer is already being used with
    * a conflicting resource.
    * @throws hal::operation_not_permitted error - if any of the channels are not
    * 1 and 2.
    */
-  [[nodiscard]] hal::stm32f1::quadrature_encoder acquire_quadrature_encoder(
-    timer_pins p_pin1,
-    timer_pins p_pin2);
+  [[nodiscard]] hal::v5::strong_ptr<hal::rotation_sensor>
+  acquire_quadrature_encoder(std::pmr::polymorphic_allocator<> p_allocator,
+                             timer_pins p_pin1,
+                             timer_pins p_pin2,
+                             float p_pulses_per_rotation);
 
 private:
+  template<typename... T>
+  static hal::v5::strong_ptr<hal::rotation_sensor> create(
+    std::pmr::polymorphic_allocator<> p_allocator,
+    T&&... args);
   /// Stores the state information about the timer thats assigned to this
   /// manager.
   timer_manager_data m_manager_data;
@@ -697,13 +673,35 @@ public:
   {
     return advanced_timer_manager::acquire_pwm(static_cast<timer_pins>(p_pin));
   }
+  /**
+   * @brief Creates a quadrature encoder object used to measure the rotation of
+   * a motor that gives out quadrature encoder feedback.
+   *
+   * @param p_allocator Provide the resource that this can be allocated to.
+   * @param p_encoder_pins The pins must be part of the same timer and they must
+   * correspond to channel 1 and 2 respectively. Any channel other than channel
+   * 1 and 2 will throw an hal::operation_not_permitted error. If the channels
+   * are flipped, it will result degrees counted in the wrong direction.
+   * @param p_pulses_per_rotation Cycles per revolution for the quadrature
+   encoder.
 
-  [[nodiscard]] hal::stm32f1::quadrature_encoder acquire_quadrature_encoder(
-    encoder_pins p_encoder_pins)
+   * @return hal::v5::strong_ptr<hal::rotation_sensor>
+   *
+   * @throws hal::device_or_resource_busy - if timer is already being used with
+   * a conflicting resource.
+   * @throws hal::operation_not_permitted error - if any of the channels are not
+   * 1 and 2.
+   */
+  [[nodiscard]] hal::v5::strong_ptr<hal::rotation_sensor>
+  acquire_quadrature_encoder(std::pmr::polymorphic_allocator<> p_allocator,
+                             encoder_pins p_encoder_pins,
+                             float p_pulses_per_rotation)
   {
     return advanced_timer_manager::acquire_quadrature_encoder(
+      p_allocator,
       static_cast<timer_pins>(p_encoder_pins.channel_a_pin),
-      static_cast<timer_pins>(p_encoder_pins.channel_b_pin));
+      static_cast<timer_pins>(p_encoder_pins.channel_b_pin),
+      p_pulses_per_rotation);
   }
 
 private:
@@ -805,11 +803,12 @@ protected:
    * @brief Creates a quadrature encoder object used to measure the rotation of
    * a motor that gives out quadrature encoder feedback.
    *
-   * @param encoder_pins The pins must be part of the same timer and they must
-   * correspond to channel 1 and 2 respectively. Any channel other than channel
-   * 1 and 2 will throw an hal::operation_not_permitted error. If the channels
-   * are flipped, it will result degrees counted in the wrong direction.
-   *
+   * @param p_allocator Provide the resource that this can be allocated to.
+   * @param p_pin1 First timer pin corresponding to channel 1
+   * @param p_pin2 Second timer pin corresponding to channel 2
+   * @param p_pulses_per_rotation Cycles per revolution for the quadrature
+   encoder.
+
    * @return hal::v5::strong_ptr<hal::rotation_sensor>
    *
    * @throws hal::device_or_resource_busy - if timer is already being used with
@@ -817,11 +816,17 @@ protected:
    * @throws hal::operation_not_permitted error - if any of the channels are not
    * 1 and 2.
    */
-  [[nodiscard]] hal::stm32f1::quadrature_encoder acquire_quadrature_encoder(
-    timer_pins p_pin1,
-    timer_pins p_pin2);
+  [[nodiscard]] hal::v5::strong_ptr<hal::rotation_sensor>
+  acquire_quadrature_encoder(std::pmr::polymorphic_allocator<> p_allocator,
+                             timer_pins p_pin1,
+                             timer_pins p_pin2,
+                             float p_pulses_per_rotation);
 
 private:
+  template<typename... T>
+  static hal::v5::strong_ptr<hal::rotation_sensor> create(
+    std::pmr::polymorphic_allocator<> p_allocator,
+    T&&... args);
   /// Stores the state information about the timer thats assigned to this
   /// manager.
   timer_manager_data m_manager_data;
@@ -906,12 +911,36 @@ public:
       static_cast<timer_pins>(p_pin));
   }
 
-  [[nodiscard]] hal::stm32f1::quadrature_encoder acquire_quadrature_encoder(
-    encoder_pins p_encoder_pins)
+  /**
+   * @brief Creates a quadrature encoder object used to measure the rotation of
+   * a motor that gives out quadrature encoder feedback.
+   *
+
+   * @param p_allocator Provide the resource that this can be allocated to.
+   * @param p_encoder_pins The pins must be part of the same timer and they must
+   * correspond to channel 1 and 2 respectively. Any channel other than channel
+   * 1 and 2 will throw an hal::operation_not_permitted error. If the channels
+   * are flipped, it will result degrees counted in the wrong direction.
+   * @param p_pulses_per_rotation Cycles per revolution for the quadrature
+   encoder.
+
+   * @return hal::v5::strong_ptr<hal::rotation_sensor>
+   *
+   * @throws hal::device_or_resource_busy - if timer is already being used with
+   * a conflicting resource.
+   * @throws hal::operation_not_permitted error - if any of the channels are not
+   * 1 and 2.
+   */
+  [[nodiscard]] hal::v5::strong_ptr<hal::rotation_sensor>
+  acquire_quadrature_encoder(std::pmr::polymorphic_allocator<> p_allocator,
+                             encoder_pins p_encoder_pins,
+                             float p_pulses_per_rotation)
   {
     return general_purpose_timer_manager::acquire_quadrature_encoder(
-      static_cast<timer_pins>(p_encoder_pins.channel_a_pin),
-      static_cast<timer_pins>(p_encoder_pins.channel_b_pin));
+      p_allocator,
+      p_encoder_pins.channel_a_pin,
+      p_encoder_pins.channel_b_pin,
+      p_pulses_per_rotation);
   }
 
 private:

@@ -310,11 +310,16 @@ void application()
       std::array<hal::u8, 3> buffer{};
       auto data_received = serial_data_ep.first->read(
         hal::v5::make_writable_scatter_bytes(buffer));
+
+      hal::print(*console, "[");
       while (data_received != 0) {
-        hal::print<64>(*console, "data_received = %zu\n", data_received);
+        hal::write(*console,
+                   std::span(buffer).first(data_received),
+                   hal::never_timeout());
         data_received = serial_data_ep.first->read(
           hal::v5::make_writable_scatter_bytes(buffer));
       }
+      hal::print(*console, "]");
     }
     // Send a '.' every second
     if (deadline < clock->uptime()) {
@@ -470,9 +475,9 @@ void application()
         hal::u8 const descriptor_index = buffer[2];
         // SET_CONFIGURATION
         configuration = descriptor_index;
-        control_endpoint->write({});
         serial_data_ep.first->reset();
         status_ep.first->reset();
+        control_endpoint->write({});
         hal::print<16>(*console, "SC%" PRIu8 "\n", descriptor_index);
       } else if (bmRequestType == 0x80) {  // Device-to-host
         if (bRequest == 0x06) {            // GET_DESCRIPTOR
@@ -527,7 +532,6 @@ void application()
           hal::print(*console, "CDC-CLASS!\n");
         }
       } else if (bmRequestType == 0x02) {
-        hal::print(*console, "[EP");
 
         // Standard USB request codes
         constexpr hal::u8 get_status = 0x00;
@@ -536,7 +540,6 @@ void application()
 
         auto const ep_select = wIndex & 0xF;
         auto const direction = hal::bit_extract<hal::bit_mask::from(7)>(wIndex);
-        hal::print<8>(*console, "%" PRIu8 "]", wIndex);
         auto& selected_ep = *map.at(ep_select).at(direction);
 
         switch (bRequest) {
@@ -544,23 +547,23 @@ void application()
             hal::v5::write_and_flush(
               *control_endpoint,
               std::to_array<hal::byte>({ selected_ep.info().stalled, 0 }));
-            hal::print<16>(*console,
-                           "STALLED: 0x%02" PRIx8 "\n",
-                           selected_ep.info().stalled);
+            hal::print<16>(
+              *console, "STALLED: 0x%02" PRIx8, selected_ep.info().stalled);
             break;
           case clear_feature:
             selected_ep.stall(false);
             control_endpoint->write({});
-            hal::print(*console, "CLEAR\n");
+            hal::print(*console, "CLEAR");
             break;
           case set_feature:
-            hal::print(*console, "SET_FEATURE\n");
+            hal::print(*console, "SET_FEATURE");
             break;
           default:
-            hal::print<16>(*console, "DEFAULT:0x%02X\n", bRequest);
+            hal::print<16>(*console, "DEFAULT:0x%02X", bRequest);
             break;
         }
-        hal::print(*console, "\n");
+        hal::print<32>(
+          *console, " :EP[%" PRIu8 ", %d]\n", ep_select, direction);
       }
 
       hal::print<16>(*console, "COMMAND[%zu]: {", command_count++);

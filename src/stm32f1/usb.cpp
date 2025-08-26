@@ -895,7 +895,7 @@ private:
     auto const endpoint = m_endpoint_number;
     endpoint_descriptor_block(endpoint).setup_in_endpoint_for(endpoint);
     set_endpoint_address_and_type(endpoint, to_endpoint_type<Interface>());
-    set_rx_stat(m_endpoint_number, stat::stall);
+    set_rx_stat(m_endpoint_number, stat::nak);
   }
 
   [[nodiscard]] bool stalled() const
@@ -969,7 +969,7 @@ private:
     auto const endpoint = m_endpoint_number;
     endpoint_descriptor_block(endpoint).setup_out_endpoint_for(endpoint);
     set_endpoint_address_and_type(endpoint, to_endpoint_type<Interface>());
-    set_rx_stat(m_endpoint_number, stat::stall);
+    set_rx_stat(m_endpoint_number, stat::valid);
   }
 
   void driver_on_receive(hal::callback<void(rx_tag)> const& p_callback) override
@@ -991,7 +991,7 @@ private:
     if (p_should_stall) {
       set_rx_stat(m_endpoint_number, stat::stall);
     } else {
-      set_rx_stat(m_endpoint_number, stat::nak);
+      set_rx_stat(m_endpoint_number, stat::valid);
     }
   }
 
@@ -999,7 +999,8 @@ private:
   {
     usize total_memory = 0;
     for (auto const& data : p_data_list) {
-      auto const data_copied = m_usb->read_endpoint(0, data, m_bytes_read);
+      auto const data_copied =
+        m_usb->read_endpoint(m_endpoint_number, data, m_bytes_read);
       total_memory += data_copied;
       // If the amount of bytes is lower than span provided, then the memory
       // within the endpoint must have ben exhausted.

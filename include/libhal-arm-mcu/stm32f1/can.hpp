@@ -376,6 +376,7 @@ struct can_peripheral_manager final
    * @param p_pins - CAN bus RX and TX pin selection
    * @param p_disabled_ids - IDs to use as filtering values when a filter is set
    * to be disabled. Choose IDs you expect will never appear on the CAN BUS.
+   * @param p_self_test - enable self test on construction
    * @throw hal::operation_not_supported - if the baud rate is not usable
    */
   [[deprecated("Calling this constructor is problematic as it can halt the "
@@ -385,7 +386,8 @@ struct can_peripheral_manager final
   can_peripheral_manager(
     hal::u32 p_baud_rate,
     can_pins p_pins = can_pins::pa11_pa12,
-    disable_ids p_disabled_ids = disable_ids{ .standard = 0, .extended = 0 });
+    disable_ids p_disabled_ids = disable_ids{ .standard = 0, .extended = 0 },
+    bool p_self_test = false);
 
   /**
    * @brief Construct a new can peripheral manager object

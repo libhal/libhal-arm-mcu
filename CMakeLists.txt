@@ -69,6 +69,7 @@ libhal_test_and_make_library(
   src/stm32f1/spi.cpp
   src/stm32f1/adc.cpp
   src/stm32f1/usart.cpp
+  src/stm32f1/usb.cpp
 
   # stm32f411
   src/stm32f411/clock.cpp
@@ -110,6 +111,7 @@ libhal_test_and_make_library(
   tests/stm32f1/uart.test.cpp
   tests/stm32f1/spi.test.cpp
   tests/stm32f1/adc.test.cpp
+  tests/stm32f1/usb.test.cpp
 
   # stm32f411
   tests/stm32f411/output_pin.test.cpp

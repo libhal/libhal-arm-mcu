@@ -211,6 +211,55 @@ hal::v5::strong_ptr<custom::watchdog> watchdog()
     hal::delay(*clock, 1000ms);
   }
 }
+
+hal::v5::strong_ptr<hal::v5::usb_control_endpoint> usb_control_endpoint()
+{
+  throw hal::operation_not_supported(nullptr);
+}
+
+hal::v5::strong_ptr<hal::v5::usb_interrupt_in_endpoint>
+usb_interrupt_in_endpoint1()
+{
+  throw hal::operation_not_supported(nullptr);
+}
+hal::v5::strong_ptr<hal::v5::usb_interrupt_out_endpoint>
+usb_interrupt_out_endpoint1()
+{
+  throw hal::operation_not_supported(nullptr);
+}
+
+hal::v5::strong_ptr<hal::v5::usb_interrupt_in_endpoint>
+usb_interrupt_in_endpoint2()
+{
+  throw hal::operation_not_supported(nullptr);
+}
+
+hal::v5::strong_ptr<hal::v5::usb_interrupt_out_endpoint>
+usb_interrupt_out_endpoint2()
+{
+  throw hal::operation_not_supported(nullptr);
+}
+
+hal::v5::strong_ptr<hal::v5::usb_bulk_in_endpoint> usb_bulk_in_endpoint1()
+{
+  throw hal::operation_not_supported(nullptr);
+}
+
+hal::v5::strong_ptr<hal::v5::usb_bulk_out_endpoint> usb_bulk_out_endpoint1()
+{
+  throw hal::operation_not_supported(nullptr);
+}
+
+hal::v5::strong_ptr<hal::v5::usb_bulk_in_endpoint> usb_bulk_in_endpoint2()
+{
+  throw hal::operation_not_supported(nullptr);
+}
+
+hal::v5::strong_ptr<hal::v5::usb_bulk_out_endpoint> usb_bulk_out_endpoint2()
+{
+  throw hal::operation_not_supported(nullptr);
+}
+
 }  // namespace resources
 
 void initialize_platform()

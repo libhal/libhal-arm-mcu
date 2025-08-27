@@ -12,8 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include <cinttypes>
-
 #include <libhal-arm-mcu/dwt_counter.hpp>
 #include <libhal-arm-mcu/startup.hpp>
 #include <libhal-arm-mcu/stm32f1/adc.hpp>
@@ -29,6 +27,7 @@
 #include <libhal-arm-mcu/stm32f1/timer.hpp>
 #include <libhal-arm-mcu/stm32f1/uart.hpp>
 #include <libhal-arm-mcu/stm32f1/usart.hpp>
+#include <libhal-arm-mcu/stm32f1/usb.hpp>
 #include <libhal-arm-mcu/system_control.hpp>
 #include <libhal-exceptions/control.hpp>
 #include <libhal-util/atomic_spin_lock.hpp>
@@ -37,26 +36,23 @@
 #include <libhal-util/inert_drivers/inert_adc.hpp>
 #include <libhal-util/serial.hpp>
 #include <libhal-util/steady_clock.hpp>
+#include <libhal/pointers.hpp>
 #include <libhal/pwm.hpp>
 #include <libhal/units.hpp>
 
-#include <libhal/pointers.hpp>
+#include <libhal/usb.hpp>
 #include <resource_list.hpp>
-#include <stdexcept>
-#include <string_view>
-#include <type_traits>
 
 namespace resources {
 using namespace hal::literals;
 using st_peripheral = hal::stm32f1::peripheral;
 
+std::array<hal::byte, 1024> driver_memory{};
+std::pmr::monotonic_buffer_resource resource(driver_memory.data(),
+                                             driver_memory.size(),
+                                             std::pmr::null_memory_resource());
 std::pmr::polymorphic_allocator<> driver_allocator()
 {
-  static std::array<hal::byte, 1024> driver_memory{};
-  static std::pmr::monotonic_buffer_resource resource(
-    driver_memory.data(),
-    driver_memory.size(),
-    std::pmr::null_memory_resource());
   return &resource;
 }
 
@@ -85,6 +81,120 @@ hal::v5::strong_ptr<hal::steady_clock> clock()
       driver_allocator(), cpu_frequency);
   }
   return clock_ptr;
+}
+
+hal::v5::optional_ptr<hal::stm32f1::usb> usb_ptr;
+auto usb()
+{
+  using namespace std::chrono_literals;
+  if (not usb_ptr) {
+    usb_ptr = hal::v5::make_strong_ptr<hal::stm32f1::usb>(
+      driver_allocator(), clock(), 100ms);
+  }
+  return usb_ptr;
+}
+
+hal::v5::optional_ptr<hal::v5::usb_control_endpoint> control_ep_ptr;
+hal::v5::strong_ptr<hal::v5::usb_control_endpoint> usb_control_endpoint()
+{
+  if (not control_ep_ptr) {
+    control_ep_ptr =
+      hal::acquire_usb_control_endpoint(driver_allocator(), usb());
+  }
+  return control_ep_ptr;
+}
+
+hal::v5::optional_ptr<hal::v5::usb_interrupt_in_endpoint> interrupt_in_ep1_ptr;
+hal::v5::optional_ptr<hal::v5::usb_interrupt_out_endpoint>
+  interrupt_out_ep1_ptr;
+hal::v5::strong_ptr<hal::v5::usb_interrupt_in_endpoint>
+usb_interrupt_in_endpoint1()
+{
+  if (not interrupt_in_ep1_ptr) {
+    auto ep = hal::acquire_usb_interrupt_endpoint(driver_allocator(), usb());
+    interrupt_in_ep1_ptr = ep.in;
+    interrupt_out_ep1_ptr = ep.out;
+  }
+  return interrupt_in_ep1_ptr;
+}
+hal::v5::strong_ptr<hal::v5::usb_interrupt_out_endpoint>
+usb_interrupt_out_endpoint1()
+{
+  if (not interrupt_out_ep1_ptr) {
+    auto ep = hal::acquire_usb_interrupt_endpoint(driver_allocator(), usb());
+    interrupt_in_ep1_ptr = ep.in;
+    interrupt_out_ep1_ptr = ep.out;
+  }
+  return interrupt_out_ep1_ptr;
+}
+
+hal::v5::optional_ptr<hal::v5::usb_interrupt_in_endpoint> interrupt_in_ep2_ptr;
+hal::v5::optional_ptr<hal::v5::usb_interrupt_out_endpoint>
+  interrupt_out_ep2_ptr;
+hal::v5::strong_ptr<hal::v5::usb_interrupt_in_endpoint>
+usb_interrupt_in_endpoint2()
+{
+  if (not interrupt_in_ep2_ptr) {
+    auto ep = hal::acquire_usb_interrupt_endpoint(driver_allocator(), usb());
+    interrupt_in_ep2_ptr = ep.in;
+    interrupt_out_ep2_ptr = ep.out;
+  }
+  return interrupt_in_ep2_ptr;
+}
+
+hal::v5::strong_ptr<hal::v5::usb_interrupt_out_endpoint>
+usb_interrupt_out_endpoint2()
+{
+  if (not interrupt_out_ep2_ptr) {
+    auto ep = hal::acquire_usb_interrupt_endpoint(driver_allocator(), usb());
+    interrupt_in_ep2_ptr = ep.in;
+    interrupt_out_ep2_ptr = ep.out;
+  }
+  return interrupt_out_ep2_ptr;
+}
+
+hal::v5::optional_ptr<hal::v5::usb_bulk_in_endpoint> bulk_in_ep1_ptr;
+hal::v5::optional_ptr<hal::v5::usb_bulk_out_endpoint> bulk_out_ep1_ptr;
+hal::v5::strong_ptr<hal::v5::usb_bulk_in_endpoint> usb_bulk_in_endpoint1()
+{
+  if (not bulk_in_ep1_ptr) {
+    auto ep = hal::acquire_usb_bulk_endpoint(driver_allocator(), usb());
+    bulk_in_ep1_ptr = ep.in;
+    bulk_out_ep1_ptr = ep.out;
+  }
+  return bulk_in_ep1_ptr;
+}
+
+hal::v5::strong_ptr<hal::v5::usb_bulk_out_endpoint> usb_bulk_out_endpoint1()
+{
+  if (not bulk_out_ep1_ptr) {
+    auto ep = hal::acquire_usb_bulk_endpoint(driver_allocator(), usb());
+    bulk_in_ep1_ptr = ep.in;
+    bulk_out_ep1_ptr = ep.out;
+  }
+  return bulk_out_ep1_ptr;
+}
+
+hal::v5::optional_ptr<hal::v5::usb_bulk_in_endpoint> bulk_in_ep2_ptr;
+hal::v5::optional_ptr<hal::v5::usb_bulk_out_endpoint> bulk_out_ep2_ptr;
+hal::v5::strong_ptr<hal::v5::usb_bulk_in_endpoint> usb_bulk_in_endpoint2()
+{
+  if (not bulk_in_ep2_ptr) {
+    auto ep = hal::acquire_usb_bulk_endpoint(driver_allocator(), usb());
+    bulk_in_ep2_ptr = ep.in;
+    bulk_out_ep2_ptr = ep.out;
+  }
+  return bulk_in_ep2_ptr;
+}
+
+hal::v5::strong_ptr<hal::v5::usb_bulk_out_endpoint> usb_bulk_out_endpoint2()
+{
+  if (not bulk_out_ep2_ptr) {
+    auto ep = hal::acquire_usb_bulk_endpoint(driver_allocator(), usb());
+    bulk_in_ep2_ptr = ep.in;
+    bulk_out_ep2_ptr = ep.out;
+  }
+  return bulk_out_ep2_ptr;
 }
 
 hal::v5::strong_ptr<hal::serial> console()

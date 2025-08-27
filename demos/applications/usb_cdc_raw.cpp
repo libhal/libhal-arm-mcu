@@ -82,18 +82,16 @@ void application()
 
   auto clock = resources::clock();
   auto console = resources::console();
-  auto allocator = resources::driver_allocator();
 
-  hal::print(*console, "USB test starting in init...\n");
+  hal::print(*console, "Staring USB CDC application...\n");
 
   using namespace std::chrono_literals;
-  auto usb =
-    hal::v5::make_strong_ptr<hal::stm32f1::usb>(allocator, *clock, 100ms);
-  hal::print(*console, "USB\n");
 
-  auto control_endpoint = hal::acquire_usb_control_endpoint(allocator, usb);
-  auto serial_data_ep = hal::acquire_usb_bulk_endpoint(allocator, usb);
-  auto status_ep = hal::acquire_usb_interrupt_endpoint(allocator, usb);
+  auto control_endpoint = resources::usb_control_endpoint();
+  auto serial_data_ep_out = resources::usb_bulk_out_endpoint1();
+  auto serial_data_ep_in = resources::usb_bulk_in_endpoint1();
+  auto status_ep_out = resources::usb_interrupt_out_endpoint1();
+  auto status_ep_in = resources::usb_interrupt_in_endpoint1();
 
   hal::print(*console, "ctrl\n");
 
@@ -181,11 +179,11 @@ void application()
     0x01,  // bDataInterface
 
     // Endpoint Descriptor (Control IN)
-    0x07,                             // bLength
-    0x05,                             // bDescriptorType (Endpoint)
-    status_ep.second->info().number,  // bEndpointAddress (IN 2)
-    0x03,                             // bmAttributes (Interrupt)
-    static_cast<hal::u8>(status_ep.second->info().size),
+    0x07,                         // bLength
+    0x05,                         // bDescriptorType (Endpoint)
+    status_ep_in->info().number,  // bEndpointAddress (IN 2)
+    0x03,                         // bmAttributes (Interrupt)
+    static_cast<hal::u8>(status_ep_in->info().size),
     0x00,  // wMaxPacketSize 16
     0x10,  // bInterval (16 ms)
 
@@ -201,42 +199,42 @@ void application()
     0x00,  // iInterface (String Index)
 
     // Endpoint Descriptor (Data OUT)
-    0x07,                                 // bLength
-    0x05,                                 // bDescriptorType (Endpoint)
-    serial_data_ep.first->info().number,  // bEndpointAddress (OUT + 1)
-    0x02,                                 // bmAttributes (Bulk)
-    static_cast<hal::u8>(serial_data_ep.first->info().size),
+    0x07,                               // bLength
+    0x05,                               // bDescriptorType (Endpoint)
+    serial_data_ep_out->info().number,  // bEndpointAddress (OUT + 1)
+    0x02,                               // bmAttributes (Bulk)
+    static_cast<hal::u8>(serial_data_ep_out->info().size),
     0x00,  // wMaxPacketSize 16
     0x00,  // bInterval (Ignored for Bulk)
 
     // Endpoint Descriptor (Data IN)
-    0x07,                                  // bLength
-    0x05,                                  // bDescriptorType (Endpoint)
-    serial_data_ep.second->info().number,  // bEndpointAddress (IN + 1)
-    0x02,                                  // bmAttributes (Bulk)
-    static_cast<hal::u8>(serial_data_ep.second->info().size),
+    0x07,                              // bLength
+    0x05,                              // bDescriptorType (Endpoint)
+    serial_data_ep_in->info().number,  // bEndpointAddress (IN + 1)
+    0x02,                              // bmAttributes (Bulk)
+    static_cast<hal::u8>(serial_data_ep_in->info().size),
     0x00,  // wMaxPacketSize 16
     0x00   // bInterval (Ignored for Bulk)
   };
 
   hal::print<64>(*console,
-                 ">>>> status_ep.second->info().number = 0x%02X\n",
-                 status_ep.second->info().number);
+                 ">>>> status_ep_in->info().number = 0x%02X\n",
+                 status_ep_in->info().number);
   hal::print<64>(*console,
-                 ">>>> status_ep.second->info().size = %d\n",
-                 status_ep.second->info().size);
+                 ">>>> status_ep_in->info().size = %d\n",
+                 status_ep_in->info().size);
   hal::print<64>(*console,
-                 ">>>> serial_data_ep.first->info().number = 0x%02X\n",
-                 serial_data_ep.first->info().number);
+                 ">>>> serial_data_ep_out->info().number = 0x%02X\n",
+                 serial_data_ep_out->info().number);
   hal::print<64>(*console,
-                 ">>>> serial_data_ep.first->info().size = %d\n",
-                 serial_data_ep.first->info().size);
+                 ">>>> serial_data_ep_out->info().size = %d\n",
+                 serial_data_ep_out->info().size);
   hal::print<64>(*console,
-                 ">>>> serial_data_ep.second->info().number = 0x%02X\n",
-                 serial_data_ep.second->info().number);
+                 ">>>> serial_data_ep_in->info().number = 0x%02X\n",
+                 serial_data_ep_in->info().number);
   hal::print<64>(*console,
-                 ">>>> serial_data_ep.second->info().size = %d\n",
-                 serial_data_ep.second->info().size);
+                 ">>>> serial_data_ep_in->info().size = %d\n",
+                 serial_data_ep_in->info().size);
 
   // String Descriptor 0 (Language ID)
   std::array<hal::u8, 4> const lang_descriptor{
@@ -270,7 +268,7 @@ void application()
 
   bool serial_data_available = false;
 
-  serial_data_ep.first->on_receive([&serial_data_available](bulk_receive_tag) {
+  serial_data_ep_out->on_receive([&serial_data_available](bulk_receive_tag) {
     serial_data_available = true;
   });
 
@@ -298,7 +296,8 @@ void application()
   auto handle_serial = [&serial_data_available,
                         &port_connected,
                         deadline,
-                        &serial_data_ep,
+                        &serial_data_ep_out,
+                        &serial_data_ep_in,
                         &console,
                         &clock]() mutable {
     if (serial_data_available) {
@@ -308,15 +307,15 @@ void application()
       // how well the read() API pulls data out from the endpoint memory. This
       // was used to find bugs with odd numbered buffer sizes.
       std::array<hal::u8, 3> buffer{};
-      auto data_received = serial_data_ep.first->read(
-        hal::v5::make_writable_scatter_bytes(buffer));
+      auto data_received =
+        serial_data_ep_out->read(hal::v5::make_writable_scatter_bytes(buffer));
 
       hal::print(*console, "[");
       while (data_received != 0) {
         hal::write(*console,
                    std::span(buffer).first(data_received),
                    hal::never_timeout());
-        data_received = serial_data_ep.first->read(
+        data_received = serial_data_ep_out->read(
           hal::v5::make_writable_scatter_bytes(buffer));
       }
       hal::print(*console, "]");
@@ -325,7 +324,7 @@ void application()
     if (deadline < clock->uptime()) {
       using namespace std::string_view_literals;
       try {
-        hal::v5::write_and_flush(*serial_data_ep.second, hal::as_bytes("."sv));
+        hal::v5::write_and_flush(*serial_data_ep_in, hal::as_bytes("."sv));
         hal::print(*console, ">");
         deadline = hal::future_deadline(*clock, 1s);
       } catch (hal::timed_out const&) {
@@ -424,12 +423,12 @@ void application()
   std::array<std::array<hal::v5::strong_ptr<hal::v5::usb_endpoint>, 2>, 2>
     map = {
       std::array<hal::v5::strong_ptr<hal::v5::usb_endpoint>, 2>{
-        serial_data_ep.first,
-        serial_data_ep.second,
+        serial_data_ep_out,
+        serial_data_ep_in,
       },
       {
-        status_ep.first,
-        status_ep.second,
+        status_ep_out,
+        status_ep_in,
       },
     };
 
@@ -479,8 +478,8 @@ void application()
         hal::u8 const descriptor_index = buffer[2];
         // SET_CONFIGURATION
         configuration = descriptor_index;
-        serial_data_ep.first->reset();
-        status_ep.first->reset();
+        serial_data_ep_out->reset();
+        status_ep_out->reset();
         control_endpoint->write({});
         hal::print<16>(*console, "SC%" PRIu8 "\n", descriptor_index);
       } else if (bmRequestType == 0x80) {  // Device-to-host

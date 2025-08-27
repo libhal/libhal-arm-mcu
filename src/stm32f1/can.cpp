@@ -311,7 +311,7 @@ bool is_bus_off()
   return bit_extract<master_status::sleep_acknowledge>(can1_reg->MCR);
 }
 
-void setup_can(hal::u32 p_baud_rate, can_pins p_pins)
+void setup_can(hal::u32 p_baud_rate, can_pins p_pins, bool p_self_test = false)
 {
   power_on(peripheral::can1);
 
@@ -342,6 +342,8 @@ void setup_can(hal::u32 p_baud_rate, can_pins p_pins)
       configure_pin({ .port = 'D', .pin = 1 }, push_pull_alternative_output);
       break;
   }
+
+  bit_modify(can1_reg->BTR).insert<bus_timing::loop_back_mode>(p_self_test);
 
   remap_pins(p_pins);
 }
@@ -723,11 +725,13 @@ hal::u8 available_filter()
 
 can_peripheral_manager::can_peripheral_manager(hal::u32 p_baud_rate,
                                                can_pins p_pins,
-                                               disable_ids p_disabled_ids)
+                                               disable_ids p_disabled_ids,
+                                               bool p_self_test)
 {
   current_baud_rate = p_baud_rate;
   disable_id = p_disabled_ids;
-  setup_can(p_baud_rate, p_pins);
+
+  setup_can(p_baud_rate, p_pins, p_self_test);
 
   initialize_interrupts();
 

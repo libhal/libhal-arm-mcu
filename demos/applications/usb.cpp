@@ -275,10 +275,10 @@ void application()
   });
 
   // CDC Class-Specific Request Codes
-  constexpr hal::u8 CDC_SET_LINE_CODING = 0x20;
-  constexpr hal::u8 CDC_GET_LINE_CODING = 0x21;
-  constexpr hal::u8 CDC_SET_CONTROL_LINE_STATE = 0x22;
-  constexpr hal::u8 CDC_SEND_BREAK = 0x23;
+  constexpr hal::u8 cdc_set_line_coding = 0x20;
+  constexpr hal::u8 cdc_get_line_coding = 0x21;
+  constexpr hal::u8 cdc_set_control_line_state = 0x22;
+  constexpr hal::u8 cdc_send_break = 0x23;
 
   // Line Coding Structure (7 bytes)
   static auto line_coding = std::to_array<uint8_t>({
@@ -340,22 +340,25 @@ void application()
   hal::u8 configuration = 0;
 
   // Example handler for CDC class-specific setup packets
-  auto handle_cdc_setup =
-    [&port_connected, &control_endpoint, &console](
-      hal::u8 bmRequestType, hal::u8 bRequest, hal::u16 wValue) -> bool {
+  auto handle_cdc_setup = [&port_connected, &control_endpoint, &console](
+                            hal::u8 bmRequestType,  // NOLINT
+                            hal::u8 bRequest,       // NOLINT
+                            hal::u16 wValue         // NOLINT
+                            ) -> bool {
     switch (bRequest) {
-      case CDC_GET_LINE_CODING:
+      case cdc_get_line_coding:
         if (bmRequestType == 0xA1) {  // Direction: Device to Host
           // Send current line coding
           hal::v5::write_and_flush(*control_endpoint, line_coding);
-          hal::print(*console, "CDC_GET_LINE_CODING\n");
+          hal::print(*console, "cdc_get_line_coding\n");
           return true;
         }
         break;
 
-      case CDC_SET_LINE_CODING:
-        if (bmRequestType == 0x21) {       // Direction: Host to Device
-          control_endpoint->stall(false);  // ensure RX of endpoint is valid
+      case cdc_set_line_coding:
+        if (bmRequestType == 0x21) {  // Direction: Host to Device
+          // TODO(kammce): Check if this is necessary
+          // control_endpoint->stall(false);  // ensure RX of endpoint is valid
           while (true) {
             if (not host_command_available) {  // nothing received
               continue;
@@ -369,6 +372,7 @@ void application()
             }
             auto host_command = std::span(rx_buffer).first(bytes_read);
             host_command_available = false;
+            control_endpoint->write({});
 
             hal::print<64>(*console, "{{ ");
             for (auto const byte : host_command) {
@@ -377,18 +381,17 @@ void application()
             hal::print<64>(*console, "}}\n");
             std::copy_n(
               host_command.begin(), line_coding.size(), line_coding.begin());
-            control_endpoint->write({});
             break;
           }
           // NOTE: there is no proper location to decide when a port is
           // connected.
           port_connected = true;
-          hal::print(*console, "CDC_SET_LINE_CODING+\n");
+          hal::print(*console, "cdc_set_line_coding+\n");
           return true;
         }
         break;
 
-      case CDC_SET_CONTROL_LINE_STATE:
+      case cdc_set_control_line_state:
         if (bmRequestType == 0x21) {  // Direction: Host to Device
           // wValue contains the control signals:
           // Bit 0: DTR state
@@ -403,7 +406,7 @@ void application()
         }
         break;
 
-      case CDC_SEND_BREAK:
+      case cdc_send_break:
         if (bmRequestType == 0x21) {  // Direction: Host to Device
           // wValue contains break duration in milliseconds
           // Most basic implementation just returns success
@@ -412,8 +415,9 @@ void application()
           return true;
         }
         break;
+      default:
+        return false;
     }
-
     return false;  // Command not handled
   };
 
@@ -459,12 +463,14 @@ void application()
       }
     };
 
+    // NOLINTBEGIN(readability-identifier-naming)
     // Extract bmRequestType and bRequest
     hal::u8 const bmRequestType = buffer[0];
     hal::u8 const bRequest = buffer[1];
     std::size_t const wValue = (buffer[3] << 8) | buffer[2];
     std::size_t const wIndex = (buffer[5] << 8) | buffer[4];
     std::size_t const wLength = (buffer[7] << 8) | buffer[6];
+    // NOLINTEND(readability-identifier-naming)
 
     try {
       if (bmRequestType == 0x00 && bRequest == 0x05) {
@@ -540,7 +546,7 @@ void application()
 
         auto const ep_select = wIndex & 0xF;
         auto const direction = hal::bit_extract<hal::bit_mask::from(7)>(wIndex);
-        auto& selected_ep = *map.at(ep_select).at(direction);
+        auto& selected_ep = *map.at(ep_select - 1).at(direction);
 
         switch (bRequest) {
           case get_status:

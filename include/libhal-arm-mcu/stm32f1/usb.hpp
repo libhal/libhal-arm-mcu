@@ -26,6 +26,42 @@
 
 namespace hal::stm32f1 {
 
+/**
+ * @brief USB interrupt endpoint pairs returned from
+ * `acquire_usb_interrupt_endpoint`
+ *
+ * Each pair should have the same endpoint number and a separate out and in
+ * endpoint.
+ */
+struct usb_interrupt_endpoint_pair
+{
+  /// The out endpoint implementation for this interrupt endpoint
+  hal::v5::strong_ptr<hal::v5::usb_interrupt_out_endpoint> out;
+  /// The out endpoint implementation for this interrupt endpoint
+  hal::v5::strong_ptr<hal::v5::usb_interrupt_in_endpoint> in;
+};
+
+/**
+ * @brief USB bulk endpoint pairs returned from
+ * `acquire_usb_bulk_endpoint`
+ *
+ * Each pair should have the same endpoint number and a separate out and in
+ * endpoint.
+ */
+struct usb_bulk_endpoint_pair
+{
+  /// The out endpoint implementation for this bulk endpoint
+  hal::v5::strong_ptr<hal::v5::usb_bulk_out_endpoint> out;
+  /// The out endpoint implementation for this bulk endpoint
+  hal::v5::strong_ptr<hal::v5::usb_bulk_in_endpoint> in;
+};
+
+/**
+ * @brief USB peripheral manager class for the stm32f1 processor
+ *
+ * In order to acquire USB endpoint resources, this class must be constructed
+ * successfully.
+ */
 class usb
 {
 public:
@@ -36,7 +72,18 @@ public:
 
   static constexpr std::size_t usb_endpoint_count = 8;
 
-  usb(hal::steady_clock& p_clock,
+  /**
+   * @brief Construct a new usb object
+   *
+   * @param p_clock - clocked used for detecting endpoint stalls for write
+   * operations. This can occur when the device is disconnected, the host has
+   * stopped sending OUT packets, or something wrong with the bus.
+   * @param p_write_timeout - the amount of time before throwing a timed_out
+   * exception for an OUT endpoint with data to transmit but the HOST has not
+   * requested it yet.
+   */
+  usb(hal::v5::strong_ptr_only_token,
+      hal::v5::strong_ptr<hal::steady_clock> const& p_clock,
       hal::time_duration p_write_timeout = std::chrono::milliseconds(5));
   usb(usb&) = delete;
   usb operator=(usb&) = delete;
@@ -44,73 +91,82 @@ public:
   usb operator=(usb&&) = delete;
   ~usb();
 
-  bool disrupted();
-
+private:
   void interrupt_handler() noexcept;
-  void flush_endpoint(u8 p_endpoint);
   void fill_endpoint(hal::u8 p_endpoint,
                      std::span<hal::byte const> p_data,
                      hal::u16 p_max_length);
+  void flush_endpoint(u8 p_endpoint);
   void write_to_endpoint(hal::u8 p_endpoint, std::span<hal::byte const> p_data);
   usize read_endpoint(u8 p_endpoint,
                       std::span<hal::byte> p_buffer,
                       u16& p_bytes_read);
   void wait_for_endpoint_transfer_completion(hal::u8 p_endpoint);
   void set_callback(hal::u8 p_endpoint, callback_variant_t const& p_callback);
-  void reset(u8 p_endpoint_number);
-  void zero_length_packet(u8 p_endpoint);
 
-  // Starts at 1 because endpoint 0 is always occupied by the control endpoint
-  hal::u8 m_endpoints_allocated = 1;
+  friend usb_interrupt_endpoint_pair acquire_usb_interrupt_endpoint(
+    std::pmr::polymorphic_allocator<> p_allocator,
+    hal::v5::strong_ptr<usb> const& p_usb);
 
-private:
+  friend usb_bulk_endpoint_pair acquire_usb_bulk_endpoint(
+    std::pmr::polymorphic_allocator<> p_allocator,
+    hal::v5::strong_ptr<usb> const& p_usb);
+
   friend class control_endpoint;
-  friend class interrupt_in_endpoint;
-  friend class bulk_in_endpoint;
-  friend class interrupt_out_endpoint;
-  friend class bulk_out_endpoint;
+
+  template<hal::v5::out_endpoint_type Interface>
+  friend class out_endpoint;
+
+  template<hal::v5::in_endpoint_type Interface>
+  friend class in_endpoint;
 
   std::array<callback_variant_t, usb_endpoint_count> m_out_callbacks;
-  hal::steady_clock* m_clock;
+  hal::v5::strong_ptr<hal::steady_clock> m_clock;
   hal::time_duration m_write_timeout;
   std::uint16_t m_available_endpoint_memory;
+  // Starts at 1 because endpoint 0 is always occupied by the control endpoint
+  hal::u8 m_endpoints_allocated = 1;
 };
 
 /**
- * @brief
+ * @brief Acquire a USB control endpoint
  *
- * @param p_allocator
- * @param p_usb
- * @return hal::v5::strong_ptr<hal::v5::usb_control_endpoint>
+ * @param p_allocator - the allocator to allocate the control endpoint's memory.
+ * @param p_usb - the usb peripheral manager that you want to acquire a control
+ * endpoint from.
+ * @return hal::v5::strong_ptr<hal::v5::usb_control_endpoint> - the control
+ * endpoint from the usb peripheral.
  */
 hal::v5::strong_ptr<hal::v5::usb_control_endpoint> acquire_usb_control_endpoint(
   std::pmr::polymorphic_allocator<> p_allocator,
   hal::v5::strong_ptr<usb> const& p_usb);
 
 /**
- * @brief
+ * @brief Acquire a USB interrupt endpoint
  *
- * @param p_allocator
- * @param p_usb
- * @return std::pair<hal::v5::strong_ptr<hal::v5::usb_interrupt_out_endpoint>,
- * hal::v5::strong_ptr<hal::v5::usb_interrupt_in_endpoint>>
+ * @param p_allocator - the allocator to allocate the interrupt endpoint's
+ * memory.
+ * @param p_usb - the usb peripheral manager that you want to acquire an
+ * interrupt endpoint from.
+ * @return usb_interrupt_endpoint_pair - an interrupt endpoint pair with both
+ * out and in endpoints available.
  */
-std::pair<hal::v5::strong_ptr<hal::v5::usb_interrupt_out_endpoint>,
-          hal::v5::strong_ptr<hal::v5::usb_interrupt_in_endpoint>>
-acquire_usb_interrupt_endpoint(std::pmr::polymorphic_allocator<> p_allocator,
-                               hal::v5::strong_ptr<usb> const& p_usb);
+usb_interrupt_endpoint_pair acquire_usb_interrupt_endpoint(
+  std::pmr::polymorphic_allocator<> p_allocator,
+  hal::v5::strong_ptr<usb> const& p_usb);
+
 /**
- * @brief
+ * @brief Acquire a USB bulk endpoint
  *
- * @param p_allocator
- * @param p_usb
- * @return std::pair<hal::v5::strong_ptr<hal::v5::usb_bulk_out_endpoint>,
- * hal::v5::strong_ptr<hal::v5::usb_bulk_in_endpoint>>
+ * @param p_allocator - the allocator to allocate the bulk endpoint's memory.
+ * @param p_usb - the usb peripheral manager that you want to acquire an
+ * bulk endpoint from.
+ * @return usb_bulk_endpoint_pair - an bulk endpoint pair with both out and in
+ * endpoints available.
  */
-std::pair<hal::v5::strong_ptr<hal::v5::usb_bulk_out_endpoint>,
-          hal::v5::strong_ptr<hal::v5::usb_bulk_in_endpoint>>
-acquire_usb_bulk_endpoint(std::pmr::polymorphic_allocator<> p_allocator,
-                          hal::v5::strong_ptr<usb> const& p_usb);
+usb_bulk_endpoint_pair acquire_usb_bulk_endpoint(
+  std::pmr::polymorphic_allocator<> p_allocator,
+  hal::v5::strong_ptr<usb> const& p_usb);
 }  // namespace hal::stm32f1
 
 namespace hal {

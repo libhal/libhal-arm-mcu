@@ -1,6 +1,7 @@
 #include <cstdint>
 
 #include <bit>
+#include <memory_resource>
 
 #include <libhal-arm-mcu/interrupt.hpp>
 #include <libhal-arm-mcu/stm32f1/clock.hpp>
@@ -18,8 +19,6 @@
 #include <libhal/pointers.hpp>
 #include <libhal/steady_clock.hpp>
 #include <libhal/usb.hpp>
-#include <memory_resource>
-#include <utility>
 
 #include "power.hpp"
 #include "stm32f1/pin.hpp"
@@ -538,8 +537,10 @@ void usb::interrupt_handler() noexcept
   }
 }
 
-usb::usb(hal::steady_clock& p_clock, hal::time_duration p_write_timeout)
-  : m_clock(&p_clock)
+usb::usb(hal::v5::strong_ptr_only_token,
+         hal::v5::strong_ptr<hal::steady_clock> const& p_clock,
+         hal::time_duration p_write_timeout)
+  : m_clock(p_clock)
   , m_write_timeout(p_write_timeout)
   , m_available_endpoint_memory(initial_packet_buffer_memory)
 {
@@ -578,18 +579,18 @@ usb::usb(hal::steady_clock& p_clock, hal::time_duration p_write_timeout)
 
   using namespace std::chrono_literals;
 
-  hal::delay(p_clock, 1ms);
+  hal::delay(*p_clock, 1ms);
   // Perform reset
   hal::bit_modify(reg().CNTR)
     .set(control::power_down)
     .set(control::force_reset);
-  hal::delay(p_clock, 1ms);
+  hal::delay(*p_clock, 1ms);
 
   // The USB peripheral sets this bit on system reset, we need to clear it to
   // allow the device to power on. We must wait approximately 1us before we can
   // proceed for the stm32f103.
   hal::bit_modify(reg().CNTR).clear(control::power_down);
-  hal::delay(p_clock, 1ms);
+  hal::delay(*p_clock, 1ms);
 
   // Clears everything including the force reset, enabling the USB device.
   reg().CNTR = 0;
@@ -798,13 +799,12 @@ private:
     usize total_memory = 0;
     for (auto const& data : p_data_list) {
       auto const data_copied = m_usb->read_endpoint(0, data, m_bytes_read);
-      total_memory += data_copied;
-      // If the amount of bytes is lower than span provided, then the memory
-      // within the endpoint must have ben exhausted.
-      if (data_copied < data.size()) {
-        set_rx_stat(0, stat::valid);
+
+      if (data_copied == 0) {
         break;
       }
+
+      total_memory += data_copied;
     }
     return total_memory;
   }
@@ -1001,13 +1001,12 @@ private:
     for (auto const& data : p_data_list) {
       auto const data_copied =
         m_usb->read_endpoint(m_endpoint_number, data, m_bytes_read);
-      total_memory += data_copied;
-      // If the amount of bytes is lower than span provided, then the memory
-      // within the endpoint must have ben exhausted.
-      if (data_copied < data.size()) {
-        set_rx_stat(0, stat::valid);
+
+      if (data_copied == 0) {
         break;
       }
+
+      total_memory += data_copied;
     }
     return total_memory;
   }
@@ -1022,10 +1021,9 @@ private:
   u8 m_endpoint_number;
 };
 
-std::pair<hal::v5::strong_ptr<hal::v5::usb_interrupt_out_endpoint>,
-          hal::v5::strong_ptr<hal::v5::usb_interrupt_in_endpoint>>
-acquire_usb_interrupt_endpoint(std::pmr::polymorphic_allocator<> p_allocator,
-                               hal::v5::strong_ptr<usb> const& p_usb)
+usb_interrupt_endpoint_pair acquire_usb_interrupt_endpoint(
+  std::pmr::polymorphic_allocator<> p_allocator,
+  hal::v5::strong_ptr<usb> const& p_usb)
 {
   auto const endpoint_assignment = p_usb->m_endpoints_allocated++;
 
@@ -1037,13 +1035,12 @@ acquire_usb_interrupt_endpoint(std::pmr::polymorphic_allocator<> p_allocator,
     hal::v5::make_strong_ptr<in_endpoint<hal::v5::usb_interrupt_in_endpoint>>(
       p_allocator, p_usb, endpoint_assignment);
 
-  return std::make_pair(out, in);
+  return { .out = out, .in = in };
 }
 
-std::pair<hal::v5::strong_ptr<hal::v5::usb_bulk_out_endpoint>,
-          hal::v5::strong_ptr<hal::v5::usb_bulk_in_endpoint>>
-acquire_usb_bulk_endpoint(std::pmr::polymorphic_allocator<> p_allocator,
-                          hal::v5::strong_ptr<usb> const& p_usb)
+usb_bulk_endpoint_pair acquire_usb_bulk_endpoint(
+  std::pmr::polymorphic_allocator<> p_allocator,
+  hal::v5::strong_ptr<usb> const& p_usb)
 {
   auto const endpoint_assignment = p_usb->m_endpoints_allocated++;
 
@@ -1055,6 +1052,6 @@ acquire_usb_bulk_endpoint(std::pmr::polymorphic_allocator<> p_allocator,
     hal::v5::make_strong_ptr<in_endpoint<hal::v5::usb_bulk_in_endpoint>>(
       p_allocator, p_usb, endpoint_assignment);
 
-  return std::make_pair(out, in);
+  return { .out = out, .in = in };
 }
 }  // namespace hal::stm32f1

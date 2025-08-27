@@ -126,13 +126,12 @@ int get_channel_from_pin(hal::stm32f1::timer_pins p_pin,
   }
   return channel;
 }
-quadrature_encoder::quadrature_encoder([[maybe_unused]] Key key,
-                                       hal::stm32f1::timer_pins p_pin1,
+quadrature_encoder::quadrature_encoder(hal::stm32f1::timer_pins p_pin1,
                                        hal::stm32f1::timer_pins p_pin2,
                                        hal::stm32f1::peripheral p_select,
                                        void* p_reg,
                                        timer_manager_data* p_manager_data_ptr,
-                                       float p_pulses_per_rotation)
+                                       u32 p_pulses_per_rotation)
   : m_encoder(hal::unsafe{})
   , m_manager_data_ptr(p_manager_data_ptr)
 {

@@ -36,13 +36,13 @@ public:
   quadrature_encoder(hal::unsafe,
                      encoder_channels channels,
                      void* p_reg,
-                     float p_pulses_per_rotation);
+                     u32 p_pulses_per_rotation);
   quadrature_encoder(hal::unsafe);
 
   void initialize(hal::unsafe,
                   encoder_channels channels,
                   void* p_reg,
-                  float p_pulses_per_rotation);
+                  u32 p_pulses_per_rotation);
 
 private:
   // should be able to take any timer pin, but the timer should be the same pin.

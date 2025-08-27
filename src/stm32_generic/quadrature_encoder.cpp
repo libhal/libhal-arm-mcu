@@ -75,7 +75,7 @@ void setup_enable_register(int channel, timer_reg_t* p_reg)
 quadrature_encoder::quadrature_encoder(hal::unsafe,
                                        encoder_channels channels,
                                        void* p_reg,
-                                       float p_pulses_per_rotation)
+                                       u32 p_pulses_per_rotation)
 {
   initialize(hal::unsafe{}, channels, p_reg, p_pulses_per_rotation);
 }
@@ -85,7 +85,7 @@ quadrature_encoder::quadrature_encoder(hal::unsafe)
 void quadrature_encoder::initialize(unsafe,
                                     encoder_channels channels,
                                     void* p_reg,
-                                    float p_pulses_per_rotation)
+                                    u32 p_pulses_per_rotation)
 {
   m_reg = p_reg;
   m_pulses_per_rotation = p_pulses_per_rotation;

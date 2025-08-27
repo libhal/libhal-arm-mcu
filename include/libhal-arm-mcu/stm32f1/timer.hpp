@@ -592,13 +592,9 @@ protected:
   acquire_quadrature_encoder(std::pmr::polymorphic_allocator<> p_allocator,
                              timer_pins p_pin1,
                              timer_pins p_pin2,
-                             float p_pulses_per_rotation);
+                             u32 p_pulses_per_rotation);
 
 private:
-  template<typename... T>
-  static hal::v5::strong_ptr<hal::rotation_sensor> create(
-    std::pmr::polymorphic_allocator<> p_allocator,
-    T&&... args);
   /// Stores the state information about the timer thats assigned to this
   /// manager.
   timer_manager_data m_manager_data;
@@ -625,8 +621,8 @@ public:
    */
   struct encoder_pins
   {
-    hal::stm32f1::timer_pins channel_a_pin;
-    hal::stm32f1::timer_pins channel_b_pin;
+    hal::stm32f1::timer_pins channel_a;
+    hal::stm32f1::timer_pins channel_b;
   };
   static_assert(
     select == peripheral::timer1 or select == peripheral::timer8,
@@ -695,12 +691,12 @@ public:
   [[nodiscard]] hal::v5::strong_ptr<hal::rotation_sensor>
   acquire_quadrature_encoder(std::pmr::polymorphic_allocator<> p_allocator,
                              encoder_pins p_encoder_pins,
-                             float p_pulses_per_rotation)
+                             u32 p_pulses_per_rotation)
   {
     return advanced_timer_manager::acquire_quadrature_encoder(
       p_allocator,
-      static_cast<timer_pins>(p_encoder_pins.channel_a_pin),
-      static_cast<timer_pins>(p_encoder_pins.channel_b_pin),
+      static_cast<timer_pins>(p_encoder_pins.channel_a),
+      static_cast<timer_pins>(p_encoder_pins.channel_b),
       p_pulses_per_rotation);
   }
 
@@ -820,13 +816,9 @@ protected:
   acquire_quadrature_encoder(std::pmr::polymorphic_allocator<> p_allocator,
                              timer_pins p_pin1,
                              timer_pins p_pin2,
-                             float p_pulses_per_rotation);
+                             u32 p_pulses_per_rotation);
 
 private:
-  template<typename... T>
-  static hal::v5::strong_ptr<hal::rotation_sensor> create(
-    std::pmr::polymorphic_allocator<> p_allocator,
-    T&&... args);
   /// Stores the state information about the timer thats assigned to this
   /// manager.
   timer_manager_data m_manager_data;
@@ -854,8 +846,8 @@ public:
    */
   struct encoder_pins
   {
-    hal::stm32f1::timer_pins channel_a_pin;
-    hal::stm32f1::timer_pins channel_b_pin;
+    hal::stm32f1::timer_pins channel_a;
+    hal::stm32f1::timer_pins channel_b;
   };
 
   static_assert(
@@ -934,12 +926,12 @@ public:
   [[nodiscard]] hal::v5::strong_ptr<hal::rotation_sensor>
   acquire_quadrature_encoder(std::pmr::polymorphic_allocator<> p_allocator,
                              encoder_pins p_encoder_pins,
-                             float p_pulses_per_rotation)
+                             u32 p_pulses_per_rotation)
   {
     return general_purpose_timer_manager::acquire_quadrature_encoder(
       p_allocator,
-      p_encoder_pins.channel_a_pin,
-      p_encoder_pins.channel_b_pin,
+      p_encoder_pins.channel_a,
+      p_encoder_pins.channel_b,
       p_pulses_per_rotation);
   }
 

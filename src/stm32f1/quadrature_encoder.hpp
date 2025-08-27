@@ -15,34 +15,18 @@ namespace hal::stm32f1 {
  */
 class quadrature_encoder : public hal::rotation_sensor
 {
-protected:
-  struct Key;
-
 public:
-  friend class hal::stm32f1::advanced_timer_manager;
-  friend class hal::stm32f1::general_purpose_timer_manager;
-  // this makes the constructor public, but due to the private Key member, only
-  // the timer_manager classes are allowed in call make_strong_ptr
-  quadrature_encoder([[maybe_unused]] Key key,
-                     hal::stm32f1::timer_pins p_pin1,
+  quadrature_encoder(hal::stm32f1::timer_pins p_pin1,
                      hal::stm32f1::timer_pins p_pin2,
                      hal::stm32f1::peripheral p_select,
                      void* p_reg,
                      timer_manager_data* p_manager_data_ptr,
-                     float p_pulses_per_rotation);
+                     u32 p_pulses_per_rotation);
   quadrature_encoder(quadrature_encoder const& p_other) = delete;
   quadrature_encoder& operator=(quadrature_encoder const& p_other) = delete;
   quadrature_encoder(quadrature_encoder&& p_other) noexcept;
   quadrature_encoder& operator=(quadrature_encoder&& p_other) noexcept;
   ~quadrature_encoder() override;
-
-protected:
-  struct Key
-  {
-    explicit Key(int)
-    {
-    }
-  };
 
 private:
   read_t driver_read() override;

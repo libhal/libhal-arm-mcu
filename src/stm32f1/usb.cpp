@@ -737,7 +737,7 @@ usb::~usb()
  * - Sending and receiving control data
  *
  */
-class control_endpoint : public hal::v5::usb_control_endpoint
+class control_endpoint : public hal::v5::usb::control_endpoint
 {
 public:
   control_endpoint(hal::v5::strong_ptr<usb> const& p_usb)
@@ -757,7 +757,7 @@ private:
     set_rx_stat(0, stat::valid);
   }
 
-  [[nodiscard]] hal::v5::usb_endpoint_info driver_info() const override
+  [[nodiscard]] hal::v5::usb::endpoint_info driver_info() const override
   {
     return { .size = fixed_endpoint_size, .number = 0, .stalled = false };
   }
@@ -829,9 +829,9 @@ private:
   u16 m_bytes_read = 0;
 };
 
-hal::v5::strong_ptr<hal::v5::usb_control_endpoint> acquire_usb_control_endpoint(
-  std::pmr::polymorphic_allocator<> p_allocator,
-  hal::v5::strong_ptr<usb> const& p_usb)
+hal::v5::strong_ptr<hal::v5::usb::control_endpoint>
+acquire_usb_control_endpoint(std::pmr::polymorphic_allocator<> p_allocator,
+                             hal::v5::strong_ptr<usb> const& p_usb)
 {
   return hal::v5::make_strong_ptr<control_endpoint>(p_allocator, p_usb);
 }
@@ -840,11 +840,11 @@ template<endpoint_type e_type, bool out>
 struct interface_select
 {
   using type_in = std::conditional_t<e_type == endpoint_type::bulk,
-                                     hal::v5::usb_bulk_in_endpoint,
-                                     hal::v5::usb_interrupt_in_endpoint>;
+                                     hal::v5::usb::bulk_in_endpoint,
+                                     hal::v5::usb::interrupt_in_endpoint>;
   using type_out = std::conditional_t<e_type == endpoint_type::bulk,
-                                      hal::v5::usb_bulk_out_endpoint,
-                                      hal::v5::usb_interrupt_out_endpoint>;
+                                      hal::v5::usb::bulk_out_endpoint,
+                                      hal::v5::usb::interrupt_out_endpoint>;
   using type = std::conditional_t<out, type_out, type_in>;
 };
 
@@ -852,11 +852,11 @@ template<typename Interface>
 constexpr auto to_endpoint_type() -> endpoint_type
 {
   constexpr auto is_interrupt =
-    std::is_same_v<Interface, hal::v5::usb_interrupt_out_endpoint> ||
-    std::is_same_v<Interface, hal::v5::usb_interrupt_in_endpoint>;
+    std::is_same_v<Interface, hal::v5::usb::interrupt_out_endpoint> ||
+    std::is_same_v<Interface, hal::v5::usb::interrupt_in_endpoint>;
   constexpr auto is_bulk =
-    std::is_same_v<Interface, hal::v5::usb_bulk_out_endpoint> ||
-    std::is_same_v<Interface, hal::v5::usb_bulk_in_endpoint>;
+    std::is_same_v<Interface, hal::v5::usb::bulk_out_endpoint> ||
+    std::is_same_v<Interface, hal::v5::usb::bulk_in_endpoint>;
 
   static_assert(
     is_bulk || is_interrupt,
@@ -881,7 +881,7 @@ constexpr auto to_endpoint_type() -> endpoint_type
  * - Ideal for devices like keyboards, mice, or game controllers
  */
 
-template<hal::v5::in_endpoint_type Interface>
+template<hal::v5::usb::in_endpoint_type Interface>
 class in_endpoint : public Interface
 {
 public:
@@ -897,9 +897,10 @@ public:
 private:
   void reset()
   {
-    auto const endpoint = m_endpoint_number;
-    endpoint_descriptor_block(endpoint).setup_in_endpoint_for(endpoint);
-    set_endpoint_address_and_type(endpoint, to_endpoint_type<Interface>());
+    endpoint_descriptor_block(m_endpoint_number)
+      .setup_in_endpoint_for(m_endpoint_number);
+    set_endpoint_address_and_type(m_endpoint_number,
+                                  to_endpoint_type<Interface>());
     set_rx_stat(m_endpoint_number, stat::nak);
   }
 
@@ -919,7 +920,7 @@ private:
     }
   }
 
-  [[nodiscard]] hal::v5::usb_endpoint_info driver_info() const override
+  [[nodiscard]] hal::v5::usb::endpoint_info driver_info() const override
   {
     return {
       .size = fixed_endpoint_size,
@@ -947,7 +948,7 @@ private:
   u8 m_endpoint_number;
 };
 
-template<hal::v5::out_endpoint_type Interface>
+template<hal::v5::usb::out_endpoint_type Interface>
 class out_endpoint : public Interface
 {
 public:
@@ -971,9 +972,10 @@ private:
 
   void reset()
   {
-    auto const endpoint = m_endpoint_number;
-    endpoint_descriptor_block(endpoint).setup_out_endpoint_for(endpoint);
-    set_endpoint_address_and_type(endpoint, to_endpoint_type<Interface>());
+    endpoint_descriptor_block(m_endpoint_number)
+      .setup_out_endpoint_for(m_endpoint_number);
+    set_endpoint_address_and_type(m_endpoint_number,
+                                  to_endpoint_type<Interface>());
     set_rx_stat(m_endpoint_number, stat::valid);
   }
 
@@ -982,7 +984,7 @@ private:
     m_usb->set_callback(m_endpoint_number, p_callback);
   }
 
-  [[nodiscard]] hal::v5::usb_endpoint_info driver_info() const override
+  [[nodiscard]] hal::v5::usb::endpoint_info driver_info() const override
   {
     return {
       .size = fixed_endpoint_size,
@@ -1032,12 +1034,12 @@ usb_interrupt_endpoint_pair acquire_usb_interrupt_endpoint(
 {
   auto const endpoint_assignment = p_usb->m_endpoints_allocated++;
 
-  auto out =
-    hal::v5::make_strong_ptr<out_endpoint<hal::v5::usb_interrupt_out_endpoint>>(
-      p_allocator, p_usb, endpoint_assignment);
+  auto out = hal::v5::make_strong_ptr<
+    out_endpoint<hal::v5::usb::interrupt_out_endpoint>>(
+    p_allocator, p_usb, endpoint_assignment);
 
   auto in =
-    hal::v5::make_strong_ptr<in_endpoint<hal::v5::usb_interrupt_in_endpoint>>(
+    hal::v5::make_strong_ptr<in_endpoint<hal::v5::usb::interrupt_in_endpoint>>(
       p_allocator, p_usb, endpoint_assignment);
 
   return { .out = out, .in = in };
@@ -1050,11 +1052,11 @@ usb_bulk_endpoint_pair acquire_usb_bulk_endpoint(
   auto const endpoint_assignment = p_usb->m_endpoints_allocated++;
 
   auto out =
-    hal::v5::make_strong_ptr<out_endpoint<hal::v5::usb_bulk_out_endpoint>>(
+    hal::v5::make_strong_ptr<out_endpoint<hal::v5::usb::bulk_out_endpoint>>(
       p_allocator, p_usb, endpoint_assignment);
 
   auto in =
-    hal::v5::make_strong_ptr<in_endpoint<hal::v5::usb_bulk_in_endpoint>>(
+    hal::v5::make_strong_ptr<in_endpoint<hal::v5::usb::bulk_in_endpoint>>(
       p_allocator, p_usb, endpoint_assignment);
 
   return { .out = out, .in = in };

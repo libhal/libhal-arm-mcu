@@ -92,23 +92,23 @@ hal::v5::strong_ptr<hal::output_pin> spi_chip_select();
 hal::v5::strong_ptr<hal::stream_dac_u8> stream_dac();
 hal::v5::strong_ptr<hal::dac> dac();
 hal::v5::strong_ptr<custom::watchdog> watchdog();
-hal::v5::strong_ptr<hal::v5::usb_control_endpoint> usb_control_endpoint();
+hal::v5::strong_ptr<hal::v5::usb::control_endpoint> usb_control_endpoint();
 
-hal::v5::strong_ptr<hal::v5::usb_interrupt_in_endpoint>
+hal::v5::strong_ptr<hal::v5::usb::interrupt_in_endpoint>
 usb_interrupt_in_endpoint1();
-hal::v5::strong_ptr<hal::v5::usb_interrupt_out_endpoint>
+hal::v5::strong_ptr<hal::v5::usb::interrupt_out_endpoint>
 usb_interrupt_out_endpoint1();
 
-hal::v5::strong_ptr<hal::v5::usb_interrupt_in_endpoint>
+hal::v5::strong_ptr<hal::v5::usb::interrupt_in_endpoint>
 usb_interrupt_in_endpoint2();
-hal::v5::strong_ptr<hal::v5::usb_interrupt_out_endpoint>
+hal::v5::strong_ptr<hal::v5::usb::interrupt_out_endpoint>
 usb_interrupt_out_endpoint2();
 
-hal::v5::strong_ptr<hal::v5::usb_bulk_in_endpoint> usb_bulk_in_endpoint1();
-hal::v5::strong_ptr<hal::v5::usb_bulk_out_endpoint> usb_bulk_out_endpoint1();
+hal::v5::strong_ptr<hal::v5::usb::bulk_in_endpoint> usb_bulk_in_endpoint1();
+hal::v5::strong_ptr<hal::v5::usb::bulk_out_endpoint> usb_bulk_out_endpoint1();
 
-hal::v5::strong_ptr<hal::v5::usb_bulk_in_endpoint> usb_bulk_in_endpoint2();
-hal::v5::strong_ptr<hal::v5::usb_bulk_out_endpoint> usb_bulk_out_endpoint2();
+hal::v5::strong_ptr<hal::v5::usb::bulk_in_endpoint> usb_bulk_in_endpoint2();
+hal::v5::strong_ptr<hal::v5::usb::bulk_out_endpoint> usb_bulk_out_endpoint2();
 
 inline void reset()
 {

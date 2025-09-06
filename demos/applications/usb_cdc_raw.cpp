@@ -31,8 +31,8 @@
 
 #include <resource_list.hpp>
 
-using ctrl_receive_tag = hal::v5::usb_control_endpoint::on_receive_tag;
-using bulk_receive_tag = hal::v5::usb_bulk_out_endpoint::on_receive_tag;
+using ctrl_receive_tag = hal::v5::usb::control_endpoint::on_receive_tag;
+using bulk_receive_tag = hal::v5::usb::bulk_out_endpoint::on_receive_tag;
 
 bool host_command_available = false;
 
@@ -41,7 +41,7 @@ void control_endpoint_handler(ctrl_receive_tag)
   host_command_available = true;
 }
 
-void write_string_descriptor(hal::v5::usb_control_endpoint& p_control_endpoint,
+void write_string_descriptor(hal::v5::usb::control_endpoint& p_control_endpoint,
                              hal::u8 p_descriptor_index,  // NOLINT
                              std::size_t p_length,
                              std::span<std::u16string_view> p_strings)
@@ -420,9 +420,9 @@ void application()
 
   auto command_count = 0;
 
-  std::array<std::array<hal::v5::strong_ptr<hal::v5::usb_endpoint>, 2>, 2>
+  std::array<std::array<hal::v5::strong_ptr<hal::v5::usb::endpoint>, 2>, 2>
     map = {
-      std::array<hal::v5::strong_ptr<hal::v5::usb_endpoint>, 2>{
+      std::array<hal::v5::strong_ptr<hal::v5::usb::endpoint>, 2>{
         serial_data_ep_out,
         serial_data_ep_in,
       },

@@ -41,6 +41,7 @@
 #include <libhal/units.hpp>
 
 #include <libhal/usb.hpp>
+#include <memory_resource>
 #include <resource_list.hpp>
 
 namespace resources {
@@ -51,6 +52,7 @@ std::array<hal::byte, 1024> driver_memory{};
 std::pmr::monotonic_buffer_resource resource(driver_memory.data(),
                                              driver_memory.size(),
                                              std::pmr::null_memory_resource());
+
 std::pmr::polymorphic_allocator<> driver_allocator()
 {
   return &resource;
@@ -94,8 +96,8 @@ auto usb()
   return usb_ptr;
 }
 
-hal::v5::optional_ptr<hal::v5::usb_control_endpoint> control_ep_ptr;
-hal::v5::strong_ptr<hal::v5::usb_control_endpoint> usb_control_endpoint()
+hal::v5::optional_ptr<hal::v5::usb::control_endpoint> control_ep_ptr;
+hal::v5::strong_ptr<hal::v5::usb::control_endpoint> usb_control_endpoint()
 {
   if (not control_ep_ptr) {
     control_ep_ptr =
@@ -104,10 +106,10 @@ hal::v5::strong_ptr<hal::v5::usb_control_endpoint> usb_control_endpoint()
   return control_ep_ptr;
 }
 
-hal::v5::optional_ptr<hal::v5::usb_interrupt_in_endpoint> interrupt_in_ep1_ptr;
-hal::v5::optional_ptr<hal::v5::usb_interrupt_out_endpoint>
+hal::v5::optional_ptr<hal::v5::usb::interrupt_in_endpoint> interrupt_in_ep1_ptr;
+hal::v5::optional_ptr<hal::v5::usb::interrupt_out_endpoint>
   interrupt_out_ep1_ptr;
-hal::v5::strong_ptr<hal::v5::usb_interrupt_in_endpoint>
+hal::v5::strong_ptr<hal::v5::usb::interrupt_in_endpoint>
 usb_interrupt_in_endpoint1()
 {
   if (not interrupt_in_ep1_ptr) {
@@ -117,7 +119,7 @@ usb_interrupt_in_endpoint1()
   }
   return interrupt_in_ep1_ptr;
 }
-hal::v5::strong_ptr<hal::v5::usb_interrupt_out_endpoint>
+hal::v5::strong_ptr<hal::v5::usb::interrupt_out_endpoint>
 usb_interrupt_out_endpoint1()
 {
   if (not interrupt_out_ep1_ptr) {
@@ -128,10 +130,10 @@ usb_interrupt_out_endpoint1()
   return interrupt_out_ep1_ptr;
 }
 
-hal::v5::optional_ptr<hal::v5::usb_interrupt_in_endpoint> interrupt_in_ep2_ptr;
-hal::v5::optional_ptr<hal::v5::usb_interrupt_out_endpoint>
+hal::v5::optional_ptr<hal::v5::usb::interrupt_in_endpoint> interrupt_in_ep2_ptr;
+hal::v5::optional_ptr<hal::v5::usb::interrupt_out_endpoint>
   interrupt_out_ep2_ptr;
-hal::v5::strong_ptr<hal::v5::usb_interrupt_in_endpoint>
+hal::v5::strong_ptr<hal::v5::usb::interrupt_in_endpoint>
 usb_interrupt_in_endpoint2()
 {
   if (not interrupt_in_ep2_ptr) {
@@ -142,7 +144,7 @@ usb_interrupt_in_endpoint2()
   return interrupt_in_ep2_ptr;
 }
 
-hal::v5::strong_ptr<hal::v5::usb_interrupt_out_endpoint>
+hal::v5::strong_ptr<hal::v5::usb::interrupt_out_endpoint>
 usb_interrupt_out_endpoint2()
 {
   if (not interrupt_out_ep2_ptr) {
@@ -153,9 +155,9 @@ usb_interrupt_out_endpoint2()
   return interrupt_out_ep2_ptr;
 }
 
-hal::v5::optional_ptr<hal::v5::usb_bulk_in_endpoint> bulk_in_ep1_ptr;
-hal::v5::optional_ptr<hal::v5::usb_bulk_out_endpoint> bulk_out_ep1_ptr;
-hal::v5::strong_ptr<hal::v5::usb_bulk_in_endpoint> usb_bulk_in_endpoint1()
+hal::v5::optional_ptr<hal::v5::usb::bulk_in_endpoint> bulk_in_ep1_ptr;
+hal::v5::optional_ptr<hal::v5::usb::bulk_out_endpoint> bulk_out_ep1_ptr;
+hal::v5::strong_ptr<hal::v5::usb::bulk_in_endpoint> usb_bulk_in_endpoint1()
 {
   if (not bulk_in_ep1_ptr) {
     auto ep = hal::acquire_usb_bulk_endpoint(driver_allocator(), usb());
@@ -165,7 +167,7 @@ hal::v5::strong_ptr<hal::v5::usb_bulk_in_endpoint> usb_bulk_in_endpoint1()
   return bulk_in_ep1_ptr;
 }
 
-hal::v5::strong_ptr<hal::v5::usb_bulk_out_endpoint> usb_bulk_out_endpoint1()
+hal::v5::strong_ptr<hal::v5::usb::bulk_out_endpoint> usb_bulk_out_endpoint1()
 {
   if (not bulk_out_ep1_ptr) {
     auto ep = hal::acquire_usb_bulk_endpoint(driver_allocator(), usb());
@@ -175,9 +177,9 @@ hal::v5::strong_ptr<hal::v5::usb_bulk_out_endpoint> usb_bulk_out_endpoint1()
   return bulk_out_ep1_ptr;
 }
 
-hal::v5::optional_ptr<hal::v5::usb_bulk_in_endpoint> bulk_in_ep2_ptr;
-hal::v5::optional_ptr<hal::v5::usb_bulk_out_endpoint> bulk_out_ep2_ptr;
-hal::v5::strong_ptr<hal::v5::usb_bulk_in_endpoint> usb_bulk_in_endpoint2()
+hal::v5::optional_ptr<hal::v5::usb::bulk_in_endpoint> bulk_in_ep2_ptr;
+hal::v5::optional_ptr<hal::v5::usb::bulk_out_endpoint> bulk_out_ep2_ptr;
+hal::v5::strong_ptr<hal::v5::usb::bulk_in_endpoint> usb_bulk_in_endpoint2()
 {
   if (not bulk_in_ep2_ptr) {
     auto ep = hal::acquire_usb_bulk_endpoint(driver_allocator(), usb());
@@ -187,7 +189,7 @@ hal::v5::strong_ptr<hal::v5::usb_bulk_in_endpoint> usb_bulk_in_endpoint2()
   return bulk_in_ep2_ptr;
 }
 
-hal::v5::strong_ptr<hal::v5::usb_bulk_out_endpoint> usb_bulk_out_endpoint2()
+hal::v5::strong_ptr<hal::v5::usb::bulk_out_endpoint> usb_bulk_out_endpoint2()
 {
   if (not bulk_out_ep2_ptr) {
     auto ep = hal::acquire_usb_bulk_endpoint(driver_allocator(), usb());

@@ -36,9 +36,9 @@ namespace hal::stm32f1 {
 struct usb_interrupt_endpoint_pair
 {
   /// The out endpoint implementation for this interrupt endpoint
-  hal::v5::strong_ptr<hal::v5::usb_interrupt_out_endpoint> out;
+  hal::v5::strong_ptr<hal::v5::usb::interrupt_out_endpoint> out;
   /// The out endpoint implementation for this interrupt endpoint
-  hal::v5::strong_ptr<hal::v5::usb_interrupt_in_endpoint> in;
+  hal::v5::strong_ptr<hal::v5::usb::interrupt_in_endpoint> in;
 };
 
 /**
@@ -51,9 +51,9 @@ struct usb_interrupt_endpoint_pair
 struct usb_bulk_endpoint_pair
 {
   /// The out endpoint implementation for this bulk endpoint
-  hal::v5::strong_ptr<hal::v5::usb_bulk_out_endpoint> out;
+  hal::v5::strong_ptr<hal::v5::usb::bulk_out_endpoint> out;
   /// The out endpoint implementation for this bulk endpoint
-  hal::v5::strong_ptr<hal::v5::usb_bulk_in_endpoint> in;
+  hal::v5::strong_ptr<hal::v5::usb::bulk_in_endpoint> in;
 };
 
 /**
@@ -65,8 +65,8 @@ struct usb_bulk_endpoint_pair
 class usb
 {
 public:
-  using ctrl_receive_tag = hal::v5::usb_control_endpoint::on_receive_tag;
-  using out_receive_tag = hal::v5::usb_out_endpoint::on_receive_tag;
+  using ctrl_receive_tag = hal::v5::usb::control_endpoint::on_receive_tag;
+  using out_receive_tag = hal::v5::usb::out_endpoint::on_receive_tag;
   using callback_variant_t = std::variant<hal::callback<void(ctrl_receive_tag)>,
                                           hal::callback<void(out_receive_tag)>>;
 
@@ -114,10 +114,10 @@ private:
 
   friend class control_endpoint;
 
-  template<hal::v5::out_endpoint_type Interface>
+  template<hal::v5::usb::out_endpoint_type Interface>
   friend class out_endpoint;
 
-  template<hal::v5::in_endpoint_type Interface>
+  template<hal::v5::usb::in_endpoint_type Interface>
   friend class in_endpoint;
 
   std::array<callback_variant_t, usb_endpoint_count> m_out_callbacks;
@@ -134,12 +134,12 @@ private:
  * @param p_allocator - the allocator to allocate the control endpoint's memory.
  * @param p_usb - the usb peripheral manager that you want to acquire a control
  * endpoint from.
- * @return hal::v5::strong_ptr<hal::v5::usb_control_endpoint> - the control
+ * @return hal::v5::strong_ptr<hal::v5::usb::control_endpoint> - the control
  * endpoint from the usb peripheral.
  */
-hal::v5::strong_ptr<hal::v5::usb_control_endpoint> acquire_usb_control_endpoint(
-  std::pmr::polymorphic_allocator<> p_allocator,
-  hal::v5::strong_ptr<usb> const& p_usb);
+hal::v5::strong_ptr<hal::v5::usb::control_endpoint>
+acquire_usb_control_endpoint(std::pmr::polymorphic_allocator<> p_allocator,
+                             hal::v5::strong_ptr<usb> const& p_usb);
 
 /**
  * @brief Acquire a USB interrupt endpoint

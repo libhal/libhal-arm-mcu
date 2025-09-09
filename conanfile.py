@@ -70,8 +70,8 @@ class libhal_arm_mcu_conan(ConanFile):
                 compiler_version = str(self.settings.compiler.version)
                 self.requires("prebuilt-picolibc/" + compiler_version)
         if str(self.options.platform).startswith("rp2"):
-            self.requires("picosdk/2.1.1")
-            self.tool_requires("pioasm/2.1.1")
+            self.requires("picosdk/2.2.0")
+            self.tool_requires("pioasm/2.2.0")
 
     def handle_stm32f1_linker_scripts(self):
         linker_script_name = list(str(self.options.platform))
@@ -89,13 +89,12 @@ class libhal_arm_mcu_conan(ConanFile):
     def _macro(self, string):
         return string.upper().replace("-", "_")
 
-    # I don't really feel like exposing picosdk macros to consumers, so we do this
-    # to replace certain macros
-    # TODO: modify libhal-conan-bootstrap to inject variables instead of this jank
     def generate(self):
         virt = VirtualBuildEnv(self)
         virt.generate()
         tc = CMakeToolchain(self)
+        if str(self.options.platform).startswith("rp2"):
+            tc.cache_variables["DO_NOT_BUILD_BOOT_HAL"] = True
         if self.options.variant:
             tc.preprocessor_definitions["LIBHAL_VARIANT_" + self._macro(str(self.options.variant))] = "1"
         tc.preprocessor_definitions["LIBHAL_PLATFORM_" + self._macro(str(self.options.platform))] = "1"
@@ -119,6 +118,7 @@ class libhal_arm_mcu_conan(ConanFile):
             "libhal::lpc40",
             "libhal::stm32f1",
             "libhal::stm32f4",
+            "libhal::rp2350"
         ])
         self.cpp_info.exelinkflags = []
 

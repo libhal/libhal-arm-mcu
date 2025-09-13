@@ -1,4 +1,5 @@
 #include "applications/descriptors.hpp"
+#include "applications/utils.hpp"
 #include "resource_list.hpp"
 #include <array>
 #include <libhal-util/serial.hpp>
@@ -83,6 +84,7 @@ public:
 
   std::u16string_view m_name;
 };
+
 }  // namespace hal::v5::usb
 
 namespace hal5 = hal::v5;

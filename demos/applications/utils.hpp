@@ -25,6 +25,8 @@ constexpr byte device_desc_size = 18;
 constexpr byte config_desc_size = 9;
 constexpr byte inferface_desc_size = 9;
 constexpr byte endpoint_desc_size = 7;
+constexpr byte iad_desc_size = 0x08;
+
 constexpr byte size_std_req = 8;
 
 }  // namespace constants

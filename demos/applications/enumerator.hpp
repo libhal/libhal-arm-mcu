@@ -16,6 +16,7 @@
 #include <optional>
 #include <span>
 #include <string_view>
+#include <tuple>
 #include <utility>
 
 #include "descriptors.hpp"
@@ -149,7 +150,7 @@ public:
     for (size_t i = 0; i < num_configs; i++) {
       configuration& config = m_configs->at(i);
       config.configuration_index() = cur_str_idx++;
-      config.configuration_value() = i;
+      config.configuration_value() = i + 1;
     }
     hal::print(*m_console, "conf desc: set up\n");
 
@@ -165,6 +166,7 @@ public:
         cur_iface_idx += deltas.interface;
         cur_str_idx += deltas.string;
       }
+      config.num_interfaces() = cur_iface_idx;
       config.total_length() = total_length;
     }
     hal::print(*m_console, "iface/conf desc: set up\n");
@@ -246,6 +248,8 @@ public:
       continue;
     }
 
+    m_has_setup_packet = false;
+
     std::array<byte, 8> read_buf;
     auto scatter_read_buf = make_writable_scatter_bytes(read_buf);
     auto bytes_read = m_ctrl_ep->read(scatter_read_buf);
@@ -266,9 +270,18 @@ public:
       handle_standard_device_request(req);
     } else {
       // Handle iface level requests
-      auto f = [this](scatter_span<hal::byte const> resp) {
-        m_ctrl_ep->write(resp);
-      };
+      interface::endpoint_writer f;
+      if (req.is_device_to_host()) {
+        f = [this](scatter_span<hal::byte const> resp) {
+          m_ctrl_ep->write(resp);
+        };
+      } else {
+        f = [this](scatter_span<hal::byte> resp) {
+          std::ignore = m_ctrl_ep->read(
+            resp);  // Can't use this... TODO: Maybe add a return for callbacks
+                    // for "bytes processed"
+        };
+      }
       bool req_handled = false;
       for (auto const& iface : get_active_configuration()) {
         req_handled = iface->handle_request(
@@ -314,7 +327,7 @@ private:
       }
 
       case standard_request_types::set_configuration: {
-        m_active_conf = &(m_configs->at(req.value));
+        m_active_conf = &(m_configs->at(req.value - 1));
         break;
       }
 
@@ -377,14 +390,14 @@ private:
           std::ignore = iface->write_descriptors(
             { .interface = std::nullopt, .string = std::nullopt },
             [this, &total_size](scatter_span<hal::byte const> byte_stream) {
-              hal::v5::write_and_flush(*this->m_ctrl_ep, byte_stream);
+              m_ctrl_ep->write(byte_stream);
               total_size += scatter_span_size(byte_stream);
               hal::print(*this->m_console, "Iface sent\n");
               print_payload(this->m_console, byte_stream);
             });
         }
         hal::print(*m_console, "iface descs written\n");
-
+        m_ctrl_ep->write({});
         // if (total_size != req.length) {
         //   safe_throw(hal::operation_not_supported(
         //     this));  // TODO: Make specific exception for this

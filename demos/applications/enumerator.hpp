@@ -54,8 +54,6 @@ make_sub_scatter_array(size_t p_count, Args&&... p_spans)
   std::array<std::span<T>, sizeof...(Args)> full_ss{ std::span<T>(
     std::forward<Args>(p_spans))... };
 
-  auto res_len = sizeof...(p_spans);
-  (void)res_len;
   size_t total_span_len = scatter_span_size(scatter_span<T>(full_ss));
   std::array<std::span<T>, sizeof...(Args)> res;
   std::array<size_t, sizeof...(Args)> lens{ std::span<T>(p_spans).size()... };
@@ -100,21 +98,20 @@ class enumerator
 {
 
 public:
-  enumerator(strong_ptr<control_endpoint> const& p_ctrl_ep,
-             device const& p_device,
-             configuration& p_configs,
-             u16 p_lang_str,
-             u8&& p_starting_str_idx,
-             hal::v5::strong_ptr<hal::serial> const& p_console,
-             bool enumerate_immediately = true)
+  enumerator(
+    strong_ptr<control_endpoint> const& p_ctrl_ep,
+    strong_ptr<device> const& p_device,
+    strong_ptr<std::array<configuration, num_configs>> const& p_configs,
+    u16 p_lang_str,  // NOLINT
+    u8 p_starting_str_idx,
+    hal::v5::strong_ptr<hal::serial> const& p_console,
+    bool enumerate_immediately = true)
     : m_ctrl_ep(p_ctrl_ep)
     , m_device(p_device)
-    , m_configs({ &p_configs })
+    , m_configs(p_configs)
     , m_lang_str(p_lang_str)
     , m_console(p_console)
   {
-    auto s = make_scatter_bytes(p_configs);
-    print_payload(m_console, s);
     // Verify there is space to actually allocate indexes for configuration
     // Three string indexes are reserved for the device descriptor, then each
     // configuration has a name which reserves a string index strings and
@@ -142,23 +139,23 @@ public:
     // Phase one: Preperation
 
     // Device
-    m_device.manufacturer_index() = cur_str_idx++;
-    m_device.product_index() = cur_str_idx++;
-    m_device.serial_number_index() = cur_str_idx++;
-    m_device.num_configurations() = num_configs;
+    m_device->manufacturer_index() = cur_str_idx++;
+    m_device->product_index() = cur_str_idx++;
+    m_device->serial_number_index() = cur_str_idx++;
+    m_device->num_configurations() = num_configs;
     hal::print(*m_console, "Device desc: set up\n");
 
     // Configurations
     for (size_t i = 0; i < num_configs; i++) {
-      configuration& config = *m_configs[i];
+      configuration& config = m_configs->at(i);
       config.configuration_index() = cur_str_idx++;
       config.configuration_value() = i;
     }
     hal::print(*m_console, "conf desc: set up\n");
 
-    for (configuration* config : m_configs) {
+    for (configuration& config : *m_configs) {
       auto total_length = static_cast<u16>(constants::config_desc_size);
-      for (auto const& iface : config->interfaces) {
+      for (auto const& iface : config.interfaces) {
         interface::descriptor_count deltas = iface->write_descriptors(
           { .interface = cur_iface_idx, .string = cur_str_idx },
           [&total_length](scatter_span<hal::byte const> p_data) {
@@ -168,7 +165,7 @@ public:
         cur_iface_idx += deltas.interface;
         cur_str_idx += deltas.string;
       }
-      config->total_length() = total_length;
+      config.total_length() = total_length;
     }
     hal::print(*m_console, "iface/conf desc: set up\n");
 
@@ -185,8 +182,6 @@ public:
       [&waiting_for_data](on_receive_tag) { waiting_for_data = false; });
     m_ctrl_ep->connect(true);
     hal::print(*m_console, "Connected\n");
-    auto sconf = make_scatter_bytes(*m_configs[0]);
-    print_payload(m_console, sconf);
     std::array<hal::byte, constants::size_std_req> raw_req;
     do {
       // Seriously, make this async
@@ -319,7 +314,7 @@ private:
       }
 
       case standard_request_types::set_configuration: {
-        m_active_conf = m_configs[req.value];
+        m_active_conf = &(m_configs->at(req.value));
         break;
       }
 
@@ -339,9 +334,9 @@ private:
         auto header =
           std::to_array({ constants::device_desc_size,
                           static_cast<byte>(descriptor_type::device) });
-        m_device.max_packet_size() = static_cast<byte>(m_ctrl_ep->info().size);
+        m_device->max_packet_size() = static_cast<byte>(m_ctrl_ep->info().size);
         auto scatter_arr_pair =
-          make_sub_scatter_bytes(req.length, header, m_device);
+          make_sub_scatter_bytes(req.length, header, *m_device);
         hal::v5::write_and_flush(
           *m_ctrl_ep,
           scatter_span<byte const>(scatter_arr_pair.first)
@@ -354,8 +349,7 @@ private:
       }
 
       case descriptor_type::configuration: {
-        hal::print<24>(*m_console, "Conf addr: %p\n", m_configs[0]);
-        configuration& conf = *m_configs[desc_idx];
+        configuration& conf = m_configs->at(desc_idx);
         auto conf_hdr =
           std::to_array({ constants::config_desc_size,
                           static_cast<byte>(descriptor_type::configuration) });
@@ -474,8 +468,8 @@ private:
       }
     }
 
-    for (configuration* conf : m_configs) {
-      for (auto const& iface : conf->interfaces) {
+    for (configuration const& conf : *m_configs) {
+      for (auto const& iface : conf.interfaces) {
         auto res = iface->write_string_descriptor(target_idx, f);
         if (res) {
           break;
@@ -492,19 +486,19 @@ private:
     constexpr u8 dev_sn_offset = 2;
     std::optional<std::u16string_view> opt_conf_sv;
     if (target_idx == (m_starting_str_idx + dev_manu_offset)) {
-      opt_conf_sv = m_device.manufacturer_str;
+      opt_conf_sv = m_device->manufacturer_str;
 
     } else if (target_idx == (m_starting_str_idx + dev_prod_offset)) {
-      opt_conf_sv = m_device.product_str;
+      opt_conf_sv = m_device->product_str;
 
     } else if (target_idx == (m_starting_str_idx + dev_sn_offset)) {
-      opt_conf_sv = m_device.serial_number_str;
+      opt_conf_sv = m_device->serial_number_str;
 
     } else {
-      for (size_t i = 0; i < m_configs.size(); i++) {
-        configuration* conf = m_configs[i];
+      for (size_t i = 0; i < m_configs->size(); i++) {
+        configuration const& conf = m_configs->at(i);
         if (target_idx == (m_starting_str_idx + i)) {
-          opt_conf_sv = conf->name;
+          opt_conf_sv = conf.name;
         }
       }
     }
@@ -560,8 +554,8 @@ private:
   }
 
   strong_ptr<control_endpoint> m_ctrl_ep;
-  device m_device;
-  std::array<configuration*, num_configs> m_configs;
+  strong_ptr<device> m_device;
+  strong_ptr<std::array<configuration, num_configs>> m_configs;
   u16 m_lang_str;
   u8 m_starting_str_idx;
   std::optional<std::pair<u8, strong_ptr<interface>>> m_iface_for_str_desc;

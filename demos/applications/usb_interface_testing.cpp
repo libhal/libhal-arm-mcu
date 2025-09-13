@@ -1,3 +1,4 @@
+#include "applications/descriptors.hpp"
 #include "resource_list.hpp"
 #include <array>
 #include <libhal-util/serial.hpp>
@@ -7,11 +8,9 @@
 #include <libhal/units.hpp>
 #include <libhal/usb.hpp>
 #include <memory_resource>
-#include <new>
 #include <string_view>
 #include <tuple>
 #include <utility>
-#include <variant>
 
 #include "enumerator.hpp"
 
@@ -96,36 +95,27 @@ void application()
   using namespace std::chrono_literals;
   using namespace std::string_view_literals;
 
-  // static std::array<hal5::byte, 512> iface_buf;
-  // pmr::monotonic_buffer_resource pool(iface_buf.data(), iface_buf.size());
-
   auto const console = resources::console();
   auto const clk = resources::clock();
   auto const pool = resources::driver_allocator();
-  // static std::array<hal::byte, 1024> buf;
-
-  // pmr::monotonic_buffer_resource pool;
-
-  // while (true) {
-  //   hal::print(*serial, "Testing!\n");
-  //   hal::delay(*clk, 500ms);
-  // }
 
   auto manu_str = u"libhal"sv;
   auto prod_str = u"my epic device!!"sv;
   auto sn_str = u"2468"sv;
 
-  usb::device dev{ { .p_bcd_usb = 0x2,
-                     .p_device_class =
-                       usb::class_code::use_interface_descriptor,
-                     .p_device_subclass = 0,
-                     .p_device_protocol = 0,
-                     .p_id_vendor = 0x1234,
-                     .p_id_product = 0x5678,
-                     .p_bcd_device = 0x1,
-                     .p_manufacturer = manu_str,
-                     .p_product = prod_str,
-                     .p_serial_number_str = sn_str } };
+  auto dev = hal::v5::make_strong_ptr<usb::device>(
+    pool,
+    usb::device::device_arguments{ .p_bcd_usb = 0x2,
+                                   .p_device_class =
+                                     usb::class_code::use_interface_descriptor,
+                                   .p_device_subclass = 0,
+                                   .p_device_protocol = 0,
+                                   .p_id_vendor = 0x1234,
+                                   .p_id_product = 0x5678,
+                                   .p_bcd_device = 0x1,
+                                   .p_manufacturer = manu_str,
+                                   .p_product = prod_str,
+                                   .p_serial_number_str = sn_str });
 
   hal::print(*console, "Device made\n");
   auto iface_str = u"dummy";
@@ -135,24 +125,26 @@ void application()
 
   hal::print(*console, "conf made\n");
 
-  std::array<usb::configuration, 1> confs{ usb::configuration{
-    conf_str,  // yeet
-    usb::configuration::bitmap(false, false),
-    1,
+  auto confs = hal::v5::make_strong_ptr<std::array<usb::configuration, 1>>(
     pool,
-    iface_ptr } };
+    std::array<usb::configuration, 1>{
+      usb::configuration{ conf_str,  // yeet
+                          usb::configuration::bitmap(false, false),
+                          1,
+                          pool,
+                          iface_ptr } });
+
   hal::print(*console, "conf array made\n");
 
   auto ctrl_ep = resources::usb_control_endpoint();
   hal5::u16 const en_lang_str = 0x0409;
 
   hal::print(*console, "ctrl ep called\n");
-  hal::print<48>(*console, "conf pos outside enumerator: %p\n", &confs[0]);
 
   try {
     usb::enumerator<1> en(ctrl_ep,
                           dev,
-                          confs[0],
+                          confs,
                           en_lang_str,  // f
                           1,
                           console,

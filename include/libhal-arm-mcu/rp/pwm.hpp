@@ -24,56 +24,17 @@ struct pwm_pin_configuration
   bool autostart = true;
 };
 
-/*
-Somewhat unusually, the pico contains 12 pwm
-"groups" with 2 input pins each. These "groups"
-are called slices, and are actually very independent
-of one other. This slightly complicates synchronization,
-but also allows for more independence between slices.
-*/
-struct pwm_slice_runtime : hal::pwm_group_manager
+/* This is the base runtime class for PWM. It cannot
+be instantiated normally */
+struct pwm_slice_runtime : hal::v5::pwm_group_manager
 {
-  static constexpr u8 max_slices()
-  {
-    using enum hal::rp::internal::processor_type;
-    if (hal::rp::internal::type == rp2040) {
-      return 8;
-    } else if (hal::rp::internal::type == rp2350) {
-      return 12;
-    }
-    return 0;
-  }
 
-  static constexpr u8 get_slice_number(pin_param auto pin)
-  {
-    if (pin() < 32) {
-      return (pin() / 2) % 8;
-    } else {
-      return pin() / 2 - 8;
-    }
-  }
-
-  pwm_slice_runtime(channel_param auto slice)
-    : pwm_slice_runtime(slice())
-  {
-    static_assert(slice() < max_slices(), "Invalid PWM slice!");
-  }
-
-  using configuration = pwm_pin_configuration;
-
-  // copied from pico sdk
-  static constexpr u8 pin_from_slice(u8 gpio)
-  {
-    if ((gpio) < 32) {
-      return ((gpio) >> 1u) & 7u;
-    } else {
-      return 8u + (((gpio) >> 1u) & 3u);
-    }
-  }
+  ~pwm_slice_runtime() override;
 
 protected:
-  pwm_pin get_pin_raw(u8 pin, configuration const&);
   pwm_slice_runtime(u8 slice_num);
+
+  pwm_pin get_pin_raw(u8 pin, pwm_pin_configuration const&);
   /*
   At frequencies above ~2288 Hz, the wrap counter
   begins to lose resolution, reducing the duty cycle resolution
@@ -83,19 +44,18 @@ protected:
   u8 m_number;
 };
 
-/*
-The pico has a thing called phase correct mode where
-its phase is centered. No idea if it's useful, may add
-if somebody needs it.
-*/
-struct pwm_pin final : hal::pwm16_channel
+/* This cannot be constructed normally, and needs to be
+ * obtained from a pwm_slice type. */
+struct pwm_pin final : hal::v5::pwm16_channel
 {
 
   ~pwm_pin() override;
-  // A false disables the timer.
-  void enable(bool = true);
 
   friend pwm_slice_runtime;
+
+  // not intended to be normally used. Use pwm_slice::get_pin() whenever
+  // possible
+  pwm_pin(u8 pin, pwm_pin_configuration const& c, hal::unsafe);
 
 private:
   u32 driver_frequency() override;
@@ -106,8 +66,6 @@ private:
   */
   void driver_duty_cycle(u16 p_duty_cycle) override;
 
-  pwm_pin(u8 pin, pwm_slice_runtime::configuration const&);
-
   u8 m_pin;
   u8 m_slice;
   bool m_autostart;
@@ -117,8 +75,10 @@ private:
 aligning their phases. Set argument to false to stop all of them at once */
 void enable_all_pwm(bool start = true);
 
+/* This is the actual pwm channel type that's meant to be used. It is also
+ * necessary to get the pins since pins cannot be constructed on their own.*/
 template<u64 chan>
-struct pwm_slice : pwm_slice_runtime
+struct pwm_slice final : pwm_slice_runtime
 {
 
   pwm_slice(channel_param auto ch)
@@ -131,13 +91,35 @@ struct pwm_slice : pwm_slice_runtime
                   "PWM channel is invalid!");
     static_assert(ch() < 11 || internal::pin_max != 48,
                   "PWM channel is invalid!");
+    static_assert(ch() < max_slices(), "Invalid PWM slice!");
   }
 
-  pwm_pin get_pin(pin_param auto pin,
-                  pwm_slice_runtime::configuration const& config = {})
+  void enable(bool enable = true);
+
+  pwm_pin get_pin(pin_param auto pin, pwm_pin_configuration const& config = {})
   {
     static_assert(get_slice_number(pin) == chan, "Slice pin is incorrect!");
     return get_pin_raw(pin(), config);
+  }
+
+  static constexpr u8 max_slices()
+  {
+    using enum hal::rp::internal::processor_type;
+    if constexpr (hal::rp::internal::type == rp2040) {
+      return 8;
+    } else if constexpr (hal::rp::internal::type == rp2350) {
+      return 12;
+    }
+    static_assert("Unknown RP type");
+  }
+
+  static constexpr u8 get_slice_number(pin_param auto pin)
+  {
+    if (pin() < 32) {
+      return (pin() / 2) % 8;
+    } else {
+      return pin() / 2 - 8;
+    }
   }
 };
 template<channel_param p>

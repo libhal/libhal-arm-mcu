@@ -25,6 +25,11 @@ pwm_slice_runtime::pwm_slice_runtime(u8 num)
   pwm_init(num, &config, false);
 }
 
+pwm_slice_runtime::~pwm_slice_runtime()
+{
+  pwm_set_enabled(m_number, false);
+}
+
 void pwm_slice_runtime::driver_frequency(u32 f)
 {
   // frequency too high
@@ -57,12 +62,12 @@ void pwm_slice_runtime::driver_frequency(u32 f)
   pwm_set_clkdiv(m_number, clock_div);
 }
 
-pwm_pin pwm_slice_runtime::get_pin_raw(u8 pin, configuration const& c)
+pwm_pin pwm_slice_runtime::get_pin_raw(u8 pin, pwm_pin_configuration const& c)
 {
-  return { pin, c };
+  return pwm_pin(pin, c, {});
 }
 
-pwm_pin::pwm_pin(u8 pin, pwm_slice_runtime::configuration const& c)
+pwm_pin::pwm_pin(u8 pin, pwm_pin_configuration const& c, hal::unsafe)
   : m_pin(pin)
   , m_slice(pwm_gpio_to_slice_num(pin))
   , m_autostart(c.autostart)
@@ -73,7 +78,6 @@ pwm_pin::pwm_pin(u8 pin, pwm_slice_runtime::configuration const& c)
 
 pwm_pin::~pwm_pin()
 {
-  pwm_set_enabled(m_slice, false);
   gpio_deinit(m_pin);
 }
 
@@ -82,7 +86,6 @@ void pwm_pin::driver_duty_cycle(u16 duty)
   auto channel = pwm_gpio_to_channel(m_pin);
   if (duty == 0) {
     pwm_set_chan_level(m_slice, channel, 0);
-    pwm_set_enabled(m_slice, false);
     return;
   }
 
@@ -113,9 +116,10 @@ void enable_all_pwm(bool start)
   }
 }
 
-void pwm_pin::enable(bool enable)
+template<u64 s>
+void pwm_slice<s>::enable(bool enable)
 {
-  pwm_set_enabled(m_slice, enable);
+  pwm_set_enabled(s, enable);
 }
 
 u32 pwm_pin::driver_frequency()

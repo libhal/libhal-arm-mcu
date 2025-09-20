@@ -16,9 +16,10 @@ cmake_minimum_required(VERSION 3.15)
 
 if(DEFINED ENV{PICO_SDK_PATH})
 set(PICO_CXX_ENABLE_EXCEPTIONS 1)
-set(PICO_BOARD adafruit_feather_rp2350)
 set(CMAKE_ASM_FLAGS_INIT "-mcpu=cortex-m33 -mfloat-abi=soft")
 set(PICO_NO_PICOTOOL 1)
+list(APPEND PICO_BOARD_HEADER_DIRS ${CMAKE_SOURCE_DIR}/src/rp/boards)
+set(PICO_BOARD rp2350b_w25q080)
 include($ENV{PICO_SDK_PATH}/external/pico_sdk_import.cmake)
 endif()
 

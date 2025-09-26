@@ -6,7 +6,30 @@
 #include <libhal/pwm.hpp>
 #include <libhal/units.hpp>
 
-namespace hal::rp::v5 {
+namespace hal::rp {
+
+inline namespace v4 {
+// this a bad backport to v4, since the pwm interface cannot
+// guarantee two pwm's won't interfere
+struct pwm_pin final : hal::pwm
+{
+  // By constructing this class you forfeit all claims to any
+  // warranty, implied or otherwise. You acknowledge you will
+  // read the relevant datasheet (RP2350 or RP2040 datasheet)
+  // and verify they are on different PWM slices. You waive
+  // any right to complain about two different PWM pins interfering
+  // with each other because they are on the same slice.
+  pwm_pin(hal::unsafe, u8 pin);
+
+private:
+  void driver_frequency(hertz p_frequency) override;
+  void driver_duty_cycle(float p_duty_cycle) override;
+
+  u8 m_pin;
+};
+}  // namespace v4
+
+namespace v5 {
 enum struct pwm_ch : u8
 {
   a,
@@ -123,4 +146,5 @@ struct pwm_slice final : pwm_slice_runtime
 };
 template<channel_param p>
 pwm_slice(p pin) -> pwm_slice<p::val>;
-}  // namespace hal::rp::v5
+}  // namespace v5
+}  // namespace hal::rp

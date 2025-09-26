@@ -13,7 +13,61 @@ frequency it should run at
 
 */
 
-namespace hal::rp::v5 {
+namespace hal::rp {
+inline namespace v4 {
+pwm_pin::pwm_pin(hal::unsafe, u8 pin)
+  : m_pin(pin)
+{
+}
+
+void pwm_pin::driver_duty_cycle(float duty)
+{
+  uint channel = pwm_gpio_to_channel(m_pin);
+  uint slice = pwm_gpio_to_slice_num(m_pin);
+  if (duty == 0) {
+    pwm_set_chan_level(slice, channel, 0);
+    return;
+  }
+
+  float percentage = float(duty) / std::numeric_limits<u16>::max();
+  u16 top = pwm_hw->slice[slice].top;
+  pwm_set_chan_level(slice, channel, u16(float(top) * percentage));
+}
+
+void pwm_pin::driver_frequency(float f)
+{
+  if (f > SYS_CLK_HZ) {
+    hal::safe_throw(argument_out_of_domain(this));
+  }
+
+  auto frequency = static_cast<float>(f);
+  auto clock = static_cast<float>(SYS_CLK_HZ);
+  // We try to adjust clock divider to maximize counter resolution
+  float wrap_val = std::numeric_limits<uint16_t>::max();
+  float clock_div = clock / frequency / wrap_val;
+  // cap the clock divider at 256
+  if (clock_div > 256) {
+    clock_div = 256;
+    wrap_val = clock / frequency / 256;
+  }
+  // maintain a minimum clock divider of 1
+  if (clock_div < 1.0) {
+    clock_div = 1;
+    wrap_val = clock / frequency;
+  }
+
+  // frequency too low
+  if (wrap_val > std::numeric_limits<u16>::max()) {
+    hal::safe_throw(argument_out_of_domain(this));
+  }
+
+  uint slice = pwm_gpio_to_slice_num(m_pin);
+  pwm_set_wrap(slice, static_cast<u16>(wrap_val));
+  pwm_set_clkdiv(slice, clock_div);
+}
+}  // namespace v4
+
+namespace v5 {
 
 pwm_slice_runtime::pwm_slice_runtime(u8 num)
   : m_number(num)
@@ -137,4 +191,5 @@ u32 pwm_pin::driver_frequency()
   return static_cast<u32>(static_cast<float>(top) * divider);
 }
 
-}  // namespace hal::rp::v5
+}  // namespace v5
+}  // namespace hal::rp

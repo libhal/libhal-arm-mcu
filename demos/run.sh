@@ -4,7 +4,7 @@ set -ex
 
 BUILDDIR=build/rp2350-arm-s/RelWithDebInfo
 
-conan build . -pr:h=rp2350 -pr:h=arm-gcc-12.3 --build=missing
+conan build . -pr:h=rp2350b -pr:h=arm-gcc-12.3 --build=missing
 
 source $BUILDDIR/generators/conanbuild.sh
 

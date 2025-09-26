@@ -85,9 +85,10 @@ hal::v5::strong_ptr<hal::i2c> i2c();
 hal::v5::strong_ptr<hal::interrupt_pin> interrupt_pin();
 hal::v5::strong_ptr<hal::pwm> pwm();
 hal::v5::strong_ptr<hal::timer> timed_interrupt();
-hal::v5::strong_ptr<hal::v5::pwm16_channel> pwm_channel();
-hal::v5::strong_ptr<hal::v5::pwm_group_manager> pwm_frequency();
-hal::v5::strong_ptr<hal::spi_channel> spi();
+hal::v5::strong_ptr<hal::pwm16_channel> pwm_channel();
+hal::v5::strong_ptr<hal::pwm_group_manager> pwm_frequency();
+hal::v5::strong_ptr<hal::spi> spi();
+hal::v5::strong_ptr<hal::output_pin> spi_chip_select();
 hal::v5::strong_ptr<hal::stream_dac_u8> stream_dac();
 hal::v5::strong_ptr<hal::dac> dac();
 hal::v5::strong_ptr<custom::watchdog> watchdog();
@@ -123,3 +124,4 @@ inline void sleep(hal::time_duration p_duration)
 // Application function is implemented by one of the .cpp files.
 void initialize_platform();
 void application();
+

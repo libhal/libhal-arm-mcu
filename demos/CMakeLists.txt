@@ -39,15 +39,15 @@ set(demo_deps
 
 # not all of the demos work at the moment
 set(demos
-  # ADC demo needs to be updated to ADC16
-  # adc
+  adc
   blinker
-  # No canbus until I can figure out software can
   # can
+  # dac
   gpio
   i2c
   interrupt_pin
   uart
+  pwm
   pwm16
   spi
   blank

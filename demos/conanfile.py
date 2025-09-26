@@ -14,6 +14,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import os
+
 from conan import ConanFile
 from conan.tools.cmake import CMake
 
@@ -26,6 +28,7 @@ class demos(ConanFile):
         self.requires("libhal-arm-mcu/[1.9.1 || latest]")
         self.tool_requires("picotool/2.1.1")
         self.requires("minimp3/cci.20211201")
+        self.requires("micromod-header/1.0.0")
     
     # This is kinda sketch, but needs to be done manually until https://github.com/conan-io/conan/issues/13372
     # gets implemented
@@ -33,9 +36,7 @@ class demos(ConanFile):
         cmake = CMake(self)
         defs = {
             "CMAKE_ASM_FLAGS_INIT": "-mcpu=cortex-m33 -mfloat-abi=soft",
-            # For some reason even if I set PICO_FLASH_SIZE with PICO_BOARD=none,
-            # it still doesn't work. I can't explain why.
-            "PICO_BOARD": "adafruit_feather_rp2350",
+            "PICO_BOARD": "rp2350_micromod",
             "PICO_CXX_ENABLE_EXCEPTIONS": "1"
         }
         cmake.configure(variables = defs)

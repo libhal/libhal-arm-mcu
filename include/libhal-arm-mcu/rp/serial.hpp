@@ -3,7 +3,7 @@
 #include "rp.hpp"
 #include <libhal/serial.hpp>
 
-namespace hal::rp::inline v1 {
+namespace hal::rp::inline v4 {
 /*
 The RP series chips use a native ROM USB bootloader,
 meaning most setups use USB directly, necessitating
@@ -63,4 +63,4 @@ private:
   u8 m_tx, m_rx, m_bus;
 };
 
-}  // namespace hal::rp::inline v1
+}  // namespace hal::rp::inline v4

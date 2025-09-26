@@ -4,7 +4,7 @@
 #include <libhal/interrupt_pin.hpp>
 #include <libhal/units.hpp>
 
-namespace hal::rp::inline v1 {
+namespace hal::rp::inline v4 {
 /*
 Interrupt pin uses hidden globals to implement interrupts because
 the interrupt callback function doesn't quite match the hal::handler type.
@@ -27,4 +27,4 @@ private:
   void driver_on_trigger(hal::callback<handler>) override;
   u8 m_pin;
 };
-}  // namespace hal::rp::inline v1
+}  // namespace hal::rp::inline v4

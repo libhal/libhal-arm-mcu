@@ -3,6 +3,7 @@
 #include <hardware/gpio.h>
 #include <hardware/i2c.h>
 #include <libhal/error.hpp>
+#include <libhal/units.hpp>
 #include <pico/error.h>
 
 // pico macros interfere with ours
@@ -24,7 +25,7 @@ auto inst(hal::u8 c, void* instance)
 }
 }  // namespace
 
-namespace hal::rp::inline v1 {
+namespace hal::rp::inline v4 {
 i2c::i2c(u8 sda, u8 scl, u8 chan, settings const& options)  // NOLINT
   : m_sda(sda)
   , m_scl(scl)
@@ -76,4 +77,4 @@ void i2c::driver_transaction(hal::byte addr,
   timeout();
 }
 
-}  // namespace hal::rp::inline v1
+}  // namespace hal::rp::inline v4

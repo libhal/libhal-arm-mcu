@@ -3,7 +3,7 @@
 #include "rp.hpp"
 #include <libhal/input_pin.hpp>
 
-namespace hal::rp::inline v1 {
+namespace hal::rp::inline v4 {
 struct input_pin final : public hal::input_pin
 {
 
@@ -20,4 +20,4 @@ private:
 
   u8 m_pin{};
 };
-}  // namespace hal::rp::inline v1
+}  // namespace hal::rp::inline v4

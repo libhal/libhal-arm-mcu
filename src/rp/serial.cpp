@@ -22,7 +22,7 @@ auto get_uart(hal::u8 bus)
 }
 }  // namespace
 
-namespace hal::rp::inline v1 {
+namespace hal::rp::inline v4 {
 stdio_serial::stdio_serial()
 {
   stdio_init_all();
@@ -125,4 +125,4 @@ serial::read_t uart::driver_read(std::span<byte> out)
            .capacity = 32 };
 }
 
-}  // namespace hal::rp::inline v1
+}  // namespace hal::rp::inline v4

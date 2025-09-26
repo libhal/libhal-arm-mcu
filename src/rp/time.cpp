@@ -4,7 +4,7 @@
 #include <hardware/platform_defs.h>
 #include <hardware/timer.h>
 
-namespace hal::rp::inline v1 {
+namespace hal::rp::inline v4 {
 
 hertz clock::driver_frequency()
 {
@@ -16,4 +16,4 @@ u64 clock::driver_uptime()
   return time_us_64();
 }
 
-}  // namespace hal::rp::inline v1
+}  // namespace hal::rp::inline v4

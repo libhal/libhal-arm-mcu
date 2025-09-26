@@ -6,8 +6,7 @@
 #include <libhal/pwm.hpp>
 #include <libhal/units.hpp>
 
-namespace hal::rp::inline v1 {
-
+namespace hal::rp::v5 {
 enum struct pwm_ch : u8
 {
   a,
@@ -124,5 +123,4 @@ struct pwm_slice final : pwm_slice_runtime
 };
 template<channel_param p>
 pwm_slice(p pin) -> pwm_slice<p::val>;
-
-}  // namespace hal::rp::inline v1
+}  // namespace hal::rp::v5

@@ -18,8 +18,32 @@ auto spi_bus(hal::u8 busnum)
   }
 }
 }  // namespace
-namespace hal::rp::inline v1 {
+namespace hal::rp {
+
+inline namespace v4 {
 // TODO shuddup clang-tidy I'll fix it later
+spi::spi(u8 bus, u8 tx, u8 rx, u8 sck, spi::settings const& s)  // NOLINT
+  : m_bus(bus)
+  , m_tx(tx)
+  , m_rx(rx)
+  , m_sck(sck)
+{
+  driver_configure(s);
+  gpio_set_function(tx, GPIO_FUNC_SPI);
+  gpio_set_function(rx, GPIO_FUNC_SPI);
+  gpio_set_function(sck, GPIO_FUNC_SPI);
+}
+void spi::driver_configure(spi::settings const& s)
+{
+  spi_cpol_t polarity = s.clock_polarity ? SPI_CPOL_1 : SPI_CPOL_0;
+  spi_cpha_t phase = s.clock_phase ? SPI_CPHA_1 : SPI_CPHA_0;
+
+  spi_init(spi_bus(m_bus), static_cast<unsigned int>(s.clock_rate));
+  spi_set_format(spi_bus(m_bus), 8, polarity, phase, SPI_MSB_FIRST);
+}
+}  // namespace v4
+
+namespace v5 {
 spi::spi(u8 bus, u8 tx, u8 rx, u8 sck, u8 cs, spi::settings const& s)  // NOLINT
   : m_bus(bus)
   , m_tx(tx)
@@ -107,5 +131,5 @@ spi::~spi()
   gpio_deinit(m_cs);
   spi_deinit(spi_bus(m_bus));
 }
-
-}  // namespace hal::rp::inline v1
+}  // namespace v5
+}  // namespace hal::rp

@@ -13,7 +13,7 @@ frequency it should run at
 
 */
 
-namespace hal::rp::inline v1 {
+namespace hal::rp::v5 {
 
 pwm_slice_runtime::pwm_slice_runtime(u8 num)
   : m_number(num)
@@ -137,4 +137,4 @@ u32 pwm_pin::driver_frequency()
   return static_cast<u32>(static_cast<float>(top) * divider);
 }
 
-}  // namespace hal::rp::inline v1
+}  // namespace hal::rp::v5

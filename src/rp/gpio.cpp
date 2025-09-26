@@ -15,7 +15,6 @@
 #include <optional>
 #include <pico/sync.h>
 #include <pico/time.h>
-#include <unordered_map>
 #include <utility>
 
 namespace {
@@ -129,7 +128,7 @@ private:
 
 }  // namespace
 
-namespace hal::rp::inline v1 {
+namespace hal::rp::inline v4 {
 void sleep_ms(uint32_t ms)
 {
   ::sleep_ms(ms);
@@ -236,27 +235,13 @@ interrupt_pin::interrupt_pin(u8 pin,
   gpio_init(pin);
   gpio_set_dir(pin, false);
   gpio_set_function(pin, gpio_function_t::GPIO_FUNC_SIO);
-
-  auto g = interrupt_manager::get();
-  g->insert(m_pin,
-            { .edge = options.trigger, .callback = std::move(callback) });
-
-  // can't use driver_configure because it would cause the lock to be taken
-  // twice
-  switch (options.resistor) {
-    case pin_resistor::none:
-      gpio_disable_pulls(m_pin);
-      break;
-    case pin_resistor::pull_up:
-      gpio_pull_up(m_pin);
-      break;
-      // pulldown seems reasonable, although this should never trigger anyways
-    default:
-      [[fallthrough]];
-    case pin_resistor::pull_down:
-      gpio_pull_down(m_pin);
-      break;
+  {
+    auto g = interrupt_manager::get();
+    g->insert(m_pin,
+              { .edge = options.trigger, .callback = std::move(callback) });
+    // drop the lock
   }
+  driver_configure(options);
 }
 
 interrupt_pin::~interrupt_pin()
@@ -291,4 +276,4 @@ void interrupt_pin::driver_on_trigger(hal::callback<handler> callback)
   std::swap(g->at(m_pin).callback, callback);
 }
 
-}  // namespace hal::rp::inline v1
+}  // namespace hal::rp::inline v4

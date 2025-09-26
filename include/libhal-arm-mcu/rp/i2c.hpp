@@ -5,7 +5,7 @@
 #include <libhal/initializers.hpp>
 #include <libhal/units.hpp>
 
-namespace hal::rp::inline v1 {
+namespace hal::rp::inline v4 {
 /*
 RP2350 supports a baud rate of up to 1 MHz
 */
@@ -42,4 +42,4 @@ private:
   u8 m_sda, m_scl, m_chan;
 };
 
-}  // namespace hal::rp::inline v1
+}  // namespace hal::rp::inline v4

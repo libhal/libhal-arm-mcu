@@ -33,6 +33,7 @@ spi::spi(u8 bus, u8 tx, u8 rx, u8 sck, spi::settings const& s)  // NOLINT
   gpio_set_function(rx, GPIO_FUNC_SPI);
   gpio_set_function(sck, GPIO_FUNC_SPI);
 }
+
 void spi::driver_configure(spi::settings const& s)
 {
   spi_cpol_t polarity = s.clock_polarity ? SPI_CPOL_1 : SPI_CPOL_0;
@@ -41,6 +42,32 @@ void spi::driver_configure(spi::settings const& s)
   spi_init(spi_bus(m_bus), static_cast<unsigned int>(s.clock_rate));
   spi_set_format(spi_bus(m_bus), 8, polarity, phase, SPI_MSB_FIRST);
 }
+
+void spi::driver_transfer(std::span<byte const> out,
+                          std::span<byte> in,
+                          byte filler)
+{
+  auto out_size = out.size_bytes();
+  auto in_size = in.size_bytes();
+  auto size = std::min(out_size, in_size);
+  spi_write_read_blocking(spi_bus(m_bus), out.data(), in.data(), size);
+  if (out_size > in_size) {
+    spi_write_blocking(
+      spi_bus(m_bus), out.data() + in_size, out_size - in_size);
+  } else if (in_size > out_size) {
+    spi_read_blocking(
+      spi_bus(m_bus), filler, in.data() + out_size, in_size - out_size);
+  }
+}
+
+spi::~spi()
+{
+  gpio_deinit(m_tx);
+  gpio_deinit(m_rx);
+  gpio_deinit(m_sck);
+  spi_deinit(spi_bus(m_bus));
+}
+
 }  // namespace v4
 
 namespace v5 {

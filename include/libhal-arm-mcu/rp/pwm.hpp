@@ -20,6 +20,7 @@ struct pwm_pin final : hal::pwm
   // any right to complain about two different PWM pins interfering
   // with each other because they are on the same slice.
   pwm_pin(hal::unsafe, u8 pin);
+  ~pwm_pin() override;
 
 private:
   void driver_frequency(hertz p_frequency) override;
@@ -48,7 +49,7 @@ struct pwm_pin_configuration
 
 /* This is the base runtime class for PWM. It cannot
 be instantiated normally */
-struct pwm_slice_runtime : hal::v5::pwm_group_manager
+struct pwm_slice_runtime : hal::pwm_group_manager
 {
 
   ~pwm_slice_runtime() override;
@@ -68,7 +69,7 @@ protected:
 
 /* This cannot be constructed normally, and needs to be
  * obtained from a pwm_slice type. */
-struct pwm_pin final : hal::v5::pwm16_channel
+struct pwm_pin final : hal::pwm16_channel
 {
 
   ~pwm_pin() override;

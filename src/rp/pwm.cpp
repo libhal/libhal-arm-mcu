@@ -18,6 +18,14 @@ inline namespace v4 {
 pwm_pin::pwm_pin(hal::unsafe, u8 pin)
   : m_pin(pin)
 {
+  gpio_set_function(m_pin, GPIO_FUNC_PWM);
+  auto config = pwm_get_default_config();
+  pwm_init(pwm_gpio_to_slice_num(m_pin), &config, false);
+}
+
+pwm_pin::~pwm_pin()
+{
+  gpio_deinit(m_pin);
 }
 
 void pwm_pin::driver_duty_cycle(float duty)
@@ -32,6 +40,7 @@ void pwm_pin::driver_duty_cycle(float duty)
   float percentage = float(duty) / std::numeric_limits<u16>::max();
   u16 top = pwm_hw->slice[slice].top;
   pwm_set_chan_level(slice, channel, u16(float(top) * percentage));
+  pwm_set_enabled(slice, true);
 }
 
 void pwm_pin::driver_frequency(float f)

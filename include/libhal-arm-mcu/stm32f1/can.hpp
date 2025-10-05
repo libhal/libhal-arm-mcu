@@ -27,8 +27,7 @@
 #include "pin.hpp"
 
 namespace hal::stm32f1 {
-class [[deprecated("hal::can is deprecated and should not be used")]] can final
-  : public hal::can
+class can final : public hal::can
 {
 public:
   can(can::settings const& p_settings = {},
@@ -117,7 +116,7 @@ public:
    * @brief Implementation of the `hal::can_interrupt` interface.
    *
    */
-  class [[deprecated]] interrupt : public hal::can_interrupt
+  class interrupt : public hal::can_interrupt
   {
   public:
     interrupt(interrupt const&) = delete;
@@ -138,7 +137,7 @@ public:
    * @brief Implementation of the `hal::can_bus_manager` interface.
    *
    */
-  class [[deprecated]] bus_manager : public hal::can_bus_manager
+  class bus_manager : public hal::can_bus_manager
   {
   public:
     bus_manager(bus_manager const&) = delete;
@@ -168,7 +167,7 @@ public:
    * @brief Implementation of the `hal::can_identifier_filter` interface.
    *
    */
-  class [[deprecated]] identifier_filter : public hal::can_identifier_filter
+  class identifier_filter : public hal::can_identifier_filter
   {
   public:
     identifier_filter(identifier_filter const&) = delete;
@@ -195,7 +194,7 @@ public:
    * bank is freed to be used by other filters.
    *
    */
-  class [[deprecated]] identifier_filter_set
+  class identifier_filter_set
   {
   public:
     /**
@@ -225,8 +224,7 @@ public:
    * interface.
    *
    */
-  class [[deprecated]] extended_identifier_filter
-    : public hal::can_extended_identifier_filter
+  class extended_identifier_filter : public hal::can_extended_identifier_filter
   {
   public:
     extended_identifier_filter(extended_identifier_filter const&) = delete;
@@ -253,7 +251,7 @@ public:
    * bank is freed to be used by other filters.
    *
    */
-  class [[deprecated]] extended_identifier_filter_set
+  class extended_identifier_filter_set
   {
   public:
     /**
@@ -284,7 +282,7 @@ public:
    * @brief Implementation of the `hal::can_mask_filter` interface.
    *
    */
-  class [[deprecated]] mask_filter : public hal::can_mask_filter
+  class mask_filter : public hal::can_mask_filter
   {
   public:
     mask_filter(mask_filter const&) = delete;
@@ -301,7 +299,7 @@ public:
     filter_resource m_resource;
   };
 
-  class [[deprecated]] mask_filter_set
+  class mask_filter_set
   {
   public:
     /**
@@ -330,8 +328,7 @@ public:
    * NOTE: extended_mask_filter does not have a "set" object because this
    * implementation requires the full filter bank.
    */
-  class [[deprecated]] extended_mask_filter
-    : public hal::can_extended_mask_filter
+  class extended_mask_filter : public hal::can_extended_mask_filter
   {
   public:
     extended_mask_filter(extended_mask_filter const&) = delete;
@@ -424,6 +421,8 @@ public:
   can_peripheral_manager(can_peripheral_manager&&) = delete;
   can_peripheral_manager& operator=(can_peripheral_manager&&) = delete;
 
+  void enable_self_test(bool p_enable);
+
   /**
    * @brief Acquire an `hal::can_transceiver` implementation
    *
@@ -505,245 +504,4 @@ public:
 
   ~can_peripheral_manager();
 };
-
-/**
- * @brief Defines what a "disabled" ID would be
- *
- * The stm32 bxCAN system uses a series of filter bank registers. Each can be
- * used to either create 4x identifier filters, 2x mask filters, 2x extended
- * identifier filters or 1x extended mask filter. Entire filter bank can be
- * disabled/enabled, but not on a sub-bank basis. So to support "disabling a
- * filter, we simply provide IDs that we expect to never appear on the CAN bus
- * and use those as a "disabled" filter state.
- *
- */
-enum class can_fifo : std::uint8_t
-{
-  select1 = 0,
-  select2 = 1,
-};
-
-/**
- * @brief Named parameter for enabling self test at driver construction
- *
- */
-enum class can_self_test : hal::u8
-{
-  off = 0,
-  on = 1,
-};
-
-/**
- * @brief Contains a filter and word index, used by filter implementations to
- * determine which bits in the filter registers to modify.
- *
- */
-struct can_filter_resource
-{
-  hal::u8 filter_index = 0;
-  hal::u8 word_index = 0;
-  bool filter_for_remote_request = false;
-};
-
-class can_peripheral_manager_v2
-{
-public:
-  /**
-   * @brief Enable/disable self test mode
-   *
-   * Self test mode allows message loopback. This mode allows messages sent from
-   * this device's can transceiver to be received back by this device.
-   *
-   * @param p_enable - enable self test mode
-   */
-  void enable_self_test(bool p_enable);
-
-  /**
-   * @brief Set can peripheral's baud rate
-   *
-   * @param p_hertz - baud rate in hertz
-   */
-  void baud_rate(hal::u32 p_hertz);
-
-  /**
-   * @brief Get can peripheral's baud rate
-   *
-   * @returns hal::u32 - baud rate in hertz
-   */
-  hal::u32 baud_rate() const;
-
-  /**
-   * @brief Send a can message
-   *
-   * @param p_message
-   */
-  void send(can_message const& p_message);
-
-  /**
-   * @brief Set callback on message reception
-   *
-   * @param p_callback - callback to be called on each received message
-   */
-  void on_receive(hal::can_interrupt::optional_receive_handler p_callback);
-
-  /**
-   * @brief Exit "bus-off" state if the device is in that state.
-   *
-   * If the device is already bus-on then nothing happens.
-   *
-   */
-  void bus_on();
-
-  /**
-   * @brief Construct a new can peripheral manager object
-   *
-   * @param p_baud_rate - set baud rate of the device
-   * @param p_clock - a steady clock used to determine if initialization has
-   * exceeded the p_timeout_time.
-   * @param p_timeout_time - the amount of time to wait for initialization
-   * before throwing `hal::timed_out`.
-   * @param p_pins - CAN bus RX and TX pin selection
-   * @param p_enable_self_test - determines if self test is enabled at
-   * construction.
-   * @param p_disabled_ids - IDs to use as filtering values when a filter is set
-   * to be disabled. Choose IDs you expect will never appear on the CAN BUS.
-   * @throw hal::operation_not_supported - if the baud rate is not usable
-   * @throw hal::timed_out - if can peripheral initialization
-   */
-  can_peripheral_manager_v2(
-    hal::u32 p_baud_rate,
-    hal::steady_clock& p_clock,
-    hal::time_duration p_timeout_time = std::chrono::milliseconds(1),
-    can_pins p_pins = can_pins::pa11_pa12,
-    self_test p_enable_self_test = self_test::off,
-    disable_ids p_disabled_ids = disable_ids{ .standard = 0, .extended = 0 });
-
-  can_peripheral_manager_v2(can_peripheral_manager_v2 const&) = delete;
-  can_peripheral_manager_v2& operator=(can_peripheral_manager_v2 const&) =
-    delete;
-  can_peripheral_manager_v2(can_peripheral_manager_v2&&) = delete;
-  can_peripheral_manager_v2& operator=(can_peripheral_manager_v2&&) = delete;
-
-private:
-  disable_ids m_disable_id{};
-  hal::u32 m_current_baud_rate = 0;
-  can_interrupt::optional_receive_handler m_receive_handler{};
-  std::bitset<28> m_acquired_banks{};
-};
-
-/**
- * @brief Acquire a `hal::can_transceiver` from the stm32f1
- * can_peripheral_manager
- *
- * @param p_allocator - allocator for the object
- * @param p_manager - stm32f1 can manager object
- * @param p_message_buffer_size - number of can messages the can transceiver
- * circular buffer in can hold.
- * @return hal::v5::strong_ptr<hal::can_transceiver> - can transceiver
- */
-hal::v5::strong_ptr<hal::can_transceiver> acquire_transceiver(
-  std::pmr::polymorphic_allocator<> p_allocator,
-  hal::v5::strong_ptr<can_peripheral_manager> p_manager,
-  hal::usize p_message_buffer_size);
-
-/**
- * @brief Acquire an `hal::can_bus_manager` implementation
- *
- * @return bus_manager - object implementing the `hal::can_bus_manager`
- * interface for this can peripheral.
- */
-
-/**
- * @brief Acquire a `hal::can_bus_manager` from the stm32f1
- * can_peripheral_manager.
- *
- *
- * @param p_allocator - allocator for the object
- * @param p_manager - stm32f1 can manager object
- * @return hal::v5::strong_ptr<hal::can_bus_manager>
- */
-hal::v5::strong_ptr<hal::can_bus_manager> acquire_bus_manager(
-  std::pmr::polymorphic_allocator<> p_allocator,
-  hal::v5::strong_ptr<can_peripheral_manager> p_manager);
-
-/**
- * @brief Acquire an `hal::can_interrupt` implementation
- *
- * @return interrupt - object implementing the `hal::can_interrupt` interface
- * for this can peripheral.
- */
-hal::v5::strong_ptr<hal::can_interrupt> acquire_interrupt(
-  std::pmr::polymorphic_allocator<> p_allocator,
-  hal::v5::strong_ptr<can_peripheral_manager> p_manager);
-
-struct can_id_filter_set
-{
-  std::array<hal::v5::strong_ptr<hal::can_identifier_filter>, 4> filter;
-};
-
-/**
- * @brief Acquire a set of 4x standard identifier filters
- *
- * @return identifier_filter_set - A set of 4x identifier filters. When
- * destroyed, releases the filter resource it held on to.
- */
-hal::v5::strong_ptr<can_id_filter_set> acquire_identifier_filter(
-  std::pmr::polymorphic_allocator<> p_allocator,
-  hal::v5::strong_ptr<can_peripheral_manager> p_manager,
-  can_fifo p_fifo = can_fifo::select1);
-
-struct can_extended_id_filter_set
-{
-  std::array<hal::v5::strong_ptr<hal::can_extended_identifier_filter>, 2>
-    filter;
-};
-
-/**
- * @brief Acquire a pair of two extended identifier filters
- *
- * @return extended_identifier_filter_set - A set of 2x extended identifier
- * filters.
- */
-hal::v5::strong_ptr<can_extended_id_filter_set>
-acquire_extended_identifier_filter(
-  std::pmr::polymorphic_allocator<> p_allocator,
-  hal::v5::strong_ptr<can_peripheral_manager> p_manager,
-  can_fifo p_fifo = can_fifo::select1);
-
-struct can_mask_filter_set
-{
-  std::array<hal::v5::strong_ptr<hal::can_mask_filter>, 2> filter;
-};
-
-/**
- * @brief Acquire a pair of mask filters
- *
- * @param p_manager - Manager for which to extract the filter
- * @param p_fifo - Select the FIFO to store the received message
- * @return hal::v5::strong_ptr<can_mask_filter_set> - A set of 2x standard mask
- * filters
- */
-hal::v5::strong_ptr<can_mask_filter_set> acquire_mask_filter(
-  std::pmr::polymorphic_allocator<> p_allocator,
-  hal::v5::strong_ptr<can_peripheral_manager> p_manager,
-  can_fifo p_fifo = can_fifo::select1);
-
-struct can_extended_mask_filter_set
-{
-  std::array<hal::v5::strong_ptr<hal::can_extended_mask_filter>, 2> filter;
-};
-
-/**
- * @brief Acquire an extended mask filter
- *
- * @param p_manager - Manager for which to extract the filter
- * @param p_fifo - Select the FIFO to store the received message
- * @return hal::v5::strong_ptr<hal::can_extended_mask_filter> - An extended mask
- * filter
- */
-hal::v5::strong_ptr<hal::can_extended_mask_filter> acquire_extended_mask_filter(
-  std::pmr::polymorphic_allocator<> p_allocator,
-  hal::v5::strong_ptr<can_peripheral_manager> p_manager,
-  can_fifo p_fifo = can_fifo::select1);
-
 }  // namespace hal::stm32f1

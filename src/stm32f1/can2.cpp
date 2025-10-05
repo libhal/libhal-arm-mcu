@@ -14,10 +14,11 @@
 
 #include <bitset>
 #include <cstdint>
+#include <libhal/pointers.hpp>
 #include <optional>
 
 #include <libhal-arm-mcu/interrupt.hpp>
-#include <libhal-arm-mcu/stm32f1/can.hpp>
+#include <libhal-arm-mcu/stm32f1/can2.hpp>
 #include <libhal-arm-mcu/stm32f1/clock.hpp>
 #include <libhal-arm-mcu/stm32f1/constants.hpp>
 #include <libhal-arm-mcu/stm32f1/interrupt.hpp>
@@ -29,6 +30,7 @@
 #include <libhal-util/static_callable.hpp>
 #include <libhal-util/steady_clock.hpp>
 #include <libhal/can.hpp>
+#include <libhal/circular_buffer.hpp>
 #include <libhal/error.hpp>
 #include <libhal/steady_clock.hpp>
 #include <libhal/units.hpp>
@@ -148,8 +150,7 @@ void set_filter_scale(hal::u8 p_filter, filter_scale p_scale)
   bit_modify(can1_reg->FS1R).insert(filter_bit_mask, hal::value(p_scale));
 }
 
-void set_filter_fifo_assignment(hal::u8 p_filter,
-                                can_peripheral_manager::fifo_assignment p_fifo)
+void set_filter_fifo_assignment(hal::u8 p_filter, can_fifo p_fifo)
 {
   auto const filter_bit_mask = bit_mask::from(p_filter);
   bit_modify(can1_reg->FFA1R).insert(filter_bit_mask, hal::value(p_fifo));
@@ -180,7 +181,7 @@ void allow_all_acceptance_filter()
   set_filter_type(0, filter_type::mask);
 
   // Assign filter 0 to FIFO 0 (Clear bit)
-  set_filter_fifo_assignment(0, can_peripheral_manager::fifo_assignment::fifo1);
+  set_filter_fifo_assignment(0, can_fifo::select1);
 
   // Activate filter 0 (Set bit)
   set_filter_activation_state(0, filter_activation::active);
@@ -350,7 +351,7 @@ void setup_can(hal::u32 p_baud_rate, can_pins p_pins, bool p_self_test = false)
 
 void setup_can(hal::u32 p_baud_rate,
                can_pins p_pins,
-               can_peripheral_manager::self_test p_enable_self_test,
+               can_self_test p_enable_self_test,
                hal::steady_clock& p_clock,
                hal::time_duration p_timeout_time)
 {
@@ -387,101 +388,21 @@ void setup_can(hal::u32 p_baud_rate,
   timed_exit_initialization(p_clock, p_timeout_time);
 }
 
-can::message_t read_receive_mailbox()
+can_message read_receive_mailbox()
 {
-  can::message_t message{ .id = 0 };
-
-  uint32_t fifo0_status = can1_reg->RF0R;
-  uint32_t fifo1_status = can1_reg->RF1R;
-
-  can_peripheral_manager::fifo_assignment fifo_select =
-    can_peripheral_manager::fifo_assignment::fifo1;
-
-  if (bit_extract<fifo_status::messages_pending>(fifo0_status)) {
-    fifo_select = can_peripheral_manager::fifo_assignment::fifo1;
-  } else if (bit_extract<fifo_status::messages_pending>(fifo1_status)) {
-    fifo_select = can_peripheral_manager::fifo_assignment::fifo2;
-  } else {
-    // Error, tried to receive when there were no pending messages.
-    return message;
-  }
-
-  uint32_t frame = can1_reg->fifo_mailbox[value(fifo_select)].RDTR;
-  uint32_t id = can1_reg->fifo_mailbox[value(fifo_select)].RIR;
-
-  // Extract all of the information from the message frame
-  bool is_remote_request = bit_extract<mailbox_identifier::remote_request>(id);
-  uint32_t length = bit_extract<frame_length_and_info::data_length_code>(frame);
-  uint32_t format = bit_extract<mailbox_identifier::identifier_type>(id);
-
-  message.is_remote_request = is_remote_request;
-  message.length = static_cast<std::uint8_t>(length);
-
-  // Get the frame ID
-  if (format == value(mailbox_identifier::id_type::extended)) {
-    message.id = bit_extract<mailbox_identifier::extended_identifier>(id);
-  } else {
-    message.id = bit_extract<mailbox_identifier::standard_identifier>(id);
-  }
-
-  auto low_read_data = can1_reg->fifo_mailbox[value(fifo_select)].RDLR;
-  auto high_read_data = can1_reg->fifo_mailbox[value(fifo_select)].RDHR;
-
-  // Pull the bytes from RDL into the payload array
-  message.payload[0] = (low_read_data >> (0 * 8)) & 0xFF;
-  message.payload[1] = (low_read_data >> (1 * 8)) & 0xFF;
-  message.payload[2] = (low_read_data >> (2 * 8)) & 0xFF;
-  message.payload[3] = (low_read_data >> (3 * 8)) & 0xFF;
-
-  // Pull the bytes from RDH into the payload array
-  message.payload[4] = (high_read_data >> (0 * 8)) & 0xFF;
-  message.payload[5] = (high_read_data >> (1 * 8)) & 0xFF;
-  message.payload[6] = (high_read_data >> (2 * 8)) & 0xFF;
-  message.payload[7] = (high_read_data >> (3 * 8)) & 0xFF;
-
-  // Release the RX buffer and allow another buffer to be read.
-  if (fifo_select == can_peripheral_manager::fifo_assignment::fifo1) {
-    bit_modify(can1_reg->RF0R).set<fifo_status::release_output_mailbox>();
-  } else if (fifo_select == can_peripheral_manager::fifo_assignment::fifo2) {
-    bit_modify(can1_reg->RF1R).set<fifo_status::release_output_mailbox>();
-  }
-
-  return message;
-}
-
-hal::callback<can::handler> can_receive_handler{};
-
-void handler_can_interrupt()
-{
-  auto const message = read_receive_mailbox();
-  // Why is this here? Because there was an stm32f103c8 chip that may have a
-  // defect or was damaged in testing. That device was then able to set its
-  // length to 9. The actual data in the data registers were garbage data. Even
-  // if the device is damaged, its best to throw out those damaged frames then
-  // attempt to pass them to a handler that may not able to manage them.
-  if (message.length <= 8) {
-    can_receive_handler(message);
-  }
-}
-
-struct v2
-{};
-
-can_message read_receive_mailbox(v2)
-{
-  using fifo_assignment = can_peripheral_manager::fifo_assignment;
+  using fifo_assignment = can_fifo;
 
   can_message message{};
 
   uint32_t fifo0_status = can1_reg->RF0R;
   uint32_t fifo1_status = can1_reg->RF1R;
 
-  fifo_assignment fifo_select = fifo_assignment::fifo1;
+  auto fifo_select = can_fifo::select1;
 
   if (bit_extract<fifo_status::messages_pending>(fifo0_status)) {
-    fifo_select = fifo_assignment::fifo1;
+    fifo_select = can_fifo::select1;
   } else if (bit_extract<fifo_status::messages_pending>(fifo1_status)) {
-    fifo_select = fifo_assignment::fifo2;
+    fifo_select = can_fifo::select2;
   } else {
     // Error, tried to receive when there were no pending messages.
     return message;
@@ -526,9 +447,9 @@ can_message read_receive_mailbox(v2)
   message.payload[7] = (high_read_data >> (3 * 8)) & 0xFF;
 
   // Release the RX buffer and allow another buffer to be read.
-  if (fifo_select == can_peripheral_manager::fifo_assignment::fifo1) {
+  if (fifo_select == can_fifo::select1) {
     bit_modify(can1_reg->RF0R).set<fifo_status::release_output_mailbox>();
-  } else if (fifo_select == can_peripheral_manager::fifo_assignment::fifo2) {
+  } else if (fifo_select == can_fifo::select2) {
     bit_modify(can1_reg->RF1R).set<fifo_status::release_output_mailbox>();
   }
 
@@ -551,117 +472,17 @@ void bus_on()
   // Leave Initialization mode
   exit_initialization();
 }
-}  // namespace
 
-can::can(can::settings const& p_settings, can_pins p_pins)
-{
-  setup_can(static_cast<hal::u32>(p_settings.baud_rate), p_pins);
-  allow_all_acceptance_filter();  // Default behavior in the original design
-}
-
-void can::enable_self_test(bool p_enable)
-{
-  enter_initialization();
-  nonstd::scope_exit on_exit(&exit_initialization);
-
-  if (p_enable) {
-    bit_modify(can1_reg->BTR).set<bus_timing::loop_back_mode>();
-  } else {
-    bit_modify(can1_reg->BTR).clear<bus_timing::loop_back_mode>();
-  }
-}
-
-can::~can()
-{
-  hal::cortex_m::disable_interrupt(irq::can1_rx0);
-  power_off(peripheral::can1);
-}
-
-void can::driver_configure(can::settings const& p_settings)
-{
-  enter_initialization();
-  nonstd::scope_exit on_exit(&exit_initialization);
-
-  configure_baud_rate(static_cast<hal::u32>(p_settings.baud_rate));
-  allow_all_acceptance_filter();
-}
-
-void can::driver_bus_on()
-{
-  hal::stm32f1::bus_on();
-}
-
-void can::driver_send(can::message_t const& p_message)
-{
-  if (is_bus_off()) {
-    hal::safe_throw(hal::operation_not_permitted(this));
-  }
-
-  can_data_registers_t registers = convert_message_to_stm_can(p_message);
-  std::optional<hal::u8> available_mailbox{};
-
-  while (not available_mailbox) {
-    hal::u32 const status_register = can1_reg->TSR;
-    // Check if any buffer is available.
-    if (bit_extract<transmit_status::transmit_mailbox0_empty>(
-          status_register)) {
-      available_mailbox = 0;
-    } else if (bit_extract<transmit_status::transmit_mailbox1_empty>(
-                 status_register)) {
-      available_mailbox = 1;
-    } else if (bit_extract<transmit_status::transmit_mailbox2_empty>(
-                 status_register)) {
-      available_mailbox = 2;
-    }
-  }
-
-  // NOLINTNEXTLINE(bugprone-unchecked-optional-access)
-  auto& mailbox = can1_reg->transmit_mailbox[*available_mailbox];
-  // The above is removed from lint because the while loop is our check that the
-  // optional value has been set.
-
-  bit_modify(mailbox.TDTR)
-    .insert<frame_length_and_info::data_length_code>(p_message.length);
-  mailbox.TDLR = registers.data_a;
-  mailbox.TDHR = registers.data_b;
-  mailbox.TIR = registers.id;
-}
-
-void can::driver_on_receive(hal::callback<handler> p_handler)
-{
-  initialize_interrupts();
-  can_receive_handler = p_handler;
-
-  // Enable interrupt service routine.
-  cortex_m::enable_interrupt(irq::can1_rx0, handler_can_interrupt);
-  cortex_m::enable_interrupt(irq::can1_rx1, handler_can_interrupt);
-
-  bit_modify(can1_reg->IER)
-    .set<interrupt_enable_register::fifo0_message_pending>();
-  bit_modify(can1_reg->IER)
-    .set<interrupt_enable_register::fifo1_message_pending>();
-}
-}  // namespace hal::stm32f1
-
-// =============================================================================
-//
-// Split can driver code
-//
-// =============================================================================
-
-namespace hal::stm32f1 {
-namespace {
 std::span<hal::can_message> can_receive_buffer{};
 hal::u32 receive_count{};
 hal::u32 current_baud_rate = 0;
 can_interrupt::optional_receive_handler can_v2_receive_handler{};
 can_bus_manager::optional_bus_off_handler can_v2_bus_off_handler{};
-std::bitset<28> acquired_banks{};
-can_peripheral_manager::disable_ids disable_id{};
+can_disable_ids disable_id{};
 
 void handler_circular_buffer_interrupt()
 {
-  auto const message = read_receive_mailbox(v2{});
+  auto const message = read_receive_mailbox();
   // Why is this here? Because there was an stm32f103c8 chip that may have a
   // defect or was damaged in testing. That device was then able to set its
   // length to 9. The actual data in the data registers were garbage data. Even
@@ -712,62 +533,21 @@ hal::u32 extended_id_to_stm_filter(hal::u32 p_id)
                      .to<hal::u32>();
   return reg;
 }
-
-/**
- * @brief Scan through the acquired banks and return the index to an available
- * one.
- *
- * @return hal::u8 - returns the index of the filter banks that has been
- * acquired for the caller.
- * @throws hal::resource_unavailable_try_again - if no filter banks are
- * available
- */
-hal::u8 available_filter()
-{
-  for (std::size_t i = 0; i < acquired_banks.size(); i++) {
-    if (not acquired_banks.test(i)) {
-      acquired_banks.set(i);
-      return i;
-    }
-  }
-
-  hal::safe_throw(hal::resource_unavailable_try_again(nullptr));
-}
 }  // namespace
 
-can_peripheral_manager::can_peripheral_manager(hal::u32 p_baud_rate,
-                                               can_pins p_pins,
-                                               disable_ids p_disabled_ids,
-                                               bool p_self_test)
-{
-  current_baud_rate = p_baud_rate;
-  disable_id = p_disabled_ids;
-
-  setup_can(p_baud_rate, p_pins, p_self_test);
-
-  initialize_interrupts();
-
-  // Setup interrupt service routines
-  cortex_m::enable_interrupt(irq::can1_rx0, handler_circular_buffer_interrupt);
-  cortex_m::enable_interrupt(irq::can1_rx1, handler_circular_buffer_interrupt);
-  cortex_m::enable_interrupt(irq::can1_sce, handler_status_change_interrupt);
-
-  bit_modify(can1_reg->IER)
-    .set<interrupt_enable_register::fifo0_message_pending>();
-  bit_modify(can1_reg->IER)
-    .set<interrupt_enable_register::fifo1_message_pending>();
-}
-
-can_peripheral_manager::can_peripheral_manager(
+can_peripheral_manager_v2::can_peripheral_manager_v2(
+  hal::usize p_message_count,
+  std::pmr::polymorphic_allocator<> p_allocator,
   hal::u32 p_baud_rate,
   hal::steady_clock& p_clock,
   hal::time_duration p_timeout_time,
   can_pins p_pins,
-  self_test p_enable_self_test,
-  disable_ids p_disabled_ids)
+  can_self_test p_enable_self_test,
+  can_disable_ids p_disabled_ids)
+  : m_buffer(p_allocator, p_message_count)
+  , m_current_baud_rate(p_baud_rate)
+  , m_disable_id(p_disabled_ids)
 {
-  current_baud_rate = p_baud_rate;
-  disable_id = p_disabled_ids;
   setup_can(p_baud_rate, p_pins, p_enable_self_test, p_clock, p_timeout_time);
 
   initialize_interrupts();
@@ -783,7 +563,21 @@ can_peripheral_manager::can_peripheral_manager(
     .set<interrupt_enable_register::fifo1_message_pending>();
 }
 
-void can_peripheral_manager::enable_self_test(bool p_enable)
+hal::u8 can_peripheral_manager_v2::available_filter()
+{
+  for (std::size_t i = 0; i < m_acquired_banks.size(); i++) {
+    if (not m_acquired_banks.test(i)) {
+      m_acquired_banks.set(i);
+      // NOTE: This is only safe because m_acquired_banks bitset size is less
+      // than 256.
+      return static_cast<hal::u8>(i);
+    }
+  }
+
+  hal::safe_throw(hal::resource_unavailable_try_again(nullptr));
+}
+
+void can_peripheral_manager_v2::enable_self_test(bool p_enable)
 {
   enter_initialization();
   nonstd::scope_exit on_exit(&exit_initialization);
@@ -795,20 +589,28 @@ void can_peripheral_manager::enable_self_test(bool p_enable)
   }
 }
 
-can_peripheral_manager::transceiver::transceiver(
-  std::span<can_message> p_receive_buffer)
+void can_peripheral_manager_v2::bus_on()
 {
-  can_receive_buffer = p_receive_buffer;
-  receive_count = 0;
+  hal::stm32f1::bus_on();
 }
 
-u32 can_peripheral_manager::transceiver::driver_baud_rate()
+hal::u32 can_peripheral_manager_v2::baud_rate() const
 {
   return current_baud_rate;
 }
 
-void can_peripheral_manager::transceiver::driver_send(
-  can_message const& p_message)
+void can_peripheral_manager_v2::baud_rate(hal::u32 p_hertz)
+{
+  enter_initialization();
+  // Ensure we have left initialization phase so the peripheral can operate
+  // correctly. If an exception is thrown at any point, this will ensure that
+  // the can peripheral is taken out of initialization.
+  nonstd::scope_exit on_exit(&exit_initialization);
+  configure_baud_rate(p_hertz);
+  current_baud_rate = p_hertz;
+}
+
+void can_peripheral_manager_v2::send(can_message const& p_message)
 {
   if (is_bus_off()) {
     hal::safe_throw(hal::operation_not_permitted(this));
@@ -843,105 +645,24 @@ void can_peripheral_manager::transceiver::driver_send(
   mailbox.TDHR = registers.data_b;
   mailbox.TIR = registers.id;
 }
-
-std::span<can_message const>
-can_peripheral_manager::transceiver::driver_receive_buffer()
-{
-  return can_receive_buffer;
-}
-
-std::size_t can_peripheral_manager::transceiver::driver_receive_cursor()
-{
-  return receive_count % can_receive_buffer.size();
-}
-
-can_peripheral_manager::interrupt::interrupt()
-{
-  bit_modify(can1_reg->IER).set(interrupt_enable_register::bus_off);
-}
-
-void can_peripheral_manager::interrupt::driver_on_receive(
-  optional_receive_handler p_callback)
-{
-  can_v2_receive_handler = p_callback;
-}
-
-void can_peripheral_manager::bus_manager::driver_baud_rate(hal::u32 p_hertz)
-{
-  enter_initialization();
-  // Ensure we have left initialization phase so the peripheral can operate
-  // correctly. If an exception is thrown at any point, this will ensure that
-  // the can peripheral is taken out of initialization.
-  nonstd::scope_exit on_exit(&exit_initialization);
-
-  configure_baud_rate(p_hertz);
-  current_baud_rate = p_hertz;
-}
-
-void can_peripheral_manager::bus_manager::driver_filter_mode(accept)
-{
-  // this does nothing for now. We should consider dropping this in favor of
-  // always using a filter to manager message acceptance. A single mask filter
-  // with its mask set to all ZEROs would do the trick.
-}
-
-void can_peripheral_manager::bus_manager::driver_on_bus_off(
-  optional_bus_off_handler p_callback)
-{
-  can_v2_bus_off_handler = p_callback;
-}
-
-void can_peripheral_manager::bus_manager::driver_bus_on()
-{
-  bus_on();
-}
-
-can_peripheral_manager::transceiver can_peripheral_manager::acquire_transceiver(
-  std::span<can_message> p_receive_buffer)
-{
-  return can_peripheral_manager::transceiver{ p_receive_buffer };
-}
-
-can_peripheral_manager::bus_manager
-can_peripheral_manager::acquire_bus_manager()
-{
-  return can_peripheral_manager::bus_manager{};
-}
-
-can_peripheral_manager::interrupt can_peripheral_manager::acquire_interrupt()
-{
-  return can_peripheral_manager::interrupt{};
-}
-
+#if 0
 // =============================================================================
 //
 // Acquire Filters
 //
 // =============================================================================
 
-can_peripheral_manager::identifier_filter_set
-can_peripheral_manager::acquire_identifier_filter(fifo_assignment p_fifo)
+can_peripheral_manager_v2::identifier_filter_set
+can_peripheral_manager_v2::acquire_identifier_filter(fifo_assignment p_fifo)
 {
   return identifier_filter_set{ available_filter(), p_fifo };
 }
 
-can_peripheral_manager::mask_filter_set
-can_peripheral_manager::acquire_mask_filter(fifo_assignment p_fifo)
-{
-  return mask_filter_set{ available_filter(), p_fifo };
-}
-
-can_peripheral_manager::extended_identifier_filter_set
-can_peripheral_manager::acquire_extended_identifier_filter(
+can_peripheral_manager_v2::extended_identifier_filter_set
+can_peripheral_manager_v2::acquire_extended_identifier_filter(
   fifo_assignment p_fifo)
 {
   return extended_identifier_filter_set{ available_filter(), p_fifo };
-}
-
-can_peripheral_manager::extended_mask_filter
-can_peripheral_manager::acquire_extended_mask_filter(fifo_assignment p_fifo)
-{
-  return extended_mask_filter{ available_filter(), p_fifo };
 }
 
 // =============================================================================
@@ -950,78 +671,19 @@ can_peripheral_manager::acquire_extended_mask_filter(fifo_assignment p_fifo)
 //
 // =============================================================================
 
-can_peripheral_manager::mask_filter::mask_filter(filter_resource p_resource)
-  : m_resource(p_resource)
-{
-}
-
-can_peripheral_manager::identifier_filter::identifier_filter(
+can_peripheral_manager_v2::identifier_filter::identifier_filter(
   filter_resource p_resource)
   : m_resource(p_resource)
 {
 }
 
-can_peripheral_manager::extended_mask_filter::extended_mask_filter(
-  hal::u8 p_filter_index,
-  fifo_assignment p_fifo)
-  : m_filter_index(p_filter_index)
-{
-  set_filter_bank_mode(filter_bank_master_control::initialization);
-
-  // On scope exit, whether via a return or an exception, invoke this.
-  nonstd::scope_exit on_exit([p_filter_index]() {
-    // Deactivate filter initialization mode (clear bit)
-    set_filter_bank_mode(filter_bank_master_control::active);
-    set_filter_activation_state(p_filter_index, filter_activation::active);
-  });
-
-  set_filter_activation_state(p_filter_index, filter_activation::not_active);
-  set_filter_scale(p_filter_index, filter_scale::single_32_bit_scale);
-  set_filter_type(p_filter_index, filter_type::mask);
-  set_filter_fifo_assignment(p_filter_index, p_fifo);
-
-  auto const id_reg = extended_id_to_stm_filter(disable_id.extended);
-  auto const mask_reg = extended_id_to_stm_filter(0x1FFF'FFFF);
-  can1_reg->filter_registers[p_filter_index].FR1 = id_reg;
-  can1_reg->filter_registers[p_filter_index].FR2 = mask_reg;
-}
-
-can_peripheral_manager::extended_identifier_filter::extended_identifier_filter(
-  filter_resource p_resource)
+can_peripheral_manager_v2::extended_identifier_filter::
+  extended_identifier_filter(filter_resource p_resource)
   : m_resource(p_resource)
 {
 }
 
-can_peripheral_manager::mask_filter_set::mask_filter_set(hal::u8 p_filter_index,
-                                                         fifo_assignment p_fifo)
-  : filter{
-    mask_filter{ { .filter_index = p_filter_index, .word_index = 0 } },
-    mask_filter{ { .filter_index = p_filter_index, .word_index = 1 } },
-  }
-{
-  // Required to change filter scale and type
-  set_filter_bank_mode(filter_bank_master_control::initialization);
-
-  // On scope exit, whether via a return or an exception, invoke this.
-  nonstd::scope_exit on_exit([p_filter_index]() {
-    set_filter_bank_mode(filter_bank_master_control::active);
-    set_filter_activation_state(p_filter_index, filter_activation::active);
-  });
-
-  set_filter_activation_state(p_filter_index, filter_activation::not_active);
-  set_filter_scale(p_filter_index, filter_scale::dual_16_bit_scale);
-  set_filter_type(p_filter_index, filter_type::mask);
-  set_filter_fifo_assignment(p_filter_index, p_fifo);
-
-  auto const disable_id_reg = standard_id_to_stm_filter(disable_id.standard);
-  auto const disable_mask_reg = standard_id_to_stm_filter(0x1FF);
-  auto const disable_mask = (disable_mask_reg << 16) | disable_id_reg;
-
-  can1_reg->filter_registers[p_filter_index].FR1 = disable_mask;
-  can1_reg->filter_registers[p_filter_index].FR2 = disable_mask;
-}
-
-can_peripheral_manager::identifier_filter_set::identifier_filter_set(
+can_peripheral_manager_v2::identifier_filter_set::identifier_filter_set(
   hal::u8 p_filter_index,
   fifo_assignment p_fifo)
   : filter{
@@ -1051,12 +713,12 @@ can_peripheral_manager::identifier_filter_set::identifier_filter_set(
   can1_reg->filter_registers[p_filter_index].FR2 = disable_mask;
 }
 
-can_peripheral_manager::extended_identifier_filter_set::
+can_peripheral_manager_v2::extended_identifier_filter_set::
   extended_identifier_filter_set(hal::u8 p_filter_index, fifo_assignment p_fifo)
   : filter{
-    can_peripheral_manager::extended_identifier_filter{
+    can_peripheral_manager_v2::extended_identifier_filter{
       { .filter_index = p_filter_index, .word_index = 0 } },
-    can_peripheral_manager::extended_identifier_filter{
+    can_peripheral_manager_v2::extended_identifier_filter{
       { .filter_index = p_filter_index, .word_index = 1 } },
   }
 {
@@ -1086,7 +748,7 @@ can_peripheral_manager::extended_identifier_filter_set::
 //
 // =============================================================================
 
-void can_peripheral_manager::identifier_filter::driver_allow(
+void can_peripheral_manager_v2::identifier_filter::driver_allow(
   std::optional<u16> p_id)
 {
   auto const id = p_id.value_or(disable_id.standard);
@@ -1119,37 +781,7 @@ void can_peripheral_manager::identifier_filter::driver_allow(
                               filter_activation::active);
 }
 
-void can_peripheral_manager::mask_filter::driver_allow(
-  std::optional<pair> p_pair)
-{
-  auto const selected_pair = p_pair.value_or(pair{
-    .id = disable_id.standard,
-    .mask = 0x1FF,
-  });
-
-  auto& filter = can1_reg->filter_registers[m_resource.filter_index];
-
-  set_filter_activation_state(m_resource.filter_index,
-                              filter_activation::not_active);
-
-  auto const id_reg = standard_id_to_stm_filter(selected_pair.id);
-  auto const mask_reg = standard_id_to_stm_filter(selected_pair.mask);
-
-  if (m_resource.word_index == 0) {
-    hal::bit_modify(filter.FR1)
-      .insert<standard_filter_bank::sub_bank1>(id_reg)
-      .insert<standard_filter_bank::sub_bank2>(mask_reg);
-  } else {
-    hal::bit_modify(filter.FR2)
-      .insert<standard_filter_bank::sub_bank1>(id_reg)
-      .insert<standard_filter_bank::sub_bank2>(mask_reg);
-  }
-
-  set_filter_activation_state(m_resource.filter_index,
-                              filter_activation::active);
-}
-
-void can_peripheral_manager::extended_identifier_filter::driver_allow(
+void can_peripheral_manager_v2::extended_identifier_filter::driver_allow(
   std::optional<u32> p_id)
 {
   auto const id = p_id.value_or(disable_id.extended);
@@ -1170,56 +802,23 @@ void can_peripheral_manager::extended_identifier_filter::driver_allow(
                               filter_activation::active);
 }
 
-void can_peripheral_manager::extended_mask_filter::driver_allow(
-  std::optional<pair> p_pair)
-{
-  auto const selected_pair = p_pair.value_or(pair{
-    .id = disable_id.standard,
-    .mask = 0x1FFF'FFFF,
-  });
-
-  auto const id_reg = extended_id_to_stm_filter(selected_pair.id);
-  auto const mask_reg = extended_id_to_stm_filter(selected_pair.mask);
-
-  auto& filter = can1_reg->filter_registers[m_filter_index];
-
-  set_filter_activation_state(m_filter_index, filter_activation::not_active);
-  filter.FR1 = id_reg;
-  filter.FR2 = mask_reg;
-  set_filter_activation_state(m_filter_index, filter_activation::active);
-}
-
-// =============================================================================
-//
-// Filter Destructors
-//
-// =============================================================================
-
-can_peripheral_manager::~can_peripheral_manager()
-{
-  hal::cortex_m::disable_interrupt(irq::can1_rx0);
-  hal::cortex_m::disable_interrupt(irq::can1_rx1);
-  hal::cortex_m::disable_interrupt(irq::can1_sce);
-  power_off(peripheral::can1);
-}
-
-can_peripheral_manager::transceiver::~transceiver()
+can_peripheral_manager_v2::transceiver::~transceiver()
 {
   can_receive_buffer = {};
 }
 
-can_peripheral_manager::interrupt::~interrupt()
+can_peripheral_manager_v2::interrupt::~interrupt()
 {
   can_v2_receive_handler = std::nullopt;
 }
 
-can_peripheral_manager::bus_manager::~bus_manager()
+can_peripheral_manager_v2::bus_manager::~bus_manager()
 {
   can_v2_bus_off_handler = std::nullopt;
 }
 
 // NOLINTNEXTLINE(bugprone-exception-escape)
-can_peripheral_manager::identifier_filter_set::~identifier_filter_set()
+can_peripheral_manager_v2::identifier_filter_set::~identifier_filter_set()
 {
   // Free filter bank for use by a different identifier filter
   auto const index = filter[0].m_resource.filter_index;
@@ -1228,14 +827,14 @@ can_peripheral_manager::identifier_filter_set::~identifier_filter_set()
 }
 
 // NOLINTNEXTLINE(bugprone-exception-escape)
-can_peripheral_manager::mask_filter_set::~mask_filter_set()
+can_peripheral_manager_v2::mask_filter_set::~mask_filter_set()
 {
   auto const index = filter[0].m_resource.filter_index;
   acquired_banks.reset(index);
   set_filter_activation_state(index, filter_activation::not_active);
 }
 
-can_peripheral_manager::extended_identifier_filter_set::
+can_peripheral_manager_v2::extended_identifier_filter_set::
   // NOLINTNEXTLINE(bugprone-exception-escape)
   ~extended_identifier_filter_set()
 {
@@ -1245,10 +844,396 @@ can_peripheral_manager::extended_identifier_filter_set::
 }
 
 // NOLINTNEXTLINE(bugprone-exception-escape)
-can_peripheral_manager::extended_mask_filter::~extended_mask_filter()
+can_peripheral_manager_v2::extended_mask_filter::~extended_mask_filter()
 {
   // Free filter bank for use by a different identifier filter
   acquired_banks.reset(m_filter_index);
   set_filter_activation_state(m_filter_index, filter_activation::not_active);
+}
+#endif
+
+// =============================================================================
+//
+// Filter Destructors
+//
+// =============================================================================
+
+can_peripheral_manager_v2::~can_peripheral_manager_v2()
+{
+  hal::cortex_m::disable_interrupt(irq::can1_rx0);
+  hal::cortex_m::disable_interrupt(irq::can1_rx1);
+  hal::cortex_m::disable_interrupt(irq::can1_sce);
+  power_off(peripheral::can1);
+}
+
+}  // namespace hal::stm32f1
+
+namespace hal::stm32f1 {
+
+/**
+ * @brief Acquire an `hal::can_transceiver` implementation
+ *
+ * @return transceiver - object implementing the `hal::can_transceiver`
+ * interface for this can peripheral.
+ */
+hal::v5::strong_ptr<hal::can_transceiver> acquire_transceiver(
+  std::pmr::polymorphic_allocator<> p_allocator,
+  hal::v5::strong_ptr<can_peripheral_manager_v2> const& p_manager)
+{
+  struct inner_transceiver : public hal::can_transceiver
+  {
+  public:
+    explicit inner_transceiver(
+      hal::v5::strong_ptr<can_peripheral_manager_v2> const& p_manager)
+      : m_manager(p_manager)
+    {
+    }
+
+    inner_transceiver(inner_transceiver const&) = delete;
+    inner_transceiver& operator=(inner_transceiver const&) = delete;
+    inner_transceiver(inner_transceiver&&) = delete;
+    inner_transceiver& operator=(inner_transceiver&&) = delete;
+    ~inner_transceiver() override = default;
+
+  private:
+    u32 driver_baud_rate() override
+    {
+      return m_manager->baud_rate();
+    }
+
+    void driver_send(can_message const& p_message) override
+    {
+      m_manager->send(p_message);
+    }
+
+    std::span<can_message const> driver_receive_buffer() override
+    {
+      return m_manager->receive_buffer();
+    }
+
+    std::size_t driver_receive_cursor() override
+    {
+      return m_manager->receive_cursor();
+    }
+
+    hal::v5::strong_ptr<can_peripheral_manager_v2> m_manager;
+  };
+
+  return hal::v5::make_strong_ptr<inner_transceiver>(p_allocator, p_manager);
+}
+
+/**
+ * @brief Acquire an `hal::can_bus_manager` implementation
+ *
+ * @return bus_manager - object implementing the `hal::can_bus_manager`
+ * interface for this can peripheral.
+ */
+hal::v5::strong_ptr<hal::can_bus_manager> acquire_bus_manager(
+  std::pmr::polymorphic_allocator<> p_allocator,
+  hal::v5::strong_ptr<can_peripheral_manager_v2> const& p_manager)
+{
+  class bus_manager : public hal::can_bus_manager
+  {
+  public:
+    bus_manager(hal::v5::strong_ptr<can_peripheral_manager_v2> const& p_manager)
+      : m_manager(p_manager)
+    {
+      hal::static_callable<bus_manager, 0, void(void)> static_callable(
+        [this]() {
+          if (m_bus_off_handler) {
+            (*m_bus_off_handler)(hal::can_bus_manager::bus_off_tag{});
+          }
+        });
+
+      cortex_m::enable_interrupt(irq::can1_sce, static_callable.get_handler());
+    }
+    bus_manager(bus_manager const&) = delete;
+    bus_manager& operator=(bus_manager const&) = delete;
+    bus_manager(bus_manager&&) = delete;
+    bus_manager& operator=(bus_manager&&) = delete;
+    ~bus_manager() override
+    {
+      cortex_m::disable_interrupt(irq::can1_sce);
+    }
+
+  private:
+    friend class can_peripheral_manager;
+
+    void driver_baud_rate(hal::u32 p_hertz) override
+    {
+      m_manager->baud_rate(p_hertz);
+    }
+
+    void driver_filter_mode(accept) override
+    {
+      // this does nothing for now. We should consider dropping this in favor of
+      // always using a filter to manager message acceptance. A single mask
+      // filter with its mask set to all ZEROs would do the trick.
+    }
+
+    void driver_on_bus_off(optional_bus_off_handler p_callback) override
+    {
+      m_bus_off_handler = p_callback;
+    }
+
+    void driver_bus_on() override
+    {
+      m_manager->bus_on();
+    }
+
+    hal::v5::strong_ptr<can_peripheral_manager_v2> m_manager;
+    can_bus_manager::optional_bus_off_handler m_bus_off_handler{};
+  };
+
+  return hal::v5::make_strong_ptr<bus_manager>(p_allocator, p_manager);
+}
+
+/**
+ * @brief Acquire an `hal::can_interrupt` implementation
+ *
+ * @return interrupt - object implementing the `hal::can_interrupt` interface
+ * for this can peripheral.
+ */
+hal::v5::strong_ptr<hal::can_interrupt> acquire_interrupt(
+  std::pmr::polymorphic_allocator<> p_allocator,
+  hal::v5::strong_ptr<can_peripheral_manager_v2> p_manager)
+{
+  class interrupt : public hal::can_interrupt
+  {
+  public:
+    interrupt(hal::v5::strong_ptr<can_peripheral_manager> const& p_manager)
+      : m_manager(p_manager)
+    {
+    }
+    interrupt(interrupt const&) = delete;
+    interrupt& operator=(interrupt const&) = delete;
+    interrupt(interrupt&&) = delete;
+    interrupt& operator=(interrupt&&) = delete;
+    ~interrupt() override
+    {
+    }
+
+  private:
+    void driver_on_receive(optional_receive_handler p_callback) override
+    {
+      m_manager->on_receive(p_callback);
+    }
+    hal::v5::strong_ptr<can_peripheral_manager_v2> m_manager;
+  };
+
+  return hal::v5::make_strong_ptr<interrupt>(p_allocator, p_manager);
+}
+
+// /**
+//  * @brief Acquire a set of 4x standard identifier filters
+//  *
+//  * @return identifier_filter_set - A set of 4x identifier filters. When
+//  * destroyed, releases the filter resource it held on to.
+//  */
+// hal::v5::strong_ptr<can_id_filter_set> acquire_identifier_filter(
+//   std::pmr::polymorphic_allocator<> p_allocator,
+//   hal::v5::strong_ptr<can_peripheral_manager_v2> p_manager,
+//   can_fifo p_fifo)
+// {
+// }
+
+// /**
+//  * @brief Acquire a pair of two extended identifier filters
+//  *
+//  * @return extended_identifier_filter_set - A set of 2x extended identifier
+//  * filters.
+//  */
+// hal::v5::strong_ptr<can_extended_id_filter_set>
+// acquire_extended_identifier_filter(
+//   std::pmr::polymorphic_allocator<> p_allocator,
+//   hal::v5::strong_ptr<can_peripheral_manager_v2> p_manager,
+//   can_fifo p_fifo)
+// {
+// }
+
+/**
+ * @brief Acquire a pair of mask filters
+ *
+ * @param p_manager - Manager for which to extract the filter
+ * @param p_fifo - Select the FIFO to store the received message
+ * @return hal::v5::strong_ptr<can_mask_filter_set> - A set of 2x standard mask
+ * filters
+ */
+std::array<hal::v5::strong_ptr<hal::can_mask_filter>, 2> acquire_mask_filter(
+  std::pmr::polymorphic_allocator<> p_allocator,
+  hal::v5::strong_ptr<can_peripheral_manager_v2> p_manager,
+  can_fifo p_fifo)
+{
+  struct mask_filter : public hal::can_mask_filter
+  {
+    mask_filter(filter_resource p_resource)
+      : m_resource(p_resource)
+    {
+    }
+
+    void driver_allow(std::optional<pair> p_pair) override
+    {
+      auto const selected_pair = p_pair.value_or(pair{
+        .id = disable_id.standard,
+        .mask = 0x1FF,
+      });
+
+      auto& filter = can1_reg->filter_registers[m_resource.filter_index];
+
+      set_filter_activation_state(m_resource.filter_index,
+                                  filter_activation::not_active);
+
+      auto const id_reg = standard_id_to_stm_filter(selected_pair.id);
+      auto const mask_reg = standard_id_to_stm_filter(selected_pair.mask);
+
+      if (m_resource.word_index == 0) {
+        hal::bit_modify(filter.FR1)
+          .insert<standard_filter_bank::sub_bank1>(id_reg)
+          .insert<standard_filter_bank::sub_bank2>(mask_reg);
+      } else {
+        hal::bit_modify(filter.FR2)
+          .insert<standard_filter_bank::sub_bank1>(id_reg)
+          .insert<standard_filter_bank::sub_bank2>(mask_reg);
+      }
+
+      set_filter_activation_state(m_resource.filter_index,
+                                  filter_activation::active);
+    }
+
+    filter_resource m_resource;
+  };
+
+  struct mask_filter_set
+  {
+    mask_filter_set(hal::v5::strong_ptr<can_peripheral_manager_v2> p_manager,
+                    hal::u8 p_filter_index,
+                    can_fifo p_fifo)
+      :
+      : m_manager(p_manager)
+      , filter{
+        mask_filter{ { .filter_index = p_filter_index, .word_index = 0 } },
+        mask_filter{ { .filter_index = p_filter_index, .word_index = 1 } },
+      }
+    {
+      // Required to change filter scale and type
+      set_filter_bank_mode(filter_bank_master_control::initialization);
+
+      // On scope exit, whether via a return or an exception, invoke this.
+      nonstd::scope_exit on_exit([p_filter_index]() {
+        set_filter_bank_mode(filter_bank_master_control::active);
+        set_filter_activation_state(p_filter_index, filter_activation::active);
+      });
+
+      set_filter_activation_state(p_filter_index,
+                                  filter_activation::not_active);
+      set_filter_scale(p_filter_index, filter_scale::dual_16_bit_scale);
+      set_filter_type(p_filter_index, filter_type::mask);
+      set_filter_fifo_assignment(p_filter_index, p_fifo);
+
+      auto const disable_id_reg =
+        standard_id_to_stm_filter(disable_id.standard);
+      auto const disable_mask_reg = standard_id_to_stm_filter(0x1FF);
+      auto const disable_mask = (disable_mask_reg << 16) | disable_id_reg;
+
+      can1_reg->filter_registers[p_filter_index].FR1 = disable_mask;
+      can1_reg->filter_registers[p_filter_index].FR2 = disable_mask;
+    }
+
+    // NOLINTNEXTLINE(bugprone-exception-escape)
+    ~mask_filter_set()
+    {
+      auto const index = filter[0].m_resource.filter_index;
+      m_manager->m_acquired_banks.reset(index);
+      set_filter_activation_state(index, filter_activation::not_active);
+    }
+
+    hal::v5::strong_ptr<can_peripheral_manager_v2> m_manager;
+    std::array<mask_filter, 2> filter;
+  };
+
+  auto set = hal::v5::make_strong_ptr<mask_filter_set>(
+    p_allocator, p_manager, p_manager->available_filter(), p_fifo);
+
+  return {
+    hal::v5::strong_ptr<hal::can_mask_filter>(set, &set->filter[0]),
+    hal::v5::strong_ptr<hal::can_mask_filter>(set, &set->filter[1]),
+  };
+}
+
+/**
+ * @brief Acquire an extended mask filter
+ *
+ * @param p_manager - Manager for which to extract the filter
+ * @param p_fifo - Select the FIFO to store the received message
+ * @return hal::v5::strong_ptr<hal::can_extended_mask_filter> - An extended mask
+ * filter
+ */
+hal::v5::strong_ptr<hal::can_extended_mask_filter> acquire_extended_mask_filter(
+  std::pmr::polymorphic_allocator<> p_allocator,
+  hal::v5::strong_ptr<can_peripheral_manager_v2> p_manager,
+  can_fifo p_fifo)
+{
+  struct extended_mask_filter : public hal::can_extended_mask_filter
+  {
+    extended_mask_filter(
+      hal::v5::strong_ptr<can_peripheral_manager_v2> p_manager,
+      hal::u8 p_filter_index,
+      can_fifo p_fifo)
+      : m_manager(p_manager)
+      , m_filter_index(p_filter_index)
+    {
+      set_filter_bank_mode(filter_bank_master_control::initialization);
+
+      // On scope exit, whether via a return or an exception, invoke this.
+      nonstd::scope_exit on_exit([p_filter_index]() {
+        // Deactivate filter initialization mode (clear bit)
+        set_filter_bank_mode(filter_bank_master_control::active);
+        set_filter_activation_state(p_filter_index, filter_activation::active);
+      });
+
+      set_filter_activation_state(p_filter_index,
+                                  filter_activation::not_active);
+      set_filter_scale(p_filter_index, filter_scale::single_32_bit_scale);
+      set_filter_type(p_filter_index, filter_type::mask);
+      set_filter_fifo_assignment(p_filter_index, p_fifo);
+
+      auto const id_reg = extended_id_to_stm_filter(disable_id.extended);
+      auto const mask_reg = extended_id_to_stm_filter(0x1FFF'FFFF);
+      can1_reg->filter_registers[p_filter_index].FR1 = id_reg;
+      can1_reg->filter_registers[p_filter_index].FR2 = mask_reg;
+    }
+
+    void driver_allow(std::optional<pair> p_pair) override
+    {
+      auto const selected_pair = p_pair.value_or(pair{
+        .id = disable_id.standard,
+        .mask = 0x1FFF'FFFF,
+      });
+
+      auto const id_reg = extended_id_to_stm_filter(selected_pair.id);
+      auto const mask_reg = extended_id_to_stm_filter(selected_pair.mask);
+
+      auto& filter = can1_reg->filter_registers[m_filter_index];
+
+      set_filter_activation_state(m_filter_index,
+                                  filter_activation::not_active);
+      filter.FR1 = id_reg;
+      filter.FR2 = mask_reg;
+      set_filter_activation_state(m_filter_index, filter_activation::active);
+    }
+
+    ~extended_mask_filter()
+    {
+      m_manager->m_acquired_banks.reset(m_filter_index);
+      set_filter_activation_state(m_filter_index,
+                                  filter_activation::not_active);
+    }
+
+    hal::v5::strong_ptr<can_peripheral_manager_v2> m_manager;
+    hal::u8 m_filter_index;
+  };
+
+  return hal::v5::make_strong_ptr<extended_mask_filter>(
+    p_allocator, p_manager->available_filter(), p_fifo);
 }
 }  // namespace hal::stm32f1

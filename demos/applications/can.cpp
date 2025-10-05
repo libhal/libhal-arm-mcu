@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <libhal-util/can.hpp>
 #include <libhal-util/serial.hpp>
 #include <libhal-util/steady_clock.hpp>
 #include <libhal/can.hpp>
@@ -21,20 +22,19 @@
 void print_can_message(hal::serial& p_console,
                        hal::can_message const& p_message)
 {
-  hal::print<256>(p_console,
-                  "Received Message from ID: 0x%lX, length: %u \n"
-                  "payload = [ 0x%02X, 0x%02X, 0x%02X, 0x%02X, 0x%02X, "
-                  "0x%02X, 0x%02X, 0x%02X ]\n",
-                  p_message.id,
-                  p_message.length,
-                  p_message.payload[0],
-                  p_message.payload[1],
-                  p_message.payload[2],
-                  p_message.payload[3],
-                  p_message.payload[4],
-                  p_message.payload[5],
-                  p_message.payload[6],
-                  p_message.payload[7]);
+  hal::print<96>(p_console,
+                 "Received new hal::can_message { \n"
+                 "    id: 0x%lX,\n"
+                 "    length: %u \n"
+                 "    payload = [ ",
+                 p_message.id,
+                 p_message.length);
+
+  for (auto const& byte : p_message.payload) {
+    hal::print<8>(p_console, "0x%02X, ", byte);
+  }
+
+  hal::print(p_console, "]\n}\n");
 }
 
 void application()
@@ -45,6 +45,7 @@ void application()
   auto can_transceiver = resources::can_transceiver();
   auto can_bus_manager = resources::can_bus_manager();
   auto can_interrupt = resources::can_interrupt();
+  auto can_id_filter = resources::can_identifier_filter();
   auto console = resources::console();
 
   // Change the CAN baudrate here.
@@ -53,14 +54,22 @@ void application()
   hal::print(*console, "Starting CAN demo!\n");
 
   can_bus_manager->baud_rate(baudrate);
-
   can_interrupt->on_receive([&console](hal::can_interrupt::on_receive_tag,
                                        hal::can_message const& p_message) {
-    hal::print(*console, "Printing can message from interrupt!\n");
-    print_can_message(*console, p_message);
+    hal::print<64>(
+      *console, "Can message with id = 0x%lX from interrupt!\n", p_message.id);
   });
 
-  hal::u32 receive_cursor = 0;
+  hal::print<32>(*console,
+                 "Receiver buffer size = %zu\n",
+                 can_transceiver->receive_buffer().size());
+
+  constexpr auto allowed_id = 0x111;
+  can_id_filter->allow(allowed_id);
+  hal::print<64>(
+    *console, "Allowing ID [0x%lX] through the filter!\n", allowed_id);
+
+  hal::can_message_finder message_finder(*can_transceiver, 0x111);
 
   while (true) {
     using namespace std::chrono_literals;
@@ -83,9 +92,7 @@ void application()
       .id = 0x0123'4567,
       .extended = true,
       .length = 3,
-      .payload = {
-        0xAA, 0xBB, 0xCC, 0xDD, 0xDE, 0xAD, 0xBE, 0xEF,
-      },
+      .payload = { 0xAA, 0xBB, 0xCC },
     };
 
     hal::can_message extended_message2 {
@@ -93,11 +100,11 @@ void application()
       .extended = true,
       .length = 3,
       .payload = {
-        0xAA, 0xBB, 0xCC, 0xDD, 0xDE, 0xAD, 0xBE, 0xEF,
+        0xAA, 0xBB, 0xCC,
       },
     };
 
-    hal::print(*console, "Sending payload(s)...\n");
+    hal::print(*console, "Sending 4x payloads...\n");
 
     can_transceiver->send(standard_message);
     can_transceiver->send(standard_message2);
@@ -106,16 +113,9 @@ void application()
 
     hal::delay(*clock, 1s);
 
-    hal::print(*console,
-               "Printing received messages stored in circular buffer...\n");
-    auto const buffer = can_transceiver->receive_buffer();
-    auto cursor = can_transceiver->receive_cursor();
-    for (; receive_cursor != cursor;
-         receive_cursor = (receive_cursor + 1) % buffer.size()) {
-      print_can_message(*console, buffer[receive_cursor]);
-      cursor = can_transceiver->receive_cursor();
+    for (auto msg = message_finder.find(); msg.has_value();
+         msg = message_finder.find()) {
+      print_can_message(*console, *msg);
     }
-
-    hal::print(*console, "Printing done.\n\n");
   }
 }

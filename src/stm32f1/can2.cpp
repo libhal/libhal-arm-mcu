@@ -533,20 +533,20 @@ hal::v5::strong_ptr<hal::can_transceiver> acquire_can_transceiver(
   std::pmr::polymorphic_allocator<> p_allocator,
   hal::v5::strong_ptr<can_peripheral_manager_v2> const& p_manager)
 {
-  struct inner_transceiver : public hal::can_transceiver
+  struct transceiver : public hal::can_transceiver
   {
   public:
-    explicit inner_transceiver(
+    explicit transceiver(
       hal::v5::strong_ptr<can_peripheral_manager_v2> const& p_manager)
       : m_manager(p_manager)
     {
     }
 
-    inner_transceiver(inner_transceiver const&) = delete;
-    inner_transceiver& operator=(inner_transceiver const&) = delete;
-    inner_transceiver(inner_transceiver&&) = delete;
-    inner_transceiver& operator=(inner_transceiver&&) = delete;
-    ~inner_transceiver() override = default;
+    transceiver(transceiver const&) = delete;
+    transceiver& operator=(transceiver const&) = delete;
+    transceiver(transceiver&&) = delete;
+    transceiver& operator=(transceiver&&) = delete;
+    ~transceiver() override = default;
 
   private:
     u32 driver_baud_rate() override
@@ -572,7 +572,7 @@ hal::v5::strong_ptr<hal::can_transceiver> acquire_can_transceiver(
     hal::v5::strong_ptr<can_peripheral_manager_v2> m_manager;
   };
 
-  return hal::v5::make_strong_ptr<inner_transceiver>(p_allocator, p_manager);
+  return hal::v5::make_strong_ptr<transceiver>(p_allocator, p_manager);
 }
 
 /**

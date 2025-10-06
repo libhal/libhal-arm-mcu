@@ -121,7 +121,7 @@ public:
   /**
    * @brief Get can peripheral's baud rate
    *
-   * @returns hal::u32 - baud rate in hertz
+   * @return hal::u32 - baud rate in hertz
    */
   hal::u32 baud_rate() const;
 
@@ -148,11 +148,21 @@ public:
    */
   void bus_on();
 
+  /**
+   * @brief Get a view of the circular receive buffer
+   *
+   * @return std::span<can_message const> - span of received messages
+   */
   std::span<can_message const> receive_buffer()
   {
     return { m_buffer.data(), m_buffer.capacity() };
   }
 
+  /**
+   * @brief Get the current write index of the circular receive buffer
+   *
+   * @return std::size_t - current write position in the buffer
+   */
   std::size_t receive_cursor()
   {
     return m_buffer.write_index();
@@ -177,7 +187,6 @@ public:
    * otherwise, resources can be forgotten.
    *
    * @param p_filter_bank - filter to release
-   * @return hal::u8 - bank to release
    */
   void release_filter(hal::u8 p_filter_bank);
 
@@ -192,9 +201,8 @@ private:
  * @brief Acquire a `hal::can_transceiver` from the stm32f1
  * can_peripheral_manager
  *
- * @param p_allocator - allocator for the object
- * @param p_manager - stm32f1 can manager object
- * @param p_message_buffer_size - number of can messages the can transceiver
+ * @param p_allocator - allocator used to the driver
+ * @param p_manager - Manager for which to extract the can_transceiver
  * circular buffer in can hold.
  * @return hal::v5::strong_ptr<hal::can_transceiver> - can transceiver
  */
@@ -206,9 +214,8 @@ hal::v5::strong_ptr<hal::can_transceiver> acquire_can_transceiver(
  * @brief Acquire a `hal::can_bus_manager` from the stm32f1
  * can_peripheral_manager.
  *
- *
  * @param p_allocator - allocator for the object
- * @param p_manager - stm32f1 can manager object
+ * @param p_manager - Manager for which to extract the can_bus_manager
  * @return hal::v5::strong_ptr<hal::can_bus_manager>
  */
 hal::v5::strong_ptr<hal::can_bus_manager> acquire_can_bus_manager(
@@ -218,8 +225,10 @@ hal::v5::strong_ptr<hal::can_bus_manager> acquire_can_bus_manager(
 /**
  * @brief Acquire an `hal::can_interrupt` implementation
  *
- * @return interrupt - object implementing the `hal::can_interrupt` interface
- * for this can peripheral.
+ * @param p_allocator - allocator used to the driver
+ * @param p_manager - Manager for which to extract the can_interrupt
+ * @return hal::v5::strong_ptr<hal::can_interrupt> - object implementing the
+ * `hal::can_interrupt` interface for this can peripheral.
  */
 hal::v5::strong_ptr<hal::can_interrupt> acquire_can_interrupt(
   std::pmr::polymorphic_allocator<> p_allocator,
@@ -228,8 +237,12 @@ hal::v5::strong_ptr<hal::can_interrupt> acquire_can_interrupt(
 /**
  * @brief Acquire a set of 4x standard identifier filters
  *
- * @return identifier_filter_set - A set of 4x identifier filters. When
- * destroyed, releases the filter resource it held on to.
+ * @param p_allocator - allocator used to the driver
+ * @param p_manager - Manager for which to extract the filter
+ * @param p_fifo - Select the FIFO to store the received message
+ * @return std::array<hal::v5::strong_ptr<hal::can_identifier_filter>, 4> -
+ * A set of 4x identifier filters. When destroyed, releases the filter resource
+ * it held on to.
  */
 std::array<hal::v5::strong_ptr<hal::can_identifier_filter>, 4>
 acquire_can_identifier_filter(
@@ -240,8 +253,11 @@ acquire_can_identifier_filter(
 /**
  * @brief Acquire a pair of two extended identifier filters
  *
- * @return extended_identifier_filter_set - A set of 2x extended identifier
- * filters.
+ * @param p_allocator - allocator used to the driver
+ * @param p_manager - Manager for which to extract the filter
+ * @param p_fifo - Select the FIFO to store the received message
+ * @return std::array<hal::v5::strong_ptr<hal::can_extended_identifier_filter>,
+ * 2> - A set of 2x extended identifier filters.
  */
 std::array<hal::v5::strong_ptr<hal::can_extended_identifier_filter>, 2>
 acquire_can_extended_identifier_filter(
@@ -252,10 +268,11 @@ acquire_can_extended_identifier_filter(
 /**
  * @brief Acquire a pair of mask filters
  *
+ * @param p_allocator - allocator used to the driver
  * @param p_manager - Manager for which to extract the filter
  * @param p_fifo - Select the FIFO to store the received message
- * @return hal::v5::strong_ptr<can_mask_filter_set> - A set of 2x standard mask
- * filters
+ * @return std::array<hal::v5::strong_ptr<hal::can_mask_filter>, 2> - A set of
+ * 2x standard mask filters
  */
 std::array<hal::v5::strong_ptr<hal::can_mask_filter>, 2>
 acquire_can_mask_filter(
@@ -264,11 +281,12 @@ acquire_can_mask_filter(
   can_fifo p_fifo = can_fifo::select1);
 
 /**
- * @brief Acquire an extended mask filter
+ * @brief Acquire a single extended identifier mask filter
  *
+ * @param p_allocator - allocator used to the driver
  * @param p_manager - Manager for which to extract the filter
  * @param p_fifo - Select the FIFO to store the received message
- * @return hal::v5::strong_ptr<hal::can_extended_mask_filter> - An extended mask
+ * @return hal::v5::strong_ptr<hal::can_extended_mask_filter> - extended mask
  * filter
  */
 hal::v5::strong_ptr<hal::can_extended_mask_filter>

@@ -17,13 +17,15 @@
 #include <chrono>
 
 #include <libhal/can.hpp>
+#include <libhal/circular_buffer.hpp>
+#include <libhal/pointers.hpp>
 #include <libhal/steady_clock.hpp>
 #include <libhal/units.hpp>
 
 #include "pin.hpp"
 
 namespace hal::stm32f1 {
-class can final : public hal::can
+class [[deprecated]] can final : public hal::can
 {
 public:
   can(can::settings const& p_settings = {},
@@ -42,8 +44,9 @@ private:
  * @brief Peripheral manager for the sole CAN BUS port on the stm32f1xx MCU
  *
  */
-struct can_peripheral_manager final
+class [[deprecated]] can_peripheral_manager final
 {
+public:
   /**
    * @brief Named parameter for enabling self test at driver construction
    *
@@ -77,14 +80,9 @@ struct can_peripheral_manager final
    * and use those as a "disabled" filter state.
    *
    */
-
-  /// This enumeration labels the selected FIFO.
-  /// Used with CAN FIFO Assignment Register (CAN_FFA1R) (pg. 693).
   enum class fifo_assignment : std::uint8_t
   {
-    /// FIFO 1
     fifo1 = 0,
-    /// FIFO 2
     fifo2 = 1,
   };
 
@@ -102,7 +100,7 @@ struct can_peripheral_manager final
     ~transceiver() override;
 
   private:
-    friend struct can_peripheral_manager;
+    friend class can_peripheral_manager;
 
     explicit transceiver(std::span<can_message> p_receive_buffer);
 
@@ -126,7 +124,7 @@ struct can_peripheral_manager final
     ~interrupt() override;
 
   private:
-    friend struct can_peripheral_manager;
+    friend class can_peripheral_manager;
 
     interrupt();
 
@@ -147,7 +145,7 @@ struct can_peripheral_manager final
     ~bus_manager() override;
 
   private:
-    friend struct can_peripheral_manager;
+    friend class can_peripheral_manager;
 
     bus_manager() = default;
 
@@ -176,7 +174,7 @@ struct can_peripheral_manager final
     identifier_filter& operator=(identifier_filter&&) = default;
 
   private:
-    friend struct can_peripheral_manager;
+    friend class can_peripheral_manager;
 
     identifier_filter() = default;
 
@@ -213,7 +211,7 @@ struct can_peripheral_manager final
     ~identifier_filter_set();
 
   private:
-    friend struct can_peripheral_manager;
+    friend class can_peripheral_manager;
 
     explicit identifier_filter_set(hal::u8 p_filter_index,
                                    fifo_assignment p_fifo);
@@ -235,7 +233,7 @@ struct can_peripheral_manager final
       default;
 
   private:
-    friend struct can_peripheral_manager;
+    friend class can_peripheral_manager;
 
     explicit extended_identifier_filter(filter_resource p_resource);
     void driver_allow(std::optional<u32> p_id) override;
@@ -273,7 +271,7 @@ struct can_peripheral_manager final
     ~extended_identifier_filter_set();
 
   private:
-    friend struct can_peripheral_manager;
+    friend class can_peripheral_manager;
     explicit extended_identifier_filter_set(hal::u8 p_filter_index,
                                             fifo_assignment p_fifo);
   };
@@ -291,7 +289,7 @@ struct can_peripheral_manager final
     mask_filter& operator=(mask_filter&&) = default;
 
   private:
-    friend struct can_peripheral_manager;
+    friend class can_peripheral_manager;
 
     explicit mask_filter(filter_resource p_resource);
     void driver_allow(std::optional<pair> p_filter_pair) override;
@@ -318,7 +316,7 @@ struct can_peripheral_manager final
     ~mask_filter_set();
 
   private:
-    friend struct can_peripheral_manager;
+    friend class can_peripheral_manager;
     explicit mask_filter_set(hal::u8 p_filter_index, fifo_assignment p_fifo);
   };
 
@@ -338,7 +336,7 @@ struct can_peripheral_manager final
     ~extended_mask_filter() override;
 
   private:
-    friend struct can_peripheral_manager;
+    friend class can_peripheral_manager;
     explicit extended_mask_filter(hal::u8 p_filter_index,
                                   fifo_assignment p_fifo);
 
@@ -356,6 +354,9 @@ struct can_peripheral_manager final
    * disabled/enabled, but not on a sub-bank basis. So to support "disabling a
    * filter, we simply provide IDs that we expect to never appear on the CAN bus
    * and use those as a "disabled" filter state.
+   *
+   * If {0, 0} doesn't work for you, you can choose your own sentinel value as a
+   * "disable id"
    *
    */
   struct disable_ids
@@ -418,14 +419,6 @@ struct can_peripheral_manager final
   can_peripheral_manager(can_peripheral_manager&&) = delete;
   can_peripheral_manager& operator=(can_peripheral_manager&&) = delete;
 
-  /**
-   * @brief Enable/disable self test mode
-   *
-   * Self test mode allows message loopback. This mode allows messages sent from
-   * this device's can transceiver to be received back by this device.
-   *
-   * @param p_enable - enable self test mode
-   */
   void enable_self_test(bool p_enable);
 
   /**
@@ -434,6 +427,9 @@ struct can_peripheral_manager final
    * @return transceiver - object implementing the `hal::can_transceiver`
    * interface for this can peripheral.
    */
+  [[deprecated(
+    "The returned object has lifetime safety issues when moved. Please use the "
+    "`hal::acquire_transceiver(manager);` function instead.")]]
   transceiver acquire_transceiver(std::span<can_message> p_receive_buffer);
 
   /**
@@ -442,6 +438,9 @@ struct can_peripheral_manager final
    * @return bus_manager - object implementing the `hal::can_bus_manager`
    * interface for this can peripheral.
    */
+  [[deprecated(
+    "The returned object has lifetime safety issues when moved. Please use the "
+    "`hal::acquire_bus_manager(manager);` function instead.")]]
   bus_manager acquire_bus_manager();
 
   /**
@@ -450,6 +449,9 @@ struct can_peripheral_manager final
    * @return interrupt - object implementing the `hal::can_interrupt` interface
    * for this can peripheral.
    */
+  [[deprecated(
+    "The returned object has lifetime safety issues when moved. Please use the "
+    "`hal::acquire_interrupt(manager);` function instead.")]]
   interrupt acquire_interrupt();
 
   /**
@@ -458,6 +460,9 @@ struct can_peripheral_manager final
    * @return identifier_filter_set - A set of 4x identifier filters. When
    * destroyed, releases the filter resource it held on to.
    */
+  [[deprecated(
+    "The returned object has lifetime safety issues when moved. Please use the "
+    "`hal::acquire_identifier_filter(manager);` function instead.")]]
   identifier_filter_set acquire_identifier_filter(
     fifo_assignment p_fifo = fifo_assignment::fifo1);
 
@@ -467,6 +472,9 @@ struct can_peripheral_manager final
    * @return extended_identifier_filter_set - A set of 2x extended identifier
    * filters.
    */
+  [[deprecated(
+    "The returned object has lifetime safety issues when moved. Please use the "
+    "`hal::acquire_extended_identifier_filter(manager);` function instead.")]]
   extended_identifier_filter_set acquire_extended_identifier_filter(
     fifo_assignment p_fifo = fifo_assignment::fifo1);
 
@@ -475,6 +483,9 @@ struct can_peripheral_manager final
    *
    * @return mask_filter_set - A set of 2x standard mask filters
    */
+  [[deprecated(
+    "The returned object has lifetime safety issues when moved. Please use the "
+    "`hal::acquire_mask_filter(manager);` function instead.")]]
   mask_filter_set acquire_mask_filter(
     fifo_assignment p_fifo = fifo_assignment::fifo1);
 
@@ -483,6 +494,9 @@ struct can_peripheral_manager final
    *
    * @return extended_mask_filter - An extended mask filter
    */
+  [[deprecated(
+    "The returned object has lifetime safety issues when moved. Please use the "
+    "`hal::acquire_extended_mask_filter(manager);` function instead.")]]
   extended_mask_filter acquire_extended_mask_filter(
     fifo_assignment p_fifo = fifo_assignment::fifo1);
 

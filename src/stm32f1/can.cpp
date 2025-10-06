@@ -38,6 +38,11 @@
 #include "pin.hpp"
 #include "power.hpp"
 
+// This is needed to allow backwards compatibility with previous versions of the
+// can APIs.
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+
 namespace hal::stm32f1 {
 namespace {
 /// Enable/Disable controller modes
@@ -534,6 +539,23 @@ can_message read_receive_mailbox(v2)
 
   return message;
 }
+
+void bus_on()
+{
+  constexpr auto bus_off_mask = error_status_register::bus_off;
+  bool const bus_off = bit_extract<bus_off_mask>(can1_reg->ESR);
+
+  if (not bus_off) {
+    return;  // nothing to do here, return
+  }
+
+  // RM0008 page 670 states that bus off can be recovered from by entering and
+  // Request to enter initialization mode
+  enter_initialization();
+
+  // Leave Initialization mode
+  exit_initialization();
+}
 }  // namespace
 
 can::can(can::settings const& p_settings, can_pins p_pins)
@@ -571,12 +593,7 @@ void can::driver_configure(can::settings const& p_settings)
 
 void can::driver_bus_on()
 {
-  // RM0008 page 670 states that bus off can be recovered from by entering and
-  // Request to enter initialization mode
-  enter_initialization();
-
-  // Leave Initialization mode
-  exit_initialization();
+  hal::stm32f1::bus_on();
 }
 
 void can::driver_send(can::message_t const& p_message)
@@ -881,19 +898,7 @@ void can_peripheral_manager::bus_manager::driver_on_bus_off(
 
 void can_peripheral_manager::bus_manager::driver_bus_on()
 {
-  constexpr auto bus_off_mask = error_status_register::bus_off;
-  bool const bus_off = bit_extract<bus_off_mask>(can1_reg->ESR);
-
-  if (not bus_off) {
-    return;  // nothing to do here, return
-  }
-
-  // RM0008 page 670 states that bus off can be recovered from by entering and
-  // Request to enter initialization mode
-  enter_initialization();
-
-  // Leave Initialization mode
-  exit_initialization();
+  bus_on();
 }
 
 can_peripheral_manager::transceiver can_peripheral_manager::acquire_transceiver(
@@ -1252,3 +1257,5 @@ can_peripheral_manager::extended_mask_filter::~extended_mask_filter()
   set_filter_activation_state(m_filter_index, filter_activation::not_active);
 }
 }  // namespace hal::stm32f1
+
+#pragma GCC diagnostic pop

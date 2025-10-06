@@ -108,6 +108,7 @@ libhal_test_and_make_library(
 
   # stm32f1
   tests/stm32f1/can.test.cpp
+  tests/stm32f1/can2.test.cpp
   tests/stm32f1/output_pin.test.cpp
   tests/stm32f1/uart.test.cpp
   tests/stm32f1/spi.test.cpp

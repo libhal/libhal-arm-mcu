@@ -38,6 +38,11 @@
 #include "pin.hpp"
 #include "power.hpp"
 
+// This is needed to allow backwards compatibility with previous versions of the
+// can APIs.
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+
 namespace hal::stm32f1 {
 namespace {
 /// Enable/Disable controller modes
@@ -1252,3 +1257,5 @@ can_peripheral_manager::extended_mask_filter::~extended_mask_filter()
   set_filter_activation_state(m_filter_index, filter_activation::not_active);
 }
 }  // namespace hal::stm32f1
+
+#pragma GCC diagnostic pop

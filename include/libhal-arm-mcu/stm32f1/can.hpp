@@ -14,9 +14,7 @@
 
 #pragma once
 
-#include <bitset>
 #include <chrono>
-#include <memory_resource>
 
 #include <libhal/can.hpp>
 #include <libhal/circular_buffer.hpp>
@@ -27,7 +25,7 @@
 #include "pin.hpp"
 
 namespace hal::stm32f1 {
-class can final : public hal::can
+class [[deprecated]] can final : public hal::can
 {
 public:
   can(can::settings const& p_settings = {},
@@ -46,7 +44,7 @@ private:
  * @brief Peripheral manager for the sole CAN BUS port on the stm32f1xx MCU
  *
  */
-class can_peripheral_manager final
+class [[deprecated]] can_peripheral_manager final
 {
 public:
   /**

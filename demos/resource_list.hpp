@@ -79,7 +79,6 @@ hal::v5::strong_ptr<hal::output_pin> status_led();
 hal::v5::strong_ptr<hal::can_transceiver> can_transceiver();
 hal::v5::strong_ptr<hal::can_bus_manager> can_bus_manager();
 hal::v5::strong_ptr<hal::can_interrupt> can_interrupt();
-hal::v5::strong_ptr<hal::can_identifier_filter> can_identifier_filter();
 hal::v5::strong_ptr<hal::adc> adc();
 hal::v5::strong_ptr<hal::input_pin> input_pin();
 hal::v5::strong_ptr<hal::i2c> i2c();

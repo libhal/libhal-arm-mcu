@@ -90,6 +90,8 @@ hal::v5::strong_ptr<hal::pwm16_channel> pwm_channel();
 hal::v5::strong_ptr<hal::pwm_group_manager> pwm_frequency();
 hal::v5::strong_ptr<hal::spi> spi();
 hal::v5::strong_ptr<hal::output_pin> spi_chip_select();
+hal::v5::strong_ptr<hal::output_pin> cs_pin();
+hal::v5::strong_ptr<hal::output_pin> dc_pin();
 hal::v5::strong_ptr<hal::stream_dac_u8> stream_dac();
 hal::v5::strong_ptr<hal::dac> dac();
 hal::v5::strong_ptr<custom::watchdog> watchdog();

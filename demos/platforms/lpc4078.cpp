@@ -119,6 +119,15 @@ hal::v5::strong_ptr<hal::spi> spi()
 {
   return hal::v5::make_strong_ptr<hal::lpc40::dma_spi>(driver_allocator(), 2);
 }
+hal::v5::strong_ptr<hal::output_pin> cs_pin()
+{
+  return hal::v5::make_strong_ptr<hal::lpc40::output_pin>(driver_allocator(), 1, 22);
+}
+
+hal::v5::strong_ptr<hal::output_pin> dc_pin()
+{
+  return hal::v5::make_strong_ptr<hal::lpc40::output_pin>(driver_allocator(), 1, 25);
+}
 hal::v5::strong_ptr<hal::output_pin> spi_chip_select()
 {
   return hal::v5::make_strong_ptr<hal::lpc40::output_pin>(

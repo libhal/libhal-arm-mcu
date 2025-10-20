@@ -117,7 +117,7 @@ hal::v5::strong_ptr<hal::can_identifier_filter> can_identifier_filter()
 
 hal::v5::strong_ptr<hal::spi> spi()
 {
-  return hal::v5::make_strong_ptr<hal::lpc40::dma_spi>(driver_allocator(), 2);
+  return hal::v5::make_strong_ptr<hal::lpc40::dma_spi>(driver_allocator(), 1);
 }
 hal::v5::strong_ptr<hal::output_pin> cs_pin()
 {

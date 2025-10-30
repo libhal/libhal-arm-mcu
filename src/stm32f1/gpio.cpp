@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 #include <bit>
+#include <libhal/pointers.hpp>
 #include <optional>
 
 #include <libhal-arm-mcu/stm32f1/constants.hpp>
@@ -294,5 +295,25 @@ cortex_m::irq_t gpio_manager::interrupt::get_irq()
     default:
       return static_cast<cortex_m::irq_t>(irq::exti15_10);
   }
+}
+
+hal::v5::strong_ptr<hal::input_pin> acquire_input_pin(
+  std::pmr::polymorphic_allocator<> p_allocator,
+  hal::v5::strong_ptr<gpio_manager> const& p_manager,
+  u8 p_pin,
+  input_pin::settings const& p_settings)
+{
+  return hal::v5::make_strong_ptr<gpio_manager::input>(
+    p_allocator, p_manager->acquire_input_pin(p_pin, p_settings));
+}
+
+hal::v5::strong_ptr<hal::output_pin> acquire_output_pin(
+  std::pmr::polymorphic_allocator<> p_allocator,
+  hal::v5::strong_ptr<gpio_manager> const& p_manager,
+  u8 p_pin,
+  output_pin::settings const& p_settings)
+{
+  return hal::v5::make_strong_ptr<gpio_manager::output>(
+    p_allocator, p_manager->acquire_output_pin(p_pin, p_settings));
 }
 }  // namespace hal::stm32f1

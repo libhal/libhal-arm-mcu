@@ -18,6 +18,8 @@
 #include <libhal/input_pin.hpp>
 #include <libhal/interrupt_pin.hpp>
 #include <libhal/output_pin.hpp>
+#include <libhal/pointers.hpp>
+#include <memory_resource>
 
 #include "constants.hpp"
 #include "pin.hpp"
@@ -60,6 +62,18 @@ public:
     interrupt_pin::settings const& p_settings = {});
 
 private:
+  friend hal::v5::strong_ptr<hal::input_pin> acquire_input_pin(
+    std::pmr::polymorphic_allocator<> p_allocator,
+    hal::v5::strong_ptr<gpio_manager> p_manager,
+    u8 p_pin,
+    input_pin::settings const& p_settings);
+
+  friend hal::v5::strong_ptr<hal::output_pin> acquire_output_pin(
+    std::pmr::polymorphic_allocator<> p_allocator,
+    hal::v5::strong_ptr<gpio_manager> p_manager,
+    u8 p_pin,
+    output_pin::settings const& p_settings);
+
   gpio_manager(peripheral p_select);
   peripheral m_port;
 };
@@ -103,6 +117,13 @@ public:
 
 private:
   friend class gpio_manager;
+
+  friend hal::v5::strong_ptr<hal::input_pin> acquire_input_pin(
+    std::pmr::polymorphic_allocator<> p_allocator,
+    hal::v5::strong_ptr<gpio_manager> p_manager,
+    u8 p_pin,
+    input_pin::settings const& p_settings);
+
   input(peripheral p_port, u8 p_pin, settings const& p_settings);
 
   void driver_configure(settings const& p_settings) override;
@@ -122,6 +143,12 @@ public:
 
 private:
   friend class gpio_manager;
+
+  friend hal::v5::strong_ptr<hal::output_pin> acquire_output_pin(
+    std::pmr::polymorphic_allocator<> p_allocator,
+    hal::v5::strong_ptr<gpio_manager> p_manager,
+    u8 p_pin,
+    output_pin::settings const& p_settings);
 
   output(peripheral p_port, u8 p_pin, settings const& p_settings);
 
@@ -155,4 +182,60 @@ private:
   pin_select m_pin;
 };
 
+/**
+ * @brief Acquire an input pin from a gpio port
+ *
+ * Input pins returned from this API are not considered consumed by the manager.
+ * Thus an exception representing an exhausted resource is not thrown. This
+ * allows the caller to acquire the same pin multiple times if they wish,
+ * without error. The only consequence is the generation of additional ref
+ * counted control blocks for each instance. To conserve memory, it is better to
+ * acquire the pin once and pass that around to multiple readers.
+ *
+ * @param p_allocator - allocator used to allocate the memory for the object
+ * @param p_manager - the manager for the gpio port to acquire an input pin
+ * from. For example, if you want pin A1, you will need the manager for port A
+ * and pass the number `1` to parameter `p_pin`.
+ * @param p_pin - The pin number to acquire from this port
+ * @param p_settings - initial settings for the input pin.
+ * @return hal::v5::strong_ptr<hal::input_pin> - input pin acquired from gpio
+ * port.
+ */
+hal::v5::strong_ptr<hal::input_pin> acquire_input_pin(
+  std::pmr::polymorphic_allocator<> p_allocator,
+  hal::v5::strong_ptr<gpio_manager> const& p_manager,
+  u8 p_pin,
+  input_pin::settings const& p_settings = {});
+
+/**
+ * @brief Acquire an output pin from a gpio port
+ *
+ * Output pins returned from this API are considered consumed by the manager.
+ * This means that only one instance of an output pin from this gpio manager can
+ * be acquired at a time. Attempting to create two instances of the same output
+ * pin, having two writers to that peripheral, will result in the exception
+ * `hal::device_or_resource_busy` being called with the instance value set to
+ * the gpio_manager's address.
+ *
+ * @param p_allocator - allocator used to allocate the memory for the object
+ * @param p_manager - the manager for the gpio port to acquire an output pin
+ * from. For example, if you want pin A1, you will need the manager for port A
+ * and pass the number `1` to parameter `p_pin`
+ * @param p_pin - The pin number to acquire from this port
+ * @param p_settings - initial settings for the output pin
+ * @return hal::v5::strong_ptr<hal::output_pin> - output pin acquired from gpio
+ * port.
+ * @throw hal::device_or_resource_busy - if the output pin was already acquired
+ * somewhere else in the program.
+ */
+hal::v5::strong_ptr<hal::output_pin> acquire_output_pin(
+  std::pmr::polymorphic_allocator<> p_allocator,
+  hal::v5::strong_ptr<gpio_manager> const& p_manager,
+  u8 p_pin,
+  output_pin::settings const& p_settings = {});
 }  // namespace hal::stm32f1
+
+namespace hal {
+using stm32f1::acquire_input_pin;
+using stm32f1::acquire_output_pin;
+}  // namespace hal

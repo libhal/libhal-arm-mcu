@@ -58,20 +58,38 @@ std::pmr::polymorphic_allocator<> driver_allocator()
   return &resource;
 }
 
-auto& gpio_a()
+hal::v5::optional_ptr<hal::stm32f1::gpio<st_peripheral::gpio_a>> gpio_a_ptr;
+hal::v5::optional_ptr<hal::stm32f1::gpio<st_peripheral::gpio_b>> gpio_b_ptr;
+hal::v5::optional_ptr<hal::stm32f1::gpio<st_peripheral::gpio_c>> gpio_c_ptr;
+
+hal::v5::strong_ptr<hal::stm32f1::gpio<st_peripheral::gpio_a>> gpio_a()
 {
-  static hal::stm32f1::gpio<st_peripheral::gpio_a> gpio;
-  return gpio;
+  if (not gpio_a_ptr) {
+    gpio_a_ptr =
+      hal::v5::make_strong_ptr<hal::stm32f1::gpio<st_peripheral::gpio_a>>(
+        driver_allocator());
+  }
+  return gpio_a_ptr;
 }
-auto& gpio_b()
+
+hal::v5::strong_ptr<hal::stm32f1::gpio<st_peripheral::gpio_b>> gpio_b()
 {
-  static hal::stm32f1::gpio<st_peripheral::gpio_b> gpio;
-  return gpio;
+  if (not gpio_b_ptr) {
+    gpio_b_ptr =
+      hal::v5::make_strong_ptr<hal::stm32f1::gpio<st_peripheral::gpio_b>>(
+        driver_allocator());
+  }
+  return gpio_b_ptr;
 }
-auto& gpio_c()
+
+hal::v5::strong_ptr<hal::stm32f1::gpio<st_peripheral::gpio_c>> gpio_c()
 {
-  static hal::stm32f1::gpio<st_peripheral::gpio_c> gpio;
-  return gpio;
+  if (not gpio_c_ptr) {
+    gpio_c_ptr =
+      hal::v5::make_strong_ptr<hal::stm32f1::gpio<st_peripheral::gpio_c>>(
+        driver_allocator());
+  }
+  return gpio_c_ptr;
 }
 
 hal::v5::optional_ptr<hal::cortex_m::dwt_counter> clock_ptr;
@@ -209,9 +227,7 @@ hal::v5::optional_ptr<hal::output_pin> led_ptr;
 hal::v5::strong_ptr<hal::output_pin> status_led()
 {
   if (not led_ptr) {
-    auto led = gpio_c().acquire_output_pin(13);
-    led_ptr = hal::v5::make_strong_ptr<decltype(led)>(driver_allocator(),
-                                                      std::move(led));
+    led_ptr = hal::acquire_output_pin(driver_allocator(), gpio_c(), 13);
   }
   return led_ptr;
 }
@@ -225,15 +241,19 @@ hal::v5::strong_ptr<hal::adc> adc()
 
 hal::v5::strong_ptr<hal::i2c> i2c()
 {
-  static auto sda_output_pin = gpio_b().acquire_output_pin(7);
-  static auto scl_output_pin = gpio_b().acquire_output_pin(6);
+  // TODO(#167): Use a version of bit_bang_i2c that accepts strong_ptr's
+  static auto sda_output_pin =
+    hal::acquire_output_pin(driver_allocator(), gpio_b(), 7);
+  static auto scl_output_pin =
+    hal::acquire_output_pin(driver_allocator(), gpio_b(), 6);
   auto clock = resources::clock();
-  return hal::v5::make_strong_ptr<hal::bit_bang_i2c>(driver_allocator(),
-                                                     hal::bit_bang_i2c::pins{
-                                                       .sda = &sda_output_pin,
-                                                       .scl = &scl_output_pin,
-                                                     },
-                                                     *clock);
+  return hal::v5::make_strong_ptr<hal::bit_bang_i2c>(
+    driver_allocator(),
+    hal::bit_bang_i2c::pins{
+      .sda = &(*sda_output_pin),
+      .scl = &(*scl_output_pin),
+    },
+    *clock);
 }
 
 hal::v5::strong_ptr<hal::spi> spi()
@@ -249,14 +269,12 @@ hal::v5::strong_ptr<hal::spi> spi()
 
 hal::v5::strong_ptr<hal::output_pin> spi_chip_select()
 {
-  return hal::v5::make_strong_ptr<decltype(gpio_a().acquire_output_pin(4))>(
-    driver_allocator(), gpio_a().acquire_output_pin(4));
+  return hal::acquire_output_pin(driver_allocator(), gpio_a(), 4);
 }
 
 hal::v5::strong_ptr<hal::input_pin> input_pin()
 {
-  return hal::v5::make_strong_ptr<decltype(gpio_b().acquire_input_pin(4))>(
-    driver_allocator(), gpio_b().acquire_input_pin(4));
+  return hal::acquire_input_pin(driver_allocator(), gpio_b(), 4);
 }
 
 auto& timer1()

@@ -481,7 +481,8 @@ public:
     static_assert(Peripheral == peripheral::timer1 or
                     Peripheral == peripheral::timer8,
                   "Only timer1 and timer8 are advanced timers");
-    return hal::v5::make_strong_ptr<advanced_timer<Peripheral>>(m_allocator);
+    return hal::v5::make_strong_ptr<hal::stm32f1::advanced_timer<Peripheral>>(
+      m_allocator);
   }
 
   template<peripheral Peripheral>
@@ -495,8 +496,8 @@ public:
         Peripheral == peripheral::timer12 or
         Peripheral == peripheral::timer13 or Peripheral == peripheral::timer14,
       "Only timer2-5 and timer9-14 are general purpose timers");
-    return hal::v5::make_strong_ptr<general_purpose_timer<Peripheral>>(
-      m_allocator);
+    return hal::v5::make_strong_ptr<
+      hal::stm32f1::general_purpose_timer<Peripheral>>(m_allocator);
   }
 
   template<peripheral Peripheral>
@@ -596,7 +597,7 @@ void initialize_platform2()
   auto gpio_a = stm32f1->gpio<st_peripherals::gpio_a>();
   auto gpio_b = stm32f1->gpio<st_peripherals::gpio_b>();
   auto usb = stm32f1->usb(steady_clock);
-#if 0
+#if 1
   // Claude: Desired initialization code
   auto led = gpio_a->output_pin(13);
   auto sda_output_pin = gpio_b->output_pin(7);

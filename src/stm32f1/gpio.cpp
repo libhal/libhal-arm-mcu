@@ -13,6 +13,7 @@
 // limitations under the License.
 #include <bit>
 #include <libhal/pointers.hpp>
+#include <memory_resource>
 #include <optional>
 
 #include <libhal-arm-mcu/stm32f1/constants.hpp>
@@ -315,5 +316,30 @@ hal::v5::strong_ptr<hal::output_pin> acquire_output_pin(
 {
   return hal::v5::make_strong_ptr<gpio_manager::output>(
     p_allocator, p_manager->acquire_output_pin(p_pin, p_settings));
+}
+
+hal::v5::strong_ptr<gpio_manager::input> gpio_manager::input_pin(
+  u8 p_pin,
+  input_pin::settings const& p_settings)
+{
+  return hal::v5::make_strong_ptr<gpio_manager::input>(
+    std::pmr::new_delete_resource(),
+    this->acquire_input_pin(p_pin, p_settings));
+}
+hal::v5::strong_ptr<gpio_manager::output> gpio_manager::output_pin(
+  u8 p_pin,
+  output_pin::settings const& p_settings)
+{
+  return hal::v5::make_strong_ptr<gpio_manager::output>(
+    std::pmr::new_delete_resource(),
+    this->acquire_output_pin(p_pin, p_settings));
+}
+hal::v5::strong_ptr<gpio_manager::interrupt> gpio_manager::interrupt_pin(
+  u8 p_pin,
+  interrupt_pin::settings const& p_settings)
+{
+  return hal::v5::make_strong_ptr<gpio_manager::interrupt>(
+    std::pmr::new_delete_resource(),
+    this->acquire_interrupt_pin(p_pin, p_settings));
 }
 }  // namespace hal::stm32f1

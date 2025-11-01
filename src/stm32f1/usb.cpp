@@ -1061,4 +1061,40 @@ usb_bulk_endpoint_pair acquire_usb_bulk_endpoint(
 
   return { .out = out, .in = in };
 }
+
+hal::v5::strong_ptr<hal::v5::usb::control_endpoint> usb::control_endpoint()
+{
+  return hal::v5::make_strong_ptr<hal::stm32f1::control_endpoint>(
+    std::pmr::new_delete_resource(), strong_from_this());
+}
+
+usb_interrupt_endpoint_pair usb::interrupt_endpoint()
+{
+  auto const endpoint_assignment = m_endpoints_allocated++;
+
+  auto out = hal::v5::make_strong_ptr<
+    out_endpoint<hal::v5::usb::interrupt_out_endpoint>>(
+    std::pmr::new_delete_resource(), strong_from_this(), endpoint_assignment);
+
+  auto in =
+    hal::v5::make_strong_ptr<in_endpoint<hal::v5::usb::interrupt_in_endpoint>>(
+      std::pmr::new_delete_resource(), strong_from_this(), endpoint_assignment);
+
+  return { .out = out, .in = in };
+}
+
+usb_bulk_endpoint_pair usb::bulk_endpoint()
+{
+  auto const endpoint_assignment = m_endpoints_allocated++;
+
+  auto out =
+    hal::v5::make_strong_ptr<out_endpoint<hal::v5::usb::bulk_out_endpoint>>(
+      std::pmr::new_delete_resource(), strong_from_this(), endpoint_assignment);
+
+  auto in =
+    hal::v5::make_strong_ptr<in_endpoint<hal::v5::usb::bulk_in_endpoint>>(
+      std::pmr::new_delete_resource(), strong_from_this(), endpoint_assignment);
+
+  return { .out = out, .in = in };
+}
 }  // namespace hal::stm32f1

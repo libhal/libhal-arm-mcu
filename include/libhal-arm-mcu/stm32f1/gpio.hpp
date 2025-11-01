@@ -32,7 +32,7 @@ namespace hal::stm32f1 {
  * class `gpio<peripheral>` class.
  *
  */
-class gpio_manager
+class gpio_manager : public hal::v5::enable_strong_from_this<gpio_manager>
 {
 public:
   template<peripheral select>
@@ -58,6 +58,16 @@ public:
   output acquire_output_pin(u8 p_pin,
                             output_pin::settings const& p_settings = {});
   interrupt acquire_interrupt_pin(
+    u8 p_pin,
+    interrupt_pin::settings const& p_settings = {});
+
+  hal::v5::strong_ptr<input> input_pin(
+    u8 p_pin,
+    input_pin::settings const& p_settings = {});
+  hal::v5::strong_ptr<output> output_pin(
+    u8 p_pin,
+    output_pin::settings const& p_settings = {});
+  hal::v5::strong_ptr<interrupt> interrupt_pin(
     u8 p_pin,
     interrupt_pin::settings const& p_settings = {});
 

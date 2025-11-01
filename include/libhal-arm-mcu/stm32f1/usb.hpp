@@ -62,7 +62,7 @@ struct usb_bulk_endpoint_pair
  * In order to acquire USB endpoint resources, this class must be constructed
  * successfully.
  */
-class usb
+class usb : public hal::v5::enable_strong_from_this<usb>
 {
 public:
   using ctrl_receive_tag = hal::v5::usb::control_endpoint::on_receive_tag;
@@ -90,6 +90,10 @@ public:
   usb(usb&&) = delete;
   usb operator=(usb&&) = delete;
   ~usb();
+
+  hal::v5::strong_ptr<hal::v5::usb::control_endpoint> control_endpoint();
+  usb_interrupt_endpoint_pair interrupt_endpoint();
+  usb_bulk_endpoint_pair bulk_endpoint();
 
 private:
   void interrupt_handler() noexcept;

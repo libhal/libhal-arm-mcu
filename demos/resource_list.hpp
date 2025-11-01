@@ -32,6 +32,7 @@
 #include <libhal/timer.hpp>
 #include <libhal/usb.hpp>
 #include <libhal/zero_copy_serial.hpp>
+#include <memory_resource>
 
 namespace custom {
 /**
@@ -64,9 +65,9 @@ namespace resources {
  * memory is fixed in size and memory cannot be deallocated. This is fine for
  * the demos.
  *
- * @return std::pmr::polymorphic_allocator<>
+ * @return std::pmr::memory_resource*
  */
-std::pmr::polymorphic_allocator<> driver_allocator();
+std::pmr::memory_resource* driver_allocator();
 /**
  * @brief Steady clock that provides the current uptime
  *

@@ -53,7 +53,7 @@ std::pmr::monotonic_buffer_resource resource(driver_memory.data(),
                                              driver_memory.size(),
                                              std::pmr::null_memory_resource());
 
-std::pmr::polymorphic_allocator<> driver_allocator()
+std::pmr::memory_resource* driver_allocator()
 {
   return &resource;
 }
@@ -439,6 +439,187 @@ hal::v5::strong_ptr<custom::watchdog> watchdog()
 }
 
 }  // namespace resources
+
+namespace hal::stm32f1 {
+class manager
+{
+public:
+  manager(hal::v5::strong_ptr_only_token,
+          std::pmr::polymorphic_allocator<> p_allocator)
+    : m_allocator(p_allocator)
+  {
+  }
+
+  manager(manager&) = delete;
+  auto& operator=(manager const&) = delete;
+  manager(manager&&) = delete;
+  auto& operator=(manager&&) = delete;
+
+  void reconfigure_clocks(hal::stm32f1::clock_tree const& p_clock_configuration)
+  {
+    hal::stm32f1::configure_clocks(p_clock_configuration);
+  }
+
+  template<peripheral Peripheral>
+  hal::v5::strong_ptr<hal::stm32f1::gpio<Peripheral>> gpio()
+  {
+    return hal::v5::make_strong_ptr<hal::stm32f1::gpio<Peripheral>>(
+      m_allocator);
+  }
+
+  hal::v5::strong_ptr<hal::stm32f1::usb> usb(
+    hal::v5::strong_ptr<hal::steady_clock> const& p_clock,
+    hal::time_duration p_write_timeout = std::chrono::milliseconds(100))
+  {
+    return hal::v5::make_strong_ptr<hal::stm32f1::usb>(
+      m_allocator, p_clock, p_write_timeout);
+  }
+
+  template<peripheral Peripheral>
+  hal::v5::strong_ptr<advanced_timer<Peripheral>> advanced_timer()
+  {
+    static_assert(Peripheral == peripheral::timer1 or
+                    Peripheral == peripheral::timer8,
+                  "Only timer1 and timer8 are advanced timers");
+    return hal::v5::make_strong_ptr<advanced_timer<Peripheral>>(m_allocator);
+  }
+
+  template<peripheral Peripheral>
+  hal::v5::strong_ptr<general_purpose_timer<Peripheral>> general_purpose_timer()
+  {
+    static_assert(
+      Peripheral == peripheral::timer2 or Peripheral == peripheral::timer3 or
+        Peripheral == peripheral::timer4 or Peripheral == peripheral::timer5 or
+        Peripheral == peripheral::timer9 or Peripheral == peripheral::timer10 or
+        Peripheral == peripheral::timer11 or
+        Peripheral == peripheral::timer12 or
+        Peripheral == peripheral::timer13 or Peripheral == peripheral::timer14,
+      "Only timer2-5 and timer9-14 are general purpose timers");
+    return hal::v5::make_strong_ptr<general_purpose_timer<Peripheral>>(
+      m_allocator);
+  }
+
+  template<peripheral Peripheral>
+  hal::v5::strong_ptr<hal::stm32f1::adc<Peripheral>> adc(
+    hal::basic_lock& p_lock)
+  {
+    static_assert(Peripheral == peripheral::adc1 or
+                    Peripheral == peripheral::adc2 or
+                    Peripheral == peripheral::adc3,
+                  "Only adc1, adc2, and adc3 are valid ADC peripherals");
+    return hal::v5::make_strong_ptr<hal::stm32f1::adc<Peripheral>>(m_allocator,
+                                                                   p_lock);
+  }
+
+  template<peripheral Peripheral>
+  hal::v5::strong_ptr<hal::stm32f1::usart<Peripheral>> usart()
+  {
+    static_assert(
+      Peripheral == peripheral::usart1 or Peripheral == peripheral::usart2 or
+        Peripheral == peripheral::usart3,
+      "Only usart1, usart2, and usart3 are valid USART peripherals");
+    return hal::v5::make_strong_ptr<hal::stm32f1::usart<Peripheral>>(
+      m_allocator);
+  }
+
+  hal::v5::strong_ptr<hal::stm32f1::can_peripheral_manager_v2> can(
+    hal::usize p_message_count,
+    hal::u32 p_baud_rate,
+    hal::steady_clock& p_clock,
+    hal::time_duration p_timeout_time = std::chrono::milliseconds(1),
+    hal::stm32f1::can_pins p_pins = hal::stm32f1::can_pins::pa11_pa12,
+    hal::stm32f1::can_self_test p_enable_self_test =
+      hal::stm32f1::can_self_test::off)
+  {
+    return hal::v5::make_strong_ptr<hal::stm32f1::can_peripheral_manager_v2>(
+      m_allocator,
+      p_message_count,
+      m_allocator,
+      p_baud_rate,
+      p_clock,
+      p_timeout_time,
+      p_pins,
+      p_enable_self_test);
+  }
+
+  template<std::uint8_t BusNumber>
+  hal::v5::strong_ptr<hal::stm32f1::spi> spi(
+    hal::spi::settings const& p_settings = {})
+  {
+    static_assert(BusNumber >= 1 and BusNumber <= 3,
+                  "STM32F1 only supports SPI bus numbers 1-3");
+    return hal::v5::make_strong_ptr<hal::stm32f1::spi>(
+      m_allocator, hal::bus<BusNumber>, p_settings);
+  }
+
+  hal::v5::strong_ptr<hal::cortex_m::dwt_counter> dwt_counter()
+  {
+    auto cpu_frequency = hal::stm32f1::frequency(hal::stm32f1::peripheral::cpu);
+    return hal::v5::make_strong_ptr<hal::cortex_m::dwt_counter>(m_allocator,
+                                                                cpu_frequency);
+  }
+
+private:
+  friend hal::v5::strong_ptr<manager> init(
+    std::pmr::memory_resource* p_allocator,
+    std::optional<hal::stm32f1::clock_tree> p_clock_configuration);
+  std::pmr::polymorphic_allocator<> m_allocator;
+};
+
+hal::v5::strong_ptr<manager> init(
+  std::pmr::memory_resource* p_allocator,
+  std::optional<hal::stm32f1::clock_tree> p_clock_configuration = std::nullopt)
+{
+  if (p_clock_configuration) {
+    hal::stm32f1::configure_clocks(*p_clock_configuration);
+  }
+  return hal::v5::make_strong_ptr<manager>(p_allocator, p_allocator);
+}
+}  // namespace hal::stm32f1
+
+template<typename T>
+hal::v5::strong_ptr<T> track_lifetime(
+  std::pmr::polymorphic_allocator<> p_allocator,
+  T&& p_obj)
+{
+  return hal::v5::make_strong_ptr<T>(p_allocator, std::forward<T>(p_obj));
+}
+
+void initialize_platform2()
+{
+  using namespace hal::literals;
+  using st_peripherals = hal::stm32f1::peripheral;
+  hal::set_terminate(resources::terminate_handler);
+  // Set the MCU to the maximum clock speed
+  auto stm32f1 = hal::stm32f1::init(resources::driver_allocator());
+  auto steady_clock = stm32f1->dwt_counter();
+  auto gpio_a = stm32f1->gpio<st_peripherals::gpio_a>();
+  auto gpio_b = stm32f1->gpio<st_peripherals::gpio_b>();
+  auto usb = stm32f1->usb(steady_clock);
+#if 0
+  // Claude: Desired initialization code
+  auto led = gpio_a->output_pin(13);
+  auto sda_output_pin = gpio_b->output_pin(7);
+  auto scl_output_pin = gpio_b->output_pin(6);
+  auto control_endpoint = usb->control_endpoint();
+  auto serial_data_ep = usb->bulk_endpoint();
+  auto status_ep = usb->interrupt_endpoint();
+#else
+  // Claude: Necessary code due to the current APIs
+  auto led = track_lifetime(resources::driver_allocator(),
+                            gpio_a->acquire_output_pin(13));
+  auto sda_output_pin = track_lifetime(resources::driver_allocator(),
+                                       gpio_b->acquire_output_pin(7));
+  auto scl_output_pin = track_lifetime(resources::driver_allocator(),
+                                       gpio_b->acquire_output_pin(6));
+  auto ctrl_ep =
+    hal::acquire_usb_control_endpoint(resources::driver_allocator(), usb);
+  auto serial_data_ep =
+    hal::acquire_usb_bulk_endpoint(resources::driver_allocator(), usb);
+  auto status_ep =
+    hal::acquire_usb_interrupt_endpoint(resources::driver_allocator(), usb);
+#endif
+}
 
 void initialize_platform()
 {

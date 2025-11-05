@@ -591,6 +591,7 @@ void initialize_platform2()
   using namespace hal::literals;
   using st_peripherals = hal::stm32f1::peripheral;
   hal::set_terminate(resources::terminate_handler);
+
   // Set the MCU to the maximum clock speed
   auto stm32f1 = hal::stm32f1::init(resources::driver_allocator());
   auto steady_clock = stm32f1->dwt_counter();

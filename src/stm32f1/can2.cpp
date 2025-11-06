@@ -607,7 +607,6 @@ hal::v5::strong_ptr<hal::can_bus_manager> acquire_can_bus_manager(
     ~bus_manager() override
     {
       cortex_m::disable_interrupt(irq::can1_sce);
-      m_bus_off_handler = std::nullopt;
     }
 
   private:

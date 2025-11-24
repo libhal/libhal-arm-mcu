@@ -481,8 +481,13 @@ void can_peripheral_manager_v2::send(can_message const& p_message)
 
   can_data_registers_t const registers = convert_message_to_stm_can(p_message);
   std::optional<hal::u8> available_mailbox{};
+  i8 count_limit = 10;
 
   while (not available_mailbox) {
+    if (count_limit <= 0) {
+      hal::safe_throw(hal::resource_unavailable_try_again(this));
+    }
+
     hal::u32 const status_register = can1_reg->TSR;
     // Check if any buffer is available.
     if (bit_extract<transmit_status::transmit_mailbox0_empty>(
@@ -495,6 +500,8 @@ void can_peripheral_manager_v2::send(can_message const& p_message)
                  status_register)) {
       available_mailbox = 2;
     }
+
+    count_limit--;
   }
 
   // NOLINTNEXTLINE(bugprone-unchecked-optional-access)

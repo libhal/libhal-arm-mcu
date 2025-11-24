@@ -591,14 +591,18 @@ void initialize_platform2()
   using namespace hal::literals;
   using st_peripherals = hal::stm32f1::peripheral;
   hal::set_terminate(resources::terminate_handler);
-
+  [[maybe_unused]] auto constexpr v2 =
+    sizeof(stdext::inplace_function<void(void), 0>);
+  [[maybe_unused]] auto constexpr v3 =
+    sizeof(stdext::inplace_function_detail::vtable<void, int>);
+  [[maybe_unused]] auto constexpr v = sizeof(hal::callback<void(void)>);
   // Set the MCU to the maximum clock speed
   auto stm32f1 = hal::stm32f1::init(resources::driver_allocator());
   auto steady_clock = stm32f1->dwt_counter();
   auto gpio_a = stm32f1->gpio<st_peripherals::gpio_a>();
   auto gpio_b = stm32f1->gpio<st_peripherals::gpio_b>();
   auto usb = stm32f1->usb(steady_clock);
-#if 1
+#if 0
   // Claude: Desired initialization code
   auto led = gpio_a->output_pin(13);
   auto sda_output_pin = gpio_b->output_pin(7);
@@ -658,3 +662,16 @@ void initialize_platform()
 
   hal::stm32f1::release_jtag_pins();
 }
+
+template<typename R, typename... Args>
+class callback
+{
+public:
+  R operator()(Args... args)
+  {
+    return driver_inoke(std::forward<Args>(args)...);
+  }
+
+private:
+  virtual R driver_inoke(Args... args) = 0;
+};

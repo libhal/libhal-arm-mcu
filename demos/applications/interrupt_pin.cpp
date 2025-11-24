@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <libhal/functional.hpp>
 #include <resource_list.hpp>
 
 void application()
@@ -19,6 +20,7 @@ void application()
   auto led = resources::status_led();
   auto button = resources::interrupt_pin();
 
+  auto constexpr v = sizeof(hal::callback<void(void)>);
   led->level(false);
   button->configure({});
 

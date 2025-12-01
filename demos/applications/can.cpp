@@ -17,13 +17,14 @@
 #include <libhal-util/steady_clock.hpp>
 #include <libhal/can.hpp>
 
+#include <libhal/error.hpp>
 #include <resource_list.hpp>
 
 void print_can_message(hal::serial& p_console,
                        hal::can_message const& p_message)
 {
   hal::print<96>(p_console,
-                 "Received new hal::can_message { \n"
+                 "📩 Received new hal::can_message { \n"
                  "    id: 0x%lX,\n"
                  "    length: %u \n"
                  "    payload = [ ",
@@ -51,7 +52,7 @@ void application()
   // Change the CAN baudrate here.
   static constexpr auto baudrate = 100.0_kHz;
 
-  hal::print(*console, "Starting CAN demo!\n");
+  hal::print(*console, "🚀 Starting CAN demo!\n");
 
   can_bus_manager->baud_rate(baudrate);
   can_interrupt->on_receive([&console](hal::can_interrupt::on_receive_tag,
@@ -67,7 +68,7 @@ void application()
   constexpr auto allowed_id = 0x111;
   can_id_filter->allow(allowed_id);
   hal::print<64>(
-    *console, "Allowing ID [0x%lX] through the filter!\n", allowed_id);
+    *console, "🆔 Allowing ID [0x%lX] through the filter!\n", allowed_id);
 
   hal::can_message_finder message_finder(*can_transceiver, 0x111);
 
@@ -104,12 +105,19 @@ void application()
       },
     };
 
-    hal::print(*console, "Sending 4x payloads...\n");
+    hal::print(*console, "📮 Sending 4x payloads...\n");
 
-    can_transceiver->send(standard_message);
-    can_transceiver->send(standard_message2);
-    can_transceiver->send(extended_message);
-    can_transceiver->send(extended_message2);
+    try {
+      can_transceiver->send(standard_message);
+      can_transceiver->send(standard_message2);
+      can_transceiver->send(extended_message);
+      can_transceiver->send(extended_message2);
+    } catch (hal::resource_unavailable_try_again const&) {
+      hal::print(
+        *console,
+        "❌ CAN messages are not getting acknowledged by the bus! Trying "
+        "again...\n");
+    }
 
     hal::delay(*clock, 1s);
 

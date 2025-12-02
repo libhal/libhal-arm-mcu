@@ -12,7 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include <libhal-exceptions/control.hpp>
+#include <cstdio>
+#include <exception>
+
 #include <libhal-util/serial.hpp>
 #include <libhal-util/steady_clock.hpp>
 
@@ -32,7 +34,25 @@ extern "C"
   void __assert_func()  // NOLINT
   {
   }
+
+  void abort()
+  {
+    while (true) {
+      continue;
+    }
+  }
 }
+
+#if 0
+// Stub stderr for libunwind/C++ runtime
+FILE* const stderr = nullptr;
+#endif
+
+std::terminate_handler __wrap___cxa_terminate_handler = []() {
+  while (true) {
+    continue;
+  }
+};
 
 // Override global new operator
 void* operator new(std::size_t)

@@ -14,7 +14,9 @@
  * limitations under the License.
  */
 
-__flash = 0x08000000;
+__boot_flash = 0x08000000;
+__boot_flash_size = 0x40;
+__flash = 0x08000000 + 0x40;
 __flash_size = 64K;
 __ram = 0x20000000;
 __ram_size = 10K;

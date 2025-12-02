@@ -35,3 +35,18 @@ int main()
 
   return static_cast<int>(uptime);
 }
+
+#if __GCC__ && __EABI_ARM___
+// Stub stderr for libunwind/C++ runtime
+FILE* const stderr = nullptr;
+
+extern "C"
+{
+  void _exit(int)
+  {
+    while (true) {
+      continue;
+    }
+  }
+}
+#endif

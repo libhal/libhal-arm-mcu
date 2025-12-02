@@ -14,6 +14,11 @@
 
 #include <resource_list.hpp>
 
+unsigned volatile counter = 0;
+
 void application()
 {
+  while (true) {
+    counter = counter + 1;
+  }
 }

@@ -37,23 +37,10 @@ libhal_build_demos(
 
   PACKAGES
   minimp3
-  # libhal-exceptions
 
   INCLUDES
   .
 
   LINK_LIBRARIES
   minimp3::minimp3
-  # libhal::exceptions
-
-  LINK_FLAGS
-  -nostartfiles
-  -lcrt0-semihost
-  -lsemihost
-  # -Wl,--wrap=abort_message
-  # -Wl,--wrap=_Z28demangling_terminate_handlerv
-  # -Wl,--wrap=_Z30demangling_unexpected_handlerv
-  # -Wl,--wrap=__cxa_demangle
-  -Wl,--wrap=__cxa_terminate_handler
-
 )

@@ -27,54 +27,21 @@ int main()
   std::terminate();
 }
 
-// libhal-arm-mcu specific APIs defined to reduce code size
-extern "C"
-{
-  // This gets rid of an issue with libhal-exceptions in Debug mode.
-  void __assert_func()  // NOLINT
-  {
-  }
-
-  void abort()
-  {
-    while (true) {
-      continue;
-    }
-  }
-
-  struct _reent* _impure_ptr = nullptr;
-  // void _exit(int)  // NOLINT
-  // {
-  // }
-}
-
-#if 0
-// Stub stderr for libunwind/C++ runtime
-FILE* const stderr = nullptr;
-
-#endif
-
-std::terminate_handler __wrap___cxa_terminate_handler = []() {
-  while (true) {
-    continue;
-  }
-};
-
 // Override global new operator
 void* operator new(std::size_t)
 {
-  throw std::bad_alloc();
+  std::terminate();
 }
 
 // Override global new[] operator
 void* operator new[](std::size_t)
 {
-  throw std::bad_alloc();
+  std::terminate();
 }
 
 void* operator new(unsigned int, std::align_val_t)
 {
-  throw std::bad_alloc();
+  std::terminate();
 }
 
 // Override global delete operator

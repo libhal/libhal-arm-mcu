@@ -14,10 +14,12 @@
  * limitations under the License.
  */
 
-__flash = 0x00000000;
-__flash_size = 64K;
-__ram = 0x10000000;
-__ram_size = 8K;
-__stack_size = 1K;
+__boot_flash = __libhal_flash;
+__boot_flash_size = 0x40;
+__flash = __libhal_flash + __boot_flash_size;
+__flash_size = __libhal_flash_size - __boot_flash_size;
+__ram = __libhal_ram;
+__ram_size = __libhal_ram_size;
+__stack_size = __libhal_stack_size;
 
 INCLUDE picolibcpp.ld

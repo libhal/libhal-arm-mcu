@@ -15,6 +15,7 @@
 # limitations under the License.
 
 from conan import ConanFile
+from pathlib import Path
 import os
 
 
@@ -38,6 +39,8 @@ class libhal_arm_mcu_conan(ConanFile):
     python_requires_extend = "libhal-bootstrap.library"
 
     options = {
+        # This option does nothing currently. In the future libhal exceptions
+        # will be brought back into this library when it is complete
         "use_libhal_exceptions": [True, False],
         "use_picolibc": [True, False],
         "platform": ["ANY"],
@@ -58,9 +61,6 @@ class libhal_arm_mcu_conan(ConanFile):
         self.requires("scope-lite/0.2.0")
 
         if self.settings.os == "baremetal" and self.settings.compiler == "gcc":
-            if self.options.use_libhal_exceptions:
-                self.requires(
-                    "libhal-exceptions/[^1.1.1]", transitive_headers=True)
             if self.options.use_picolibc:
                 compiler_version = str(self.settings.compiler.version)
                 self.requires("prebuilt-picolibc/" + compiler_version)
@@ -86,7 +86,11 @@ class libhal_arm_mcu_conan(ConanFile):
             "libhal::stm32f1",
             "libhal::stm32f4",
         ])
-        self.cpp_info.exelinkflags = []
+        # Needed to override LLVM's global terminate handler
+        self.cpp_info.exelinkflags = [
+            "-Wl,--wrap=__cxa_terminate_handler",
+            "-Wl,--wrap=_ZN10__cxxabiv119__terminate_handlerE",
+        ]
 
         platform = str(self.options.platform)
         self.buildenv_info.define("LIBHAL_PLATFORM", platform)
@@ -96,8 +100,8 @@ class libhal_arm_mcu_conan(ConanFile):
                 self.options.use_default_linker_script):
             # If the platform matches the linker script, just use that linker
             # script
-            self.cpp_info.exelinkflags = [
-                "-L" + os.path.join(self.package_folder, "linker_scripts")]
+            self.cpp_info.exelinkflags.append(
+                "-L" + str(Path(self.package_folder) / "linker_scripts"))
 
             full_linker_path = os.path.join(
                 self.package_folder, "linker_scripts", platform + ".ld")

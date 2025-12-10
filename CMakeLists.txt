@@ -20,6 +20,10 @@ libhal_test_and_make_library(
   LIBRARY_NAME libhal-arm-mcu
 
   SOURCES
+  # Exceptions code size reducer
+  src/terminate_handler.cpp
+
+  # cortex_m
   src/system_controller.cpp
   src/dwt_counter.cpp
   src/interrupt.cpp

@@ -41,11 +41,17 @@ extern "C"
       continue;
     }
   }
+
+  struct _reent* _impure_ptr = nullptr;
+  // void _exit(int)  // NOLINT
+  // {
+  // }
 }
 
 #if 0
 // Stub stderr for libunwind/C++ runtime
 FILE* const stderr = nullptr;
+
 #endif
 
 std::terminate_handler __wrap___cxa_terminate_handler = []() {

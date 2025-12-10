@@ -36,8 +36,7 @@ microcontrollers, you'll need to install both the ARM GNU toolchain and the ARM
 MCU profiles.
 
 ```bash
-conan config install -sf conan/profiles/v1 -tf profiles https://github.com/libhal/arm-gnu-toolchain.git
-conan config install -sf conan/profiles/v1 -tf profiles https://github.com/libhal/libhal-arm-mcu.git
+conan config install https://github.com/libhal/conan-config2.git
 ```
 
 The first command installs the ARM GNU compiler profiles, while the second adds
@@ -53,20 +52,19 @@ ARM microcontrollers.
 To build demos, start at the root of the repo and execute the following command:
 
 ```bash
-conan build demos -pr lpc4078 -s arm-gcc-12.3
+conan build demos -pr hal/mcu/lpc4078 -s hal/tc/arm-gcc
 ```
 
 This will build the demos for the `lpc4078` microcontroller in `MinSizeRel`
 mode. Replace `lpc4078` with any of the other complete profiles found in the
-`./conan/profiles/v1/`. An example of an incomplete profiles do not match an
-exact device such as `lpc40` or `stm32f1` which are used to build full
-profiles. You can also select the compiler you want to use with the
-`arm-gcc-12.3` compiler flag.
+`profiles/hal/mcu`. You must also supply the compiler you plan to use.
+`hal/tc/arm-gcc` is the currently support ARM GCC compiler for libhal which is
+set to `14.3`
 
 Add the flag `-s build_type=Debug` to build in debug mode:
 
 ```bash
-conan build demos -pr lpc4078 -s arm-gcc-12.3 -s build_type=Debug
+conan build demos -pr hal/mcu/lpc4078 -s hal/tc/arm-gcc -s build_type=Debug
 ```
 
 Build type `Debug`, `MinSizeRel`, and `Release` are all available.

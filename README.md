@@ -319,17 +319,31 @@ Coming soon...
 In one terminal:
 
 ```bash
-pyocd gdbserver --target=lpc4088 --persist
+pyocd gdbserver --target=lpc4088 --persist --semihost
 ```
 
 In another terminal:
 
 ```bash
-arm-none-eabi-gdb demos/build/lpc4078/blinker.elf -ex "target remote :3333"
+arm-none-eabi-gdb demos/build/lpc4078/blinker.elf -ex "target remote :3333" -ex "set mem inaccessible-by-default off"
 ```
 
 Replace `demos/build/lpc4078/blinker.elf` with the path to the elf file you'd
 like to use for the debugging session.
+
+> [!tip]
+> If you get this error:
+>
+> ```plaintext
+> Program received signal SIGTRAP, Trace/breakpoint trap.
+> 0x08002840 in sys_semihost ()
+> ```
+>
+> It means semihosting is not enabled but a semihost function has been
+> executed. This usually means that the `--semihost` argument was not added to
+> the `pyocd` command. To fix this, you can restart your `pyocd` session with
+> the argument OR you can enter `monitor arm semihosting enable` in GDB and
+> then continue debugging using the `continue` command.
 
 ### Using OpenOCD
 

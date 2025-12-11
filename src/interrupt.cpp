@@ -270,3 +270,66 @@ void initialize_interrupts(std::span<interrupt_pointer> p_vector_table)
   enable_all_interrupts();
 }
 }  // namespace hal::cortex_m
+
+// Single version for ALL Cortex-M processors
+extern "C"
+{
+  /**
+   * @brief Hard fault handler that gracefully handles semihosting breakpoints
+   *
+   * This handler overrides picolibc's default hard fault handler to detect and
+   * skip semihosting BKPT instructions when no debugger is attached. Without
+   * this handler, applications linked with semihosting libraries will hang in
+   * an infinite loop when executed standalone.
+   *
+   * The handler checks if a hard fault was caused by a debug event (BKPT
+   * instruction). If so, it:
+   * 1. Clears the hard fault status
+   * 2. Advances the program counter past the BKPT instruction (2 bytes)
+   * 3. Sets R0 to -1 to indicate the semihosting operation failed
+   * 4. Returns to continue execution
+   *
+   * If the fault was caused by something other than a BKPT, the handler enters
+   * an infinite loop to halt execution, indicating a real hard fault condition.
+   *
+   * This implementation is based on SEGGER's hard fault handler reference:
+   * https://kb.segger.com/Arm_Cortex-M_interrupts
+   *
+   * Modified to use ARMv6-M (Cortex-M0) compatible instructions, making it
+   * compatible with all Cortex-M variants (M0/M0+/M1/M3/M4/M7/M23/M33/M55/M85).
+   *
+   * @note This handler is wrapped via linker flag -Wl,--wrap=arm_hardfault_isr
+   *       to override picolibc's default implementation.
+   */
+  __attribute__((naked)) void __wrap_arm_hardfault_isr(void)  // NOLINT
+  {
+    __asm volatile(
+      // Works on all Cortex-M variants
+      "   movs   r0, #4                     \n"
+      "   mov    r1, lr                     \n"
+      "   tst    r0, r1                     \n"
+      "   beq    .use_msp                   \n"
+      "   mrs    r0, psp                    \n"
+      "   b      .check_debug               \n"
+      ".use_msp:                            \n"
+      "   mrs    r0, msp                    \n"
+      ".check_debug:                        \n"
+      "   ldr    r1, =0xE000ED2C            \n"
+      "   ldr    r2, [r1]                   \n"
+      "   lsls   r2, r2, #1                 \n"
+      ".hardfault_loop:                     \n"
+      "   bcc    .hardfault_loop            \n"
+      "   ldr    r2, [r1]                   \n"
+      "   str    r2, [r1]                   \n"
+      "   ldr    r1, [r0, #24]              \n"
+      "   adds   r1, #2                     \n"
+      "   str    r1, [r0, #24]              \n"
+      "   movs   r1, #1                     \n"
+      "   negs   r1, r1                     \n"
+      "   str    r1, [r0, #0]               \n"
+      "   bx     lr                         \n"
+      :
+      :
+      : "memory");
+  }
+}  // extern "C"

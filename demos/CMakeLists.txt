@@ -43,4 +43,7 @@ libhal_build_demos(
 
   LINK_LIBRARIES
   minimp3::minimp3
+
+  LINK_FLAGS
+  -Wl,--wrap=arm_hardfault_isr
 )

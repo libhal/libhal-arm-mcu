@@ -54,10 +54,6 @@ class libhal_arm_mcu_conan(ConanFile):
         "use_default_linker_script": True,
     }
 
-    def configure(self):
-        # Signal to llvm-toolchain to disable semihosting for applications
-        self.conf["user.libhal:disable_semihosting"] = True
-
     def requirements(self):
         self.requires("libhal/[^4.18.0]", transitive_headers=True)
         self.requires("libhal-util/[^5.8.1]", transitive_headers=True)
@@ -95,10 +91,26 @@ class libhal_arm_mcu_conan(ConanFile):
             "libhal::stm32f1",
             "libhal::stm32f4",
         ])
-        # Needed to override LLVM's global terminate handler
+
         self.cpp_info.exelinkflags = [
+            # Overrides the terminate handler from LLVM
+            # This results in a large reduction in binary size since this
+            # terminate handler renders text and that text rendering is
+            # expensive.
             "-Wl,--wrap=__cxa_terminate_handler",
+            # Override the terminate handler for GCC.
+            # This results in a large reduction in binary size since this
+            # terminate handler renders text and that text rendering is
+            # expensive.
             "-Wl,--wrap=_ZN10__cxxabiv119__terminate_handlerE",
+            # Override picolibc's default hard fault handler to gracefully
+            # handle semihosting BKPT instructions when no debugger is attached.
+            # Without this, binaries linked with semihosting libraries will
+            # hang in an infinite loop if executed without a debugger. This
+            # wrapper detects BKPT-induced faults, skips the instruction, and
+            # allows execution to continue, enabling test packages to link
+            # successfully while allowing applications to run standalone.
+            "-Wl,--wrap=arm_hardfault_isr"
         ]
 
         platform = str(self.options.platform)

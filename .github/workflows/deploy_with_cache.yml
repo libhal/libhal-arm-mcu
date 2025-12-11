@@ -66,7 +66,7 @@ jobs:
       - name: 📤 Upload conan package cache
         uses: actions/upload-artifact@v4
         with:
-          name: conan-packages
+          name: conan-packages-${{ replace(inputs.compiler_profile, '/', '_') }}
           path: conan-packages.tar.gz
           retention-days: 1
 
@@ -100,7 +100,7 @@ jobs:
       - name: 📥 Download conan package cache
         uses: actions/download-artifact@v4
         with:
-          name: conan-packages
+          name: conan-packages-${{ replace(inputs.compiler_profile, '/', '_') }}
           path: .
 
       - name: 📦 Extract conan packages tarball
@@ -116,6 +116,7 @@ jobs:
         run: conan create . -s:h build_type=Release -s:h os=baremetal -s:h arch=cortex-m3 --version=${{ inputs.version }} -pr:h ${{ inputs.compiler_profile }} --build=missing
 
       - name: 📡 Sign into JFrog Artifactory
+        if: ${{ inputs.version != 'latest' }}
         env:
           PASSWORD: ${{ secrets.JFROG_LIBHAL_TRUNK_ID_TOKEN }}
           JFROG_USER: ${{ secrets.JFROG_LIBHAL_TRUNK_ID_TOKEN_USER }}
@@ -154,7 +155,7 @@ jobs:
       - name: 📥 Download conan package cache
         uses: actions/download-artifact@v4
         with:
-          name: conan-packages
+          name: conan-packages-${{ replace(inputs.compiler_profile, '/', '_') }}
           path: .
 
       - name: 📦 Extract conan packages tarball
@@ -170,6 +171,7 @@ jobs:
         run: conan create . -s:h build_type=Release -s:h os=baremetal -s:h arch=cortex-m4 --version=${{ inputs.version }} -pr:h ${{ inputs.compiler_profile }} --build=missing
 
       - name: 📡 Sign into JFrog Artifactory
+        if: ${{ inputs.version != 'latest' }}
         env:
           PASSWORD: ${{ secrets.JFROG_LIBHAL_TRUNK_ID_TOKEN }}
           JFROG_USER: ${{ secrets.JFROG_LIBHAL_TRUNK_ID_TOKEN_USER }}
@@ -208,7 +210,7 @@ jobs:
       - name: 📥 Download conan package cache
         uses: actions/download-artifact@v4
         with:
-          name: conan-packages
+          name: conan-packages-${{ replace(inputs.compiler_profile, '/', '_') }}
           path: .
 
       - name: 📦 Extract conan packages tarball
@@ -224,6 +226,7 @@ jobs:
         run: conan create . -s:h build_type=Release -s:h os=baremetal -s:h arch=cortex-m4f --version=${{ inputs.version }} -pr:h ${{ inputs.compiler_profile }} --build=missing
 
       - name: 📡 Sign into JFrog Artifactory
+        if: ${{ inputs.version != 'latest' }}
         env:
           PASSWORD: ${{ secrets.JFROG_LIBHAL_TRUNK_ID_TOKEN }}
           JFROG_USER: ${{ secrets.JFROG_LIBHAL_TRUNK_ID_TOKEN_USER }}

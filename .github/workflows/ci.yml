@@ -20,7 +20,7 @@ jobs:
       arch: cortex-m0
       os: baremetal
       compiler: gcc
-      compiler_version: 12.3
+      compiler_version: 14.3
       compiler_package: arm-gnu-toolchain
     secrets: inherit
 
@@ -30,7 +30,7 @@ jobs:
       arch: cortex-m0plus
       os: baremetal
       compiler: gcc
-      compiler_version: 12.3
+      compiler_version: 14.3
       compiler_package: arm-gnu-toolchain
     secrets: inherit
 
@@ -40,7 +40,7 @@ jobs:
       arch: cortex-m1
       os: baremetal
       compiler: gcc
-      compiler_version: 12.3
+      compiler_version: 14.3
       compiler_package: arm-gnu-toolchain
     secrets: inherit
 
@@ -50,7 +50,7 @@ jobs:
       arch: cortex-m3
       os: baremetal
       compiler: gcc
-      compiler_version: 12.3
+      compiler_version: 14.3
       compiler_package: arm-gnu-toolchain
     secrets: inherit
 
@@ -60,7 +60,7 @@ jobs:
       arch: cortex-m4
       os: baremetal
       compiler: gcc
-      compiler_version: 12.3
+      compiler_version: 14.3
       compiler_package: arm-gnu-toolchain
     secrets: inherit
 
@@ -70,7 +70,7 @@ jobs:
       arch: cortex-m4f
       os: baremetal
       compiler: gcc
-      compiler_version: 12.3
+      compiler_version: 14.3
       compiler_package: arm-gnu-toolchain
     secrets: inherit
 
@@ -78,7 +78,7 @@ jobs:
     uses: libhal/ci/.github/workflows/demo_builder.yml@5.x.y
     with:
       compiler_profile_url: https://github.com/libhal/arm-gnu-toolchain.git
-      compiler_profile: v1/arm-gcc-12.3
+      compiler_profile: v1/arm-gcc-14.3
       platform_profile_url: .
       platform_profile: v1/lpc4074
     secrets: inherit
@@ -87,7 +87,7 @@ jobs:
     uses: libhal/ci/.github/workflows/demo_builder.yml@5.x.y
     with:
       compiler_profile_url: https://github.com/libhal/arm-gnu-toolchain.git
-      compiler_profile: v1/arm-gcc-12.3
+      compiler_profile: v1/arm-gcc-14.3
       platform_profile_url: .
       platform_profile: v1/lpc4078
     secrets: inherit
@@ -96,7 +96,7 @@ jobs:
     uses: libhal/ci/.github/workflows/demo_builder.yml@5.x.y
     with:
       compiler_profile_url: https://github.com/libhal/arm-gnu-toolchain.git
-      compiler_profile: v1/arm-gcc-12.3
+      compiler_profile: v1/arm-gcc-14.3
       platform_profile_url: .
       platform_profile: v1/stm32f103c8
     secrets: inherit
@@ -105,7 +105,7 @@ jobs:
     uses: libhal/ci/.github/workflows/demo_builder.yml@5.x.y
     with:
       compiler_profile_url: https://github.com/libhal/arm-gnu-toolchain.git
-      compiler_profile: v1/arm-gcc-12.3
+      compiler_profile: v1/arm-gcc-14.3
       platform_profile_url: .
       platform_profile: v1/stm32f411re
     secrets: inherit

@@ -13,7 +13,7 @@ jobs:
       version: ${{ github.ref_name }}
       os: baremetal
       compiler: gcc
-      compiler_version: 12.3
+      compiler_version: 14.3
       compiler_package: arm-gnu-toolchain
     secrets: inherit
 
@@ -24,7 +24,7 @@ jobs:
       version: ${{ github.ref_name }}
       os: baremetal
       compiler: gcc
-      compiler_version: 12.3
+      compiler_version: 14.3
       compiler_package: arm-gnu-toolchain
     secrets: inherit
 
@@ -35,7 +35,7 @@ jobs:
       version: ${{ github.ref_name }}
       os: baremetal
       compiler: gcc
-      compiler_version: 12.3
+      compiler_version: 14.3
       compiler_package: arm-gnu-toolchain
     secrets: inherit
 
@@ -46,7 +46,7 @@ jobs:
       version: ${{ github.ref_name }}
       os: baremetal
       compiler: gcc
-      compiler_version: 12.3
+      compiler_version: 14.3
       compiler_package: arm-gnu-toolchain
     secrets: inherit
 
@@ -57,7 +57,7 @@ jobs:
       version: ${{ github.ref_name }}
       os: baremetal
       compiler: gcc
-      compiler_version: 12.3
+      compiler_version: 14.3
       compiler_package: arm-gnu-toolchain
     secrets: inherit
 
@@ -68,6 +68,6 @@ jobs:
       version: ${{ github.ref_name }}
       os: baremetal
       compiler: gcc
-      compiler_version: 12.3
+      compiler_version: 14.3
       compiler_package: arm-gnu-toolchain
     secrets: inherit

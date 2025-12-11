@@ -39,19 +39,26 @@ class libhal_arm_mcu_conan(ConanFile):
     python_requires_extend = "libhal-bootstrap.library"
 
     options = {
-        # This option does nothing currently. In the future libhal exceptions
-        # will be brought back into this library when it is complete
+        "platform": ["ANY"],
         "use_libhal_exceptions": [True, False],
         "use_picolibc": [True, False],
-        "platform": ["ANY"],
         "use_default_linker_script": [True, False],
+        "replace_std_terminate": [True, False],
     }
 
     default_options = {
+        "platform": "ANY",
         "use_libhal_exceptions": True,
         "use_picolibc": True,
-        "platform": "ANY",
         "use_default_linker_script": True,
+        "replace_std_terminate": [True, False],
+    }
+    options_description = {
+        "platform": "Tells libhal-arm-mcu which platform to provide binaries and build information for",
+        "use_libhal_exceptions": "This option is no longer used and is only here for backwards compatibility. This option will become usable in the future when libhal-exceptions is feature complete.",
+        "use_picolibc": "Use picolibc as the libc runtime for ARM GCC. ARM's LLVM fork uses picolibc as its default libc and cannot be changed by this option.",
+        "use_default_linker_script": "",
+        "replace_std_terminate": "",
     }
 
     def requirements(self):
@@ -92,31 +99,39 @@ class libhal_arm_mcu_conan(ConanFile):
             "libhal::stm32f4",
         ])
 
-        self.cpp_info.exelinkflags = [
-            # Overrides the terminate handler from LLVM
-            # This results in a large reduction in binary size since this
-            # terminate handler renders text and that text rendering is
-            # expensive.
-            "-Wl,--wrap=__cxa_terminate_handler",
-            # Override the terminate handler for GCC.
-            # This results in a large reduction in binary size since this
-            # terminate handler renders text and that text rendering is
-            # expensive.
-            "-Wl,--wrap=_ZN10__cxxabiv119__terminate_handlerE",
-            # Override picolibc's default hard fault handler to gracefully
-            # handle semihosting BKPT instructions when no debugger is attached.
-            # Without this, binaries linked with semihosting libraries will
-            # hang in an infinite loop if executed without a debugger. This
-            # wrapper detects BKPT-induced faults, skips the instruction, and
-            # allows execution to continue, enabling test packages to link
-            # successfully while allowing applications to run standalone.
-            "-Wl,--wrap=arm_hardfault_isr",
-            # Override the default standard set and get terminate functions to
-            # prevent linking in the original default verbose terminate
-            # implementation.
-            "-Wl,--wrap=_ZSt13set_terminatePFvvE",
-            # "-Wl,--wrap=_ZSt13get_terminatev",
-        ]
+        self.cpp_info.exelinkflags = []
+
+        if self.settings.os == "baremetal":
+            self.cpp_info.exelinkflags.extend([
+                # Overrides the terminate handler from LLVM
+                # This results in a large reduction in binary size since this
+                # terminate handler renders text and that text rendering is
+                # expensive.
+                "-Wl,--wrap=__cxa_terminate_handler",
+                # Override the terminate handler for GCC.
+                # This results in a large reduction in binary size since this
+                # terminate handler renders text and that text rendering is
+                # expensive.
+                "-Wl,--wrap=_ZN10__cxxabiv119__terminate_handlerE",
+                # Override picolibc's default hard fault handler to gracefully
+                # handle semihosting BKPT instructions when no debugger is
+                # attached. Without this, binaries linked with semihosting
+                # libraries will hang in an infinite loop if executed without a
+                # debugger. This wrapper detects BKPT-induced faults, skips the
+                # instruction, and allows execution to continue, enabling test
+                # packages to link successfully while allowing applications to
+                # run standalone. "-Wl,--wrap=arm_hardfault_isr", Override the
+                # default standard set and get terminate functions to prevent
+                # linking in the original default verbose terminate
+                # implementation.
+                "-Wl,--wrap=_ZSt13set_terminatePFvvE",
+
+                # ==============================================================
+                # NOTE: Uncomment line below to replace the std::get_terminate
+                #      function
+                # ==============================================================
+                # "-Wl,--wrap=_ZSt13get_terminatev",
+            ])
 
         platform = str(self.options.platform)
         self.buildenv_info.define("LIBHAL_PLATFORM", platform)

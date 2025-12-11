@@ -60,11 +60,14 @@ jobs:
       - name: 🔨 Build for cortex-m3 to cache compiler
         run: conan create . -s:h build_type=Release -s:h os=baremetal -s:h arch=cortex-m3 --version=${{ inputs.version }} -pr:h ${{ inputs.compiler_profile }} --build=missing
 
+      - name: 📦 Create tarball of conan packages
+        run: tar -czf conan-packages.tar.gz -C ~/.conan2 p
+
       - name: 📤 Upload conan package cache
         uses: actions/upload-artifact@v4
         with:
           name: conan-packages
-          path: ~/.conan2/p
+          path: conan-packages.tar.gz
           retention-days: 1
 
   # Build jobs for each architecture
@@ -98,7 +101,10 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: conan-packages
-          path: ~/.conan2/p
+          path: .
+
+      - name: 📦 Extract conan packages tarball
+        run: tar -xzf conan-packages.tar.gz -C ~/.conan2
 
       - name: 📦 Create `Debug` package for cortex-m3
         run: conan create . -s:h build_type=Debug -s:h os=baremetal -s:h arch=cortex-m3 --version=${{ inputs.version }} -pr:h ${{ inputs.compiler_profile }} --build=missing
@@ -149,7 +155,10 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: conan-packages
-          path: ~/.conan2/p
+          path: .
+
+      - name: 📦 Extract conan packages tarball
+        run: tar -xzf conan-packages.tar.gz -C ~/.conan2
 
       - name: 📦 Create `Debug` package for cortex-m4
         run: conan create . -s:h build_type=Debug -s:h os=baremetal -s:h arch=cortex-m4 --version=${{ inputs.version }} -pr:h ${{ inputs.compiler_profile }} --build=missing
@@ -200,7 +209,10 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: conan-packages
-          path: ~/.conan2/p
+          path: .
+
+      - name: 📦 Extract conan packages tarball
+        run: tar -xzf conan-packages.tar.gz -C ~/.conan2
 
       - name: 📦 Create `Debug` package for cortex-m4f
         run: conan create . -s:h build_type=Debug -s:h os=baremetal -s:h arch=cortex-m4f --version=${{ inputs.version }} -pr:h ${{ inputs.compiler_profile }} --build=missing

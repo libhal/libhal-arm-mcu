@@ -15,6 +15,7 @@
 # limitations under the License.
 
 from conan import ConanFile
+from pathlib import Path
 import os
 
 
@@ -38,17 +39,26 @@ class libhal_arm_mcu_conan(ConanFile):
     python_requires_extend = "libhal-bootstrap.library"
 
     options = {
+        "platform": ["ANY"],
         "use_libhal_exceptions": [True, False],
         "use_picolibc": [True, False],
-        "platform": ["ANY"],
         "use_default_linker_script": [True, False],
+        "replace_std_terminate": [True, False],
     }
 
     default_options = {
+        "platform": "ANY",
         "use_libhal_exceptions": True,
         "use_picolibc": True,
-        "platform": "ANY",
         "use_default_linker_script": True,
+        "replace_std_terminate": True,
+    }
+    options_description = {
+        "platform": "Specifies which platform to provide binaries and build information for",
+        "use_libhal_exceptions": "Reserved for backwards compatibility. This option is currently unused and will become functional when libhal-exceptions is feature complete.",
+        "use_picolibc": "Use picolibc as the libc runtime for ARM GCC. Note: ARM's LLVM fork always uses picolibc and ignores this option.",
+        "use_default_linker_script": "Enable automatic linker script selection based on the specified platform",
+        "replace_std_terminate": "Replace the default std::terminate handler to reduce binary size by avoiding verbose text rendering",
     }
 
     def requirements(self):
@@ -57,13 +67,15 @@ class libhal_arm_mcu_conan(ConanFile):
         self.requires("ring-span-lite/[^0.7.0]", transitive_headers=True)
         self.requires("scope-lite/0.2.0")
 
-        if self.settings.os == "baremetal" and self.settings.compiler == "gcc":
-            if self.options.use_libhal_exceptions:
-                self.requires(
-                    "libhal-exceptions/[^1.1.1]", transitive_headers=True)
-            if self.options.use_picolibc:
-                compiler_version = str(self.settings.compiler.version)
-                self.requires("prebuilt-picolibc/" + compiler_version)
+        if (self.options.use_picolibc and
+                self.settings.os == "baremetal" and
+                self.settings.compiler == "gcc"):
+            CV = str(self.settings.compiler.version)
+            # we use hosted because arm-mcu provides its own weak
+            # implementation of the _exit() API which simply spins. The default
+            # crt0 doesn't seem to work so we'ved decided on this.
+            self.requires("prebuilt-picolibc/" + CV,
+                          options={"crt0": "hosted"})
 
     def handle_stm32f1_linker_scripts(self):
         linker_script_name = list(str(self.options.platform))
@@ -73,10 +85,10 @@ class libhal_arm_mcu_conan(ConanFile):
         linker_script_name[9] = 'x'
         linker_script_name = "".join(linker_script_name)
 
-        self.cpp_info.exelinkflags = [
+        self.cpp_info.exelinkflags.extend([
             "-L" + os.path.join(self.package_folder, "linker_scripts"),
             "-T" + os.path.join("libhal-stm32f1", linker_script_name + ".ld"),
-        ]
+        ])
 
     def package_info(self):
         self.cpp_info.libs = ["libhal-arm-mcu"]
@@ -86,30 +98,68 @@ class libhal_arm_mcu_conan(ConanFile):
             "libhal::stm32f1",
             "libhal::stm32f4",
         ])
+
         self.cpp_info.exelinkflags = []
+
+        if self.settings.os == "baremetal":
+            self.cpp_info.exelinkflags.extend([
+                # Overrides the terminate handler from LLVM
+                # This results in a large reduction in binary size since this
+                # terminate handler renders text and that text rendering is
+                # expensive.
+                "-Wl,--wrap=__cxa_terminate_handler",
+                # Override the terminate handler for GCC.
+                # This results in a large reduction in binary size since this
+                # terminate handler renders text and that text rendering is
+                # expensive.
+                "-Wl,--wrap=_ZN10__cxxabiv119__terminate_handlerE",
+                # Override picolibc's default hard fault handler to gracefully
+                # handle semihosting BKPT instructions when no debugger is
+                # attached. Without this, binaries linked with semihosting
+                # libraries will hang in an infinite loop if executed without a
+                # debugger. This wrapper detects BKPT-induced faults, skips the
+                # instruction, and allows execution to continue, enabling test
+                # packages to link successfully while allowing applications to
+                # run standalone. "-Wl,--wrap=arm_hardfault_isr", Override the
+                # default standard set and get terminate functions to prevent
+                # linking in the original default verbose terminate
+                # implementation.
+                "-Wl,--wrap=_ZSt13set_terminatePFvvE",
+
+                # ==============================================================
+                # NOTE: Uncomment line below to replace the std::get_terminate
+                #      function
+                # ==============================================================
+                # "-Wl,--wrap=_ZSt13get_terminatev",
+            ])
 
         platform = str(self.options.platform)
         self.buildenv_info.define("LIBHAL_PLATFORM", platform)
         self.buildenv_info.define("LIBHAL_PLATFORM_LIBRARY", "arm-mcu")
 
+        LINKER_SCRIPTS_PATH = Path(self.package_folder) / "linker_scripts"
+
         if (self.settings.os == "baremetal" and
                 self.options.use_default_linker_script):
+
             # If the platform matches the linker script, just use that linker
             # script
-            self.cpp_info.exelinkflags = [
-                "-L" + os.path.join(self.package_folder, "linker_scripts")]
+            self.cpp_info.exelinkflags.append("-L" + str(LINKER_SCRIPTS_PATH))
 
-            full_linker_path = os.path.join(
-                self.package_folder, "linker_scripts", platform + ".ld")
+            FULL_LINKER_PATH: Path = LINKER_SCRIPTS_PATH / (platform + ".ld")
             # if the file exists, then we should use it as the linker
-            if os.path.isfile(full_linker_path):
-                self.output.info(f"linker file '{full_linker_path}' found!")
+            if FULL_LINKER_PATH.exists():
+                self.output.info(f"linker file '{FULL_LINKER_PATH}' found!")
                 self.cpp_info.exelinkflags.append("-T" + platform + ".ld")
-
-            # if there is no match, then the linker script could be a pattern
-            # based on the name of the platform
             else:
+                # if there is no match, then the linker script could be a
+                # pattern based on the name of the platform
                 self.append_linker_using_platform(platform)
+
+            if self.settings.compiler == "gcc":
+                self.cpp_info.exelinkflags.append("-Tpicolibc_gcc.ld")
+            if self.settings.compiler == "clang":
+                self.cpp_info.exelinkflags.append("-Tpicolibc_llvm.ld")
 
     def package_id(self):
         self.info.python_requires.major_mode()

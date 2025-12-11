@@ -32,8 +32,8 @@
 #include <libhal-exceptions/control.hpp>
 #include <libhal-util/steady_clock.hpp>
 #include <libhal/error.hpp>
-
 #include <libhal/pointers.hpp>
+
 #include <resource_list.hpp>
 
 namespace resources {
@@ -265,6 +265,6 @@ hal::v5::strong_ptr<hal::v5::usb::bulk_out_endpoint> usb_bulk_out_endpoint2()
 void initialize_platform()
 {
   using namespace hal::literals;
-  hal::set_terminate(resources::terminate_handler);
+  std::set_terminate(resources::terminate_handler);
   hal::lpc40::maximum(12.0_MHz);
 }

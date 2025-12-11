@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <memory_resource>
+
 #include <libhal-arm-mcu/dwt_counter.hpp>
 #include <libhal-arm-mcu/startup.hpp>
 #include <libhal-arm-mcu/stm32f1/adc.hpp>
@@ -29,7 +31,6 @@
 #include <libhal-arm-mcu/stm32f1/usart.hpp>
 #include <libhal-arm-mcu/stm32f1/usb.hpp>
 #include <libhal-arm-mcu/system_control.hpp>
-#include <libhal-exceptions/control.hpp>
 #include <libhal-util/atomic_spin_lock.hpp>
 #include <libhal-util/bit_bang_i2c.hpp>
 #include <libhal-util/bit_bang_spi.hpp>
@@ -39,9 +40,8 @@
 #include <libhal/pointers.hpp>
 #include <libhal/pwm.hpp>
 #include <libhal/units.hpp>
-
 #include <libhal/usb.hpp>
-#include <memory_resource>
+
 #include <resource_list.hpp>
 
 namespace resources {
@@ -443,7 +443,7 @@ hal::v5::strong_ptr<custom::watchdog> watchdog()
 void initialize_platform()
 {
   using namespace hal::literals;
-  hal::set_terminate(resources::terminate_handler);
+  std::set_terminate(resources::terminate_handler);
   // Set the MCU to the maximum clock speed
 
   hal::stm32f1::configure_clocks(hal::stm32f1::clock_tree{

@@ -12,7 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include <libhal-exceptions/control.hpp>
+#include <cstdio>
+
+#include <exception>
+
 #include <libhal-util/serial.hpp>
 #include <libhal-util/steady_clock.hpp>
 
@@ -25,30 +28,21 @@ int main()
   std::terminate();
 }
 
-// libhal-arm-mcu specific APIs defined to reduce code size
-extern "C"
-{
-  // This gets rid of an issue with libhal-exceptions in Debug mode.
-  void __assert_func()  // NOLINT
-  {
-  }
-}
-
 // Override global new operator
 void* operator new(std::size_t)
 {
-  throw std::bad_alloc();
+  std::terminate();
 }
 
 // Override global new[] operator
 void* operator new[](std::size_t)
 {
-  throw std::bad_alloc();
+  std::terminate();
 }
 
 void* operator new(unsigned int, std::align_val_t)
 {
-  throw std::bad_alloc();
+  std::terminate();
 }
 
 // Override global delete operator

@@ -31,7 +31,6 @@
 #include <libhal-arm-mcu/stm32f1/usart.hpp>
 #include <libhal-arm-mcu/stm32f1/usb.hpp>
 #include <libhal-arm-mcu/system_control.hpp>
-// #include <libhal-exceptions/control.hpp>
 #include <libhal-util/atomic_spin_lock.hpp>
 #include <libhal-util/bit_bang_i2c.hpp>
 #include <libhal-util/bit_bang_spi.hpp>
@@ -444,7 +443,7 @@ hal::v5::strong_ptr<custom::watchdog> watchdog()
 void initialize_platform()
 {
   using namespace hal::literals;
-  // hal::set_terminate(resources::terminate_handler);
+  std::set_terminate(resources::terminate_handler);
   // Set the MCU to the maximum clock speed
 
   hal::stm32f1::configure_clocks(hal::stm32f1::clock_tree{

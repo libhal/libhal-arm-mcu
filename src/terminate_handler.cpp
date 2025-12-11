@@ -12,29 +12,73 @@
 
 #include <exception>
 
-// Needs linker argument: -Wl,--wrap=_ZN10__cxxabiv119__terminate_handlerE
-// NOLINTNEXTLINE : GCC's symbol name which is within the cxxabiv1 namespace
-std::terminate_handler __wrap__ZN10__cxxabiv119__terminate_handlerE =
-  +[]() {  // NOLINT
-    while (true) {
-      continue;
-    }
-  };
-
-// Needs linker argument: -Wl,--wrap=__cxa_terminate_handler
-// NOLINTNEXTLINE : LLVM's symbol name which is just a global variable
-std::terminate_handler __wrap___cxa_terminate_handler = []() {
+namespace hal::cortex_m {
+std::terminate_handler default_handler = +[]() {  // NOLINT
   while (true) {
     continue;
   }
 };
 
+}  // namespace hal::cortex_m
+
+#if defined(__clang__)
+// Needs linker argument: -Wl,--wrap=__cxa_terminate_handler
+// LLVM's symbol name which is just a global variable
+// NOLINTNEXTLINE(readability-identifier-naming,bugprone-reserved-identifier)
+std::terminate_handler __wrap___cxa_terminate_handler =
+  hal::cortex_m::default_handler;
+#elif defined(__GNUC__)
+// Needs linker argument: -Wl,--wrap=_ZN10__cxxabiv119__terminate_handlerE
+// GCC's symbol name which is within the cxxabiv1 namespace
+// NOLINTNEXTLINE(readability-identifier-naming,bugprone-reserved-identifier)
+std::terminate_handler __wrap__ZN10__cxxabiv119__terminate_handlerE =
+  hal::cortex_m::default_handler;
+#endif
+
 extern "C"
 {
-  void __attribute__((weak)) _exit(int)  // NOLINT
+  // NOLINTNEXTLINE(readability-identifier-naming,bugprone-reserved-identifier)
+  void __attribute__((weak)) _exit(int)
   {
     while (true) {
       continue;
     }
+  }
+
+  // NOLINTNEXTLINE(readability-identifier-naming,bugprone-reserved-identifier)
+  std::terminate_handler __wrap__ZSt13set_terminatePFvvE(
+    std::terminate_handler p_handler) noexcept
+  {
+#if defined(__clang__)
+    std::terminate_handler previous = __wrap___cxa_terminate_handler;
+
+    if (p_handler == nullptr) {
+      __wrap___cxa_terminate_handler = hal::cortex_m::default_handler;
+    } else {
+      __wrap___cxa_terminate_handler = p_handler;
+    }
+
+    return previous;
+#elif defined(__GNUC__)
+    std::terminate_handler previous =
+      __wrap__ZN10__cxxabiv119__terminate_handlerE;
+
+    if (p_handler == nullptr) {
+      __wrap__ZN10__cxxabiv119__terminate_handlerE =
+        hal::cortex_m::default_handler;
+    }
+
+    return previous;
+#endif
+  }
+
+  // NOLINTNEXTLINE(readability-identifier-naming,bugprone-reserved-identifier)
+  std::terminate_handler __wrap__ZSt13get_terminatev() noexcept
+  {
+#if defined(__clang__)
+    return __wrap___cxa_terminate_handler;
+#elif defined(__GNUC__)
+    return __wrap__ZN10__cxxabiv119__terminate_handlerE;
+#endif
   }
 }

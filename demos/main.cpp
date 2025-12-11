@@ -13,6 +13,7 @@
 // limitations under the License.
 
 #include <cstdio>
+
 #include <exception>
 
 #include <libhal-util/serial.hpp>

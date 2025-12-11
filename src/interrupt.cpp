@@ -303,6 +303,7 @@ extern "C"
    */
   __attribute__((naked)) void __wrap_arm_hardfault_isr(void)  // NOLINT
   {
+#if defined(__CORTEX_M)
     __asm volatile(
       // Works on all Cortex-M variants
       "   movs   r0, #4                     \n"
@@ -316,13 +317,13 @@ extern "C"
       ".check_debug:                        \n"
       "   ldr    r1, =0xE000ED2C            \n"
       "   ldr    r2, [r1]                   \n"
-      "   lsls   r2, r2, #1                 \n"
+      "   lsls   r2, #1                     \n"
       ".hardfault_loop:                     \n"
       "   bcc    .hardfault_loop            \n"
       "   ldr    r2, [r1]                   \n"
       "   str    r2, [r1]                   \n"
       "   ldr    r1, [r0, #24]              \n"
-      "   adds   r1, #2                     \n"
+      "   adds   r1, r1, #2                 \n"
       "   str    r1, [r0, #24]              \n"
       "   movs   r1, #1                     \n"
       "   negs   r1, r1                     \n"
@@ -331,5 +332,7 @@ extern "C"
       :
       :
       : "memory");
+    // Your ARM Cortex-M code here
+#endif
   }
 }  // extern "C"

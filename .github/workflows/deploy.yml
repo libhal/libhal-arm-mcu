@@ -4,70 +4,23 @@ on:
   workflow_dispatch:
   release:
     types: [published]
+  workflow_call:
+    inputs:
+      version:
+        type: string
+        default: ${{ github.ref_name }}
 
 jobs:
-  cortex-m0:
-    uses: libhal/ci/.github/workflows/deploy.yml@5.x.y
+  gcc:
+    uses: ./.github/workflows/deploy_with_cache.yml
     with:
-      arch: cortex-m0
-      version: ${{ github.ref_name }}
-      os: baremetal
-      compiler: gcc
-      compiler_version: 14.3
-      compiler_package: arm-gnu-toolchain
+      compiler_profile: hal/tc/arm-gcc
+      version: ${{ inputs.version }}
     secrets: inherit
 
-  cortex-m0plus:
-    uses: libhal/ci/.github/workflows/deploy.yml@5.x.y
+  llvm:
+    uses: ./.github/workflows/deploy_with_cache.yml
     with:
-      arch: cortex-m0plus
-      version: ${{ github.ref_name }}
-      os: baremetal
-      compiler: gcc
-      compiler_version: 14.3
-      compiler_package: arm-gnu-toolchain
-    secrets: inherit
-
-  cortex-m1:
-    uses: libhal/ci/.github/workflows/deploy.yml@5.x.y
-    with:
-      arch: cortex-m1
-      version: ${{ github.ref_name }}
-      os: baremetal
-      compiler: gcc
-      compiler_version: 14.3
-      compiler_package: arm-gnu-toolchain
-    secrets: inherit
-
-  cortex-m3:
-    uses: libhal/ci/.github/workflows/deploy.yml@5.x.y
-    with:
-      arch: cortex-m3
-      version: ${{ github.ref_name }}
-      os: baremetal
-      compiler: gcc
-      compiler_version: 14.3
-      compiler_package: arm-gnu-toolchain
-    secrets: inherit
-
-  cortex-m4:
-    uses: libhal/ci/.github/workflows/deploy.yml@5.x.y
-    with:
-      arch: cortex-m4
-      version: ${{ github.ref_name }}
-      os: baremetal
-      compiler: gcc
-      compiler_version: 14.3
-      compiler_package: arm-gnu-toolchain
-    secrets: inherit
-
-  cortex-m4f:
-    uses: libhal/ci/.github/workflows/deploy.yml@5.x.y
-    with:
-      arch: cortex-m4f
-      version: ${{ github.ref_name }}
-      os: baremetal
-      compiler: gcc
-      compiler_version: 14.3
-      compiler_package: arm-gnu-toolchain
+      compiler_profile: hal/tc/arm-gcc
+      version: ${{ inputs.version }}
     secrets: inherit

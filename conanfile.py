@@ -51,14 +51,14 @@ class libhal_arm_mcu_conan(ConanFile):
         "use_libhal_exceptions": True,
         "use_picolibc": True,
         "use_default_linker_script": True,
-        "replace_std_terminate": [True, False],
+        "replace_std_terminate": True,
     }
     options_description = {
-        "platform": "Tells libhal-arm-mcu which platform to provide binaries and build information for",
-        "use_libhal_exceptions": "This option is no longer used and is only here for backwards compatibility. This option will become usable in the future when libhal-exceptions is feature complete.",
-        "use_picolibc": "Use picolibc as the libc runtime for ARM GCC. ARM's LLVM fork uses picolibc as its default libc and cannot be changed by this option.",
-        "use_default_linker_script": "",
-        "replace_std_terminate": "",
+        "platform": "Specifies which platform to provide binaries and build information for",
+        "use_libhal_exceptions": "Reserved for backwards compatibility. This option is currently unused and will become functional when libhal-exceptions is feature complete.",
+        "use_picolibc": "Use picolibc as the libc runtime for ARM GCC. Note: ARM's LLVM fork always uses picolibc and ignores this option.",
+        "use_default_linker_script": "Enable automatic linker script selection based on the specified platform",
+        "replace_std_terminate": "Replace the default std::terminate handler to reduce binary size by avoiding verbose text rendering",
     }
 
     def requirements(self):
@@ -85,7 +85,7 @@ class libhal_arm_mcu_conan(ConanFile):
         linker_script_name[9] = 'x'
         linker_script_name = "".join(linker_script_name)
 
-        self.cpp_info.exelinkflags.append([
+        self.cpp_info.exelinkflags.extend([
             "-L" + os.path.join(self.package_folder, "linker_scripts"),
             "-T" + os.path.join("libhal-stm32f1", linker_script_name + ".ld"),
         ])

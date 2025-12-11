@@ -29,6 +29,9 @@ on:
       compiler_profile: # Path to conan package repo
         type: string
         default: ""
+      upload_suffix: # Path to conan package repo
+        type: string
+        required: true
 
 jobs:
   # First job: Build for cortex-m3 to cache the ARM compiler
@@ -66,7 +69,7 @@ jobs:
       - name: 📤 Upload conan package cache
         uses: actions/upload-artifact@v4
         with:
-          name: conan-packages-${{ replace(inputs.compiler_profile, '/', '_') }}
+          name: conan-packages-${{ inputs.upload_suffix }}
           path: conan-packages.tar.gz
           retention-days: 1
 
@@ -100,7 +103,7 @@ jobs:
       - name: 📥 Download conan package cache
         uses: actions/download-artifact@v4
         with:
-          name: conan-packages-${{ replace(inputs.compiler_profile, '/', '_') }}
+          name: conan-packages-${{ inputs.upload_suffix }}
           path: .
 
       - name: 📦 Extract conan packages tarball
@@ -155,7 +158,7 @@ jobs:
       - name: 📥 Download conan package cache
         uses: actions/download-artifact@v4
         with:
-          name: conan-packages-${{ replace(inputs.compiler_profile, '/', '_') }}
+          name: conan-packages-${{ inputs.upload_suffix }}
           path: .
 
       - name: 📦 Extract conan packages tarball
@@ -210,7 +213,7 @@ jobs:
       - name: 📥 Download conan package cache
         uses: actions/download-artifact@v4
         with:
-          name: conan-packages-${{ replace(inputs.compiler_profile, '/', '_') }}
+          name: conan-packages-${{ inputs.upload_suffix }}
           path: .
 
       - name: 📦 Extract conan packages tarball

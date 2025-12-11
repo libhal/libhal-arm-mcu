@@ -16,11 +16,13 @@ jobs:
     with:
       compiler_profile: hal/tc/arm-gcc
       version: ${{ inputs.version }}
+      upload_suffix: gcc
     secrets: inherit
 
   llvm:
     uses: ./.github/workflows/deploy_with_cache.yml
     with:
-      compiler_profile: hal/tc/arm-gcc
+      compiler_profile: hal/tc/llvm
       version: ${{ inputs.version }}
+      upload_suffix: llvm
     secrets: inherit

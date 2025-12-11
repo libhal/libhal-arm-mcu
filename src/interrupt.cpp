@@ -305,7 +305,6 @@ extern "C"
   {
 #if defined(__CORTEX_M)
     __asm volatile(
-      // Works on all Cortex-M variants
       "   movs   r0, #4                     \n"
       "   mov    r1, lr                     \n"
       "   tst    r0, r1                     \n"
@@ -332,7 +331,6 @@ extern "C"
       :
       :
       : "memory");
-    // Your ARM Cortex-M code here
 #endif
   }
 }  // extern "C"

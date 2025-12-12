@@ -25,6 +25,7 @@ jobs:
     with:
       compiler_profile: hal/tc/arm-gcc
       platform_profile: hal/mcu/lpc4074
+      conan_version: 2.23.0
     secrets: inherit
 
   demo_check_lpc4078:
@@ -32,6 +33,7 @@ jobs:
     with:
       compiler_profile: hal/tc/arm-gcc
       platform_profile: hal/mcu/lpc4078
+      conan_version: 2.23.0
     secrets: inherit
 
   demo_check_stm32f103c8:
@@ -39,6 +41,7 @@ jobs:
     with:
       compiler_profile: hal/tc/arm-gcc
       platform_profile: hal/mcu/stm32f103c8
+      conan_version: 2.23.0
     secrets: inherit
 
   demo_check_stm32f411re:
@@ -46,4 +49,5 @@ jobs:
     with:
       compiler_profile: hal/tc/arm-gcc
       platform_profile: hal/mcu/stm32f411re
+      conan_version: 2.23.0
     secrets: inherit

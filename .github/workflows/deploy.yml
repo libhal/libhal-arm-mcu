@@ -4,18 +4,13 @@ on:
   workflow_dispatch:
   release:
     types: [published]
-  workflow_call:
-    inputs:
-      version:
-        type: string
-        default: ${{ github.ref_name }}
 
 jobs:
   gcc:
     uses: ./.github/workflows/deploy_with_cache.yml
     with:
       compiler_profile: hal/tc/arm-gcc
-      version: ${{ inputs.version }}
+      version: ${{ github.ref_name }}
       upload_suffix: gcc
     secrets: inherit
 
@@ -23,6 +18,6 @@ jobs:
     uses: ./.github/workflows/deploy_with_cache.yml
     with:
       compiler_profile: hal/tc/llvm
-      version: ${{ inputs.version }}
+      version: ${{ github.ref_name }}
       upload_suffix: llvm
     secrets: inherit

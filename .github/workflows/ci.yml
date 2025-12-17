@@ -14,10 +14,20 @@ jobs:
     uses: libhal/ci/.github/workflows/library_check.yml@5.x.y
     secrets: inherit
 
-  deploy_check:
-    uses: ./.github/workflows/deploy.yml
+  deploy_gcc:
+    uses: ./.github/workflows/deploy_with_cache.yml
     with:
+      compiler_profile: hal/tc/arm-gcc
       version: latest
+      upload_suffix: gcc
+    secrets: inherit
+
+  deploy_llvm:
+    uses: ./.github/workflows/deploy_with_cache.yml
+    with:
+      compiler_profile: hal/tc/llvm
+      version: latest
+      upload_suffix: llvm
     secrets: inherit
 
   demo_check_lpc4074:
@@ -25,6 +35,7 @@ jobs:
     with:
       compiler_profile: hal/tc/arm-gcc
       platform_profile: hal/mcu/lpc4074
+      conan_version: 2.23.0
     secrets: inherit
 
   demo_check_lpc4078:
@@ -32,6 +43,7 @@ jobs:
     with:
       compiler_profile: hal/tc/arm-gcc
       platform_profile: hal/mcu/lpc4078
+      conan_version: 2.23.0
     secrets: inherit
 
   demo_check_stm32f103c8:
@@ -39,6 +51,7 @@ jobs:
     with:
       compiler_profile: hal/tc/arm-gcc
       platform_profile: hal/mcu/stm32f103c8
+      conan_version: 2.23.0
     secrets: inherit
 
   demo_check_stm32f411re:
@@ -46,4 +59,5 @@ jobs:
     with:
       compiler_profile: hal/tc/arm-gcc
       platform_profile: hal/mcu/stm32f411re
+      conan_version: 2.23.0
     secrets: inherit

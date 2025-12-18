@@ -1,6 +1,6 @@
 # libhal-arm-mcu
 
-[![✅ CI](https://github.com/libhal/libhal-armcortex/actions/workflows/ci.yml/badge.svg)](https://github.com/libhal/libhal-armcortex/actions/workflows/ci.yml)
+[![✅ CI](https://github.com/libhal/libhal-arm-mcu/actions/workflows/ci.yml/badge.svg)](https://github.com/libhal/libhal-arm-mcu/actions/workflows/ci.yml)
 [![GitHub stars](https://img.shields.io/github/stars/libhal/libhal-armcortex.svg)](https://github.com/libhal/libhal-armcortex/stargazers)
 [![GitHub forks](https://img.shields.io/github/forks/libhal/libhal-armcortex.svg)](https://github.com/libhal/libhal-armcortex/network)
 [![GitHub issues](https://img.shields.io/github/issues/libhal/libhal-armcortex.svg)](https://github.com/libhal/libhal-armcortex/issues)
@@ -9,6 +9,11 @@ This repo contains libhal compatible libraries for numerous ARM Cortex-M
 processor microcontrollers (MCUs). This is a platform library supporting
 generic ARM processor APIs and peripheral drivers from many different
 microcontrollers.
+
+> [!NOTE]
+> CI is failing due to a memory leak detected via ASAN when executing the unit tests on Linux.
+> Everything passes without an error or leak detected on MacOS builds.
+> This is the current cause of the CI to failure. Otherwise the rest of CI is passing.
 
 ## 📚 Software APIs & Usage
 

@@ -14,7 +14,6 @@
  * limitations under the License.
  */
 
-
 __libhal_flash = 0x00000000;
 __libhal_flash_size = 64K;
 __libhal_ram = 0x10000000;

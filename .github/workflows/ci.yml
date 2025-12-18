@@ -36,6 +36,7 @@ jobs:
       compiler_profile: hal/tc/arm-gcc
       platform_profile: hal/mcu/lpc4074
       conan_version: 2.23.0
+      dir: demos
     secrets: inherit
 
   demo_check_lpc4078:
@@ -44,6 +45,7 @@ jobs:
       compiler_profile: hal/tc/arm-gcc
       platform_profile: hal/mcu/lpc4078
       conan_version: 2.23.0
+      dir: demos
     secrets: inherit
 
   demo_check_stm32f103c8:
@@ -52,6 +54,25 @@ jobs:
       compiler_profile: hal/tc/arm-gcc
       platform_profile: hal/mcu/stm32f103c8
       conan_version: 2.23.0
+      dir: demos
+    secrets: inherit
+
+  demo_check_lpc4078_llvm:
+    uses: libhal/ci/.github/workflows/app_builder2.yml@5.x.y
+    with:
+      compiler_profile: hal/tc/llvm
+      platform_profile: hal/mcu/lpc4078
+      conan_version: 2.23.0
+      dir: demos
+    secrets: inherit
+
+  demo_check_stm32f103c8_llvm:
+    uses: libhal/ci/.github/workflows/app_builder2.yml@5.x.y
+    with:
+      compiler_profile: hal/tc/llvm
+      platform_profile: hal/mcu/stm32f103c8
+      conan_version: 2.23.0
+      dir: demos
     secrets: inherit
 
   demo_check_stm32f411re:
@@ -60,4 +81,5 @@ jobs:
       compiler_profile: hal/tc/arm-gcc
       platform_profile: hal/mcu/stm32f411re
       conan_version: 2.23.0
+      dir: demos
     secrets: inherit

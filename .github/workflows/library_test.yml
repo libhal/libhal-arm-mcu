@@ -1,0 +1,47 @@
+name: ✅ Test Build Library
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "src/**"
+      - "linker_scripts/**"
+      - "include/**"
+      - "tests/**"
+      - "test_package/**"
+  push:
+    paths:
+      - "src/**"
+      - "linker_scripts/**"
+      - "include/**"
+      - "tests/**"
+      - "test_package/**"
+    branches:
+      - main
+  schedule:
+    - cron: "0 12 * * 0"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ci:
+    uses: libhal/ci/.github/workflows/library_check.yml@5.x.y
+    secrets: inherit
+
+  deploy_gcc:
+    uses: ./.github/workflows/deploy_with_cache.yml
+    with:
+      compiler_profile: hal/tc/arm-gcc
+      version: latest
+      upload_suffix: gcc
+    secrets: inherit
+
+  deploy_llvm:
+    uses: ./.github/workflows/deploy_with_cache.yml
+    with:
+      compiler_profile: hal/tc/llvm
+      version: latest
+      upload_suffix: llvm
+    secrets: inherit

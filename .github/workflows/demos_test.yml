@@ -1,35 +1,19 @@
-name: ✅ CI
+name: ✅ Test Build Demos
 
 on:
   workflow_dispatch:
   pull_request:
+    paths:
+      - "demos/*"
   push:
+    paths:
+      - "demos/*"
     branches:
       - main
   schedule:
     - cron: "0 12 * * 0"
 
 jobs:
-  ci:
-    uses: libhal/ci/.github/workflows/library_check.yml@5.x.y
-    secrets: inherit
-
-  deploy_gcc:
-    uses: ./.github/workflows/deploy_with_cache.yml
-    with:
-      compiler_profile: hal/tc/arm-gcc
-      version: latest
-      upload_suffix: gcc
-    secrets: inherit
-
-  deploy_llvm:
-    uses: ./.github/workflows/deploy_with_cache.yml
-    with:
-      compiler_profile: hal/tc/llvm
-      version: latest
-      upload_suffix: llvm
-    secrets: inherit
-
   demo_check_lpc4074:
     uses: libhal/ci/.github/workflows/app_builder2.yml@5.x.y
     with:

@@ -18,22 +18,24 @@ std::terminate_handler default_handler = +[]() {  // NOLINT
     continue;
   }
 };
-
 }  // namespace hal::cortex_m
 
+extern "C"
+{
 #if defined(__clang__)
-// Needs linker argument: -Wl,--wrap=__cxa_terminate_handler
-// LLVM's symbol name which is just a global variable
-// NOLINTNEXTLINE(readability-identifier-naming,bugprone-reserved-identifier)
-std::terminate_handler __wrap___cxa_terminate_handler =
-  hal::cortex_m::default_handler;
+  // Terminate symbol within LLVM
+  // NOTE: Add linker argument: -Wl,--wrap=__cxa_terminate_handler
+  // NOLINTNEXTLINE(readability-identifier-naming,bugprone-reserved-identifier)
+  std::terminate_handler __wrap___cxa_terminate_handler =
+    hal::cortex_m::default_handler;
 #elif defined(__GNUC__)
-// Needs linker argument: -Wl,--wrap=_ZN10__cxxabiv119__terminate_handlerE
-// GCC's symbol name which is within the cxxabiv1 namespace
-// NOLINTNEXTLINE(readability-identifier-naming,bugprone-reserved-identifier)
-std::terminate_handler __wrap__ZN10__cxxabiv119__terminate_handlerE =
-  hal::cortex_m::default_handler;
+  // Terminate symbol within GCC (within the __cxxabiv1 namespace)
+  // NOTE: Add linker argument: -Wl,--wrap=_ZN10__cxxabiv119__terminate_handlerE
+  // NOLINTNEXTLINE(readability-identifier-naming,bugprone-reserved-identifier)
+  std::terminate_handler __wrap__ZN10__cxxabiv119__terminate_handlerE =
+    hal::cortex_m::default_handler;
 #endif
+}
 
 extern "C"
 {

@@ -99,9 +99,24 @@ class libhal_arm_mcu_conan(ConanFile):
             "libhal::stm32f4",
         ])
 
-        self.cpp_info.exelinkflags = []
+        PLATFORM = str(self.options.platform)
+        self.buildenv_info.define("LIBHAL_PLATFORM", PLATFORM)
+        self.buildenv_info.define("LIBHAL_PLATFORM_LIBRARY", "arm-mcu")
 
+        self.cpp_info.exelinkflags = []
         if self.settings.os == "baremetal":
+            self.setup_baremetal(PLATFORM)
+
+    def package_id(self):
+        self.info.python_requires.major_mode()
+        del self.info.options.use_picolibc
+        del self.info.options.use_libhal_exceptions
+        del self.info.options.platform
+        del self.info.options.use_default_linker_script
+        del self.info.options.replace_std_terminate
+
+    def setup_baremetal(self, platform: str):
+        if self.options.replace_std_terminate:
             self.cpp_info.exelinkflags.extend([
                 # Overrides the terminate handler from LLVM
                 # This results in a large reduction in binary size since this
@@ -132,16 +147,8 @@ class libhal_arm_mcu_conan(ConanFile):
                 # ==============================================================
                 # "-Wl,--wrap=_ZSt13get_terminatev",
             ])
-
-        platform = str(self.options.platform)
-        self.buildenv_info.define("LIBHAL_PLATFORM", platform)
-        self.buildenv_info.define("LIBHAL_PLATFORM_LIBRARY", "arm-mcu")
-
-        LINKER_SCRIPTS_PATH = Path(self.package_folder) / "linker_scripts"
-
-        if (self.settings.os == "baremetal" and
-                self.options.use_default_linker_script):
-
+        if self.options.use_default_linker_script:
+            LINKER_SCRIPTS_PATH = Path(self.package_folder) / "linker_scripts"
             # If the platform matches the linker script, just use that linker
             # script
             self.cpp_info.exelinkflags.append("-L" + str(LINKER_SCRIPTS_PATH))
@@ -160,13 +167,6 @@ class libhal_arm_mcu_conan(ConanFile):
                 self.cpp_info.exelinkflags.append("-Tpicolibc_gcc.ld")
             if self.settings.compiler == "clang":
                 self.cpp_info.exelinkflags.append("-Tpicolibc_llvm.ld")
-
-    def package_id(self):
-        self.info.python_requires.major_mode()
-        del self.info.options.use_picolibc
-        del self.info.options.use_libhal_exceptions
-        del self.info.options.platform
-        del self.info.options.use_default_linker_script
 
     def append_linker_using_platform(self, platform: str):
         if platform.startswith("stm32f1"):

@@ -135,9 +135,10 @@ class libhal_arm_mcu_conan(ConanFile):
                 # debugger. This wrapper detects BKPT-induced faults, skips the
                 # instruction, and allows execution to continue, enabling test
                 # packages to link successfully while allowing applications to
-                # run standalone. "-Wl,--wrap=arm_hardfault_isr", Override the
-                # default standard set and get terminate functions to prevent
-                # linking in the original default verbose terminate
+                # run standalone.
+                "-Wl,--wrap=arm_hardfault_isr",
+                # Override the default standard set and get terminate functions
+                # to prevent linking in the original default verbose terminate
                 # implementation.
                 "-Wl,--wrap=_ZSt13set_terminatePFvvE",
 

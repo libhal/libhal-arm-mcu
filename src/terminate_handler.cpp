@@ -35,10 +35,7 @@ extern "C"
   std::terminate_handler __wrap__ZN10__cxxabiv119__terminate_handlerE =
     hal::cortex_m::default_handler;
 #endif
-}
 
-extern "C"
-{
   // NOLINTNEXTLINE(readability-identifier-naming,bugprone-reserved-identifier)
   void __attribute__((weak)) _exit(int)
   {

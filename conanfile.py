@@ -118,16 +118,6 @@ class libhal_arm_mcu_conan(ConanFile):
     def setup_baremetal(self, platform: str):
         if self.options.replace_std_terminate:
             self.cpp_info.exelinkflags.extend([
-                # Overrides the terminate handler from LLVM
-                # This results in a large reduction in binary size since this
-                # terminate handler renders text and that text rendering is
-                # expensive.
-                "-Wl,--wrap=__cxa_terminate_handler",
-                # Override the terminate handler for GCC.
-                # This results in a large reduction in binary size since this
-                # terminate handler renders text and that text rendering is
-                # expensive.
-                "-Wl,--wrap=_ZN10__cxxabiv119__terminate_handlerE",
                 # Override picolibc's default hard fault handler to gracefully
                 # handle semihosting BKPT instructions when no debugger is
                 # attached. Without this, binaries linked with semihosting
@@ -141,13 +131,29 @@ class libhal_arm_mcu_conan(ConanFile):
                 # to prevent linking in the original default verbose terminate
                 # implementation.
                 "-Wl,--wrap=_ZSt13set_terminatePFvvE",
-
-                # ==============================================================
-                # NOTE: Uncomment line below to replace the std::get_terminate
-                #      function
-                # ==============================================================
-                # "-Wl,--wrap=_ZSt13get_terminatev",
+                "-Wl,--wrap=_ZSt13get_terminatev",
             ])
+
+        if (self.options.replace_std_terminate and
+                self.settings.compiler == "clang"):
+            self.cpp_info.exelinkflags.extend([
+                # Overrides the terminate handler from LLVM
+                # This results in a large reduction in binary size since this
+                # terminate handler renders text and that text rendering is
+                # expensive.
+                "-Wl,--wrap=__cxa_terminate_handler",
+            ])
+
+        if (self.options.replace_std_terminate and
+                self.settings.compiler == "gcc"):
+            self.cpp_info.exelinkflags.extend([
+                # Override the terminate handler for GCC.
+                # This results in a large reduction in binary size since this
+                # terminate handler renders text and that text rendering is
+                # expensive.
+                "-Wl,--wrap=_ZN10__cxxabiv119__terminate_handlerE",
+            ])
+
         if self.options.use_default_linker_script:
             LINKER_SCRIPTS_PATH = Path(self.package_folder) / "linker_scripts"
             # If the platform matches the linker script, just use that linker
@@ -168,6 +174,19 @@ class libhal_arm_mcu_conan(ConanFile):
                 self.cpp_info.exelinkflags.append("-Tpicolibc_gcc.ld")
             if self.settings.compiler == "clang":
                 self.cpp_info.exelinkflags.append("-Tpicolibc_llvm.ld")
+
+        package_folder = Path(self.package_folder)
+        LIB_PATH = package_folder / 'lib' / 'liblibhal-arm-mcu.a'
+        self.cpp_info.exelinkflags.extend([
+            # Ensure that all symbols are added to the linker's symbol table
+            # This is critical in order for the wrapped symbols to make it to
+            # the final link binary with --gc-sections enabled.
+            # NOTE: gc sections still works as expected, it just doesn't miss
+            # any symbols from this archive.
+            "-Wl,--whole-archive",
+            str(LIB_PATH),
+            "-Wl,--no-whole-archive",
+        ])
 
     def append_linker_using_platform(self, platform: str):
         if platform.startswith("stm32f1"):

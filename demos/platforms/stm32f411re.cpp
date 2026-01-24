@@ -91,6 +91,11 @@ hal::v5::strong_ptr<hal::can_bus_manager> can_bus_manager()
   throw hal::operation_not_supported(nullptr);
 }
 
+hal::v5::strong_ptr<hal::can_identifier_filter> can_identifier_filter()
+{
+  throw hal::operation_not_supported(nullptr);
+}
+
 hal::v5::strong_ptr<hal::can_interrupt> can_interrupt()
 {
   throw hal::operation_not_supported(nullptr);
@@ -270,6 +275,7 @@ hal::v5::strong_ptr<hal::v5::usb::bulk_out_endpoint> usb_bulk_out_endpoint2()
 {
   throw hal::operation_not_supported(nullptr);
 }
+
 }  // namespace resources
 
 void initialize_platform()

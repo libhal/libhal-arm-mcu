@@ -115,6 +115,11 @@ hal::v5::strong_ptr<hal::can_identifier_filter> can_identifier_filter()
   throw hal::operation_not_supported(nullptr);
 }
 
+hal::v5::strong_ptr<hal::can_interrupt> can_interrupt()
+{
+  throw hal::operation_not_supported(nullptr);
+}
+
 hal::v5::strong_ptr<hal::spi> spi()
 {
   return hal::v5::make_strong_ptr<hal::lpc40::dma_spi>(driver_allocator(), 2);

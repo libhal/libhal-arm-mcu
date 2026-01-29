@@ -45,7 +45,6 @@ class libhal_arm_mcu_conan(ConanFile):
         "use_default_linker_script": [True, False],
         "replace_std_terminate": [True, False],
     }
-
     default_options = {
         "platform": "ANY",
         "use_libhal_exceptions": True,
@@ -60,6 +59,11 @@ class libhal_arm_mcu_conan(ConanFile):
         "use_default_linker_script": "Enable automatic linker script selection based on the specified platform",
         "replace_std_terminate": "Replace the default std::terminate handler to reduce binary size by avoiding verbose text rendering",
     }
+
+    def set_version(self):
+        # Use latest if not specified via command line
+        if not self.version:
+            self.version = "latest"
 
     def requirements(self):
         self.requires("libhal/[^4.18.0]", transitive_headers=True)

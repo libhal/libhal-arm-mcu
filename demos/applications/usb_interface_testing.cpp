@@ -1,21 +1,19 @@
-#include "applications/descriptors.hpp"
-#include "applications/utils.hpp"
-#include "resource_list.hpp"
 #include <array>
-#include <libhal-util/serial.hpp>
-#include <libhal-util/steady_clock.hpp>
-#include <libhal/pointers.hpp>
-#include <libhal/scatter_span.hpp>
-#include <libhal/units.hpp>
-#include <libhal/usb.hpp>
-#include <memory_resource>
 #include <string_view>
 #include <tuple>
 #include <utility>
 
-#include "enumerator.hpp"
+#include <libhal-util/serial.hpp>
+#include <libhal-util/steady_clock.hpp>
+#include <libhal-util/usb.hpp>
+#include <libhal/pointers.hpp>
+#include <libhal/scatter_span.hpp>
+#include <libhal/units.hpp>
+#include <libhal/usb.hpp>
 
-namespace hal::v5::usb {
+#include "resource_list.hpp"
+
+namespace hal::usb {
 class dummy_interface : public interface
 {
 public:
@@ -85,15 +83,15 @@ public:
   std::u16string_view m_name;
 };
 
-}  // namespace hal::v5::usb
+}  // namespace hal::usb
 
 namespace hal5 = hal::v5;
 
 void application()
 {
-  namespace usb = hal5::usb;
+  namespace usb = hal::usb;
   namespace pmr = std::pmr;
-  using namespace hal::v5::literals;
+  using namespace hal::literals;
   using namespace std::chrono_literals;
   using namespace std::string_view_literals;
 
@@ -139,7 +137,7 @@ void application()
   hal::print(*console, "conf array made\n");
 
   auto ctrl_ep = resources::usb_control_endpoint();
-  hal5::u16 const en_lang_str = 0x0409;
+  hal::u16 const en_lang_str = 0x0409;
 
   hal::print(*console, "ctrl ep called\n");
 
@@ -149,7 +147,6 @@ void application()
                           confs,
                           en_lang_str,  // f
                           1,
-                          console,
                           false);
 
     en.enumerate();

@@ -1,25 +1,21 @@
-#include "applications/descriptors.hpp"
-#include "applications/utils.hpp"
-#include "resource_list.hpp"
 #include <array>
 #include <cinttypes>
 #include <cstddef>
+
 #include <libhal-util/as_bytes.hpp>
 #include <libhal-util/serial.hpp>
 #include <libhal-util/steady_clock.hpp>
-#include <libhal-util/usb/endpoints.hpp>
+#include <libhal-util/usb.hpp>
 #include <libhal/pointers.hpp>
 #include <libhal/scatter_span.hpp>
 #include <libhal/serial.hpp>
 #include <libhal/units.hpp>
 #include <libhal/usb.hpp>
-#include <memory_resource>
-#include <optional>
 #include <string_view>
 
-#include "enumerator.hpp"
+#include "resource_list.hpp"
 
-namespace hal::v5::usb {
+namespace hal::usb {
 namespace constants {
 constexpr hal::u8 cdc_set_line_coding = 0x20;
 constexpr hal::u8 cdc_get_line_coding = 0x21;
@@ -361,7 +357,7 @@ private:
       0x08   // Data bits: 8
     });
 
-    switch (p_setup.request) {
+    switch (p_setup.request()) {
       case constants::cdc_get_line_coding: {  // Device to Host
         if (!p_setup.is_device_to_host()) {
           return false;
@@ -399,8 +395,8 @@ private:
         // wValue contains the control signals:
         // Bit 0: DTR state
         // Bit 1: RTS state
-        bool const dtr = p_setup.value & 0x01;
-        bool const rts = p_setup.value & 0x02;
+        bool const dtr = p_setup.value() & 0x01;
+        bool const rts = p_setup.value() & 0x02;
         // Handle control line state change
         // Most basic implementation just returns success
         p_callback({});
@@ -439,8 +435,9 @@ private:
       case standard_request_types::set_feature:
         return true;
       case standard_request_types::clear_feature: {
-        if (p_setup.get_recipient() == setup_packet::recipient::endpoint) {
-          auto ep = select_endpoint(p_setup.index & 0xF);
+        if (p_setup.get_recipient() ==
+            setup_packet::request_recipient::endpoint) {
+          auto ep = select_endpoint(p_setup.index() & 0xF);
           if (!ep) {
             return false;
           }
@@ -450,8 +447,9 @@ private:
       }
 
       case standard_request_types::get_status: {
-        if (p_setup.get_recipient() == setup_packet::recipient::endpoint) {
-          auto const ep_idx = p_setup.index & 0xF;
+        if (p_setup.get_recipient() ==
+            setup_packet::request_recipient::endpoint) {
+          auto const ep_idx = p_setup.index() & 0xF;
           optional_ptr<endpoint> ep = select_endpoint(ep_idx);
           if (!ep) {
             return false;
@@ -484,15 +482,15 @@ private:
   strong_ptr<interrupt_in_endpoint> m_ep_status_in;
   strong_ptr<hal::serial> m_console;
 };
-}  // namespace hal::v5::usb
+}  // namespace hal::usb
 
 namespace hal5 = hal::v5;
 
 void application()
 {
-  namespace usb = hal5::usb;
+  namespace usb = hal::usb;
   namespace pmr = std::pmr;
-  using namespace hal::v5::literals;
+  using namespace hal::literals;
   using namespace std::chrono_literals;
   using namespace std::string_view_literals;
 
@@ -548,8 +546,7 @@ void application()
 
   hal::print(*console, "conf array made with interfaces");
   try {
-    usb::enumerator<1> en(
-      control_endpoint, dev, confs, 0x0409, 1, console, false);
+    usb::enumerator<1> en(control_endpoint, dev, confs, 0x0409, 1, false);
     en.enumerate();
   }  // Catch statements for specific hal exceptions
 

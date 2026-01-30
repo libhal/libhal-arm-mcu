@@ -14,6 +14,8 @@
 
 cmake_minimum_required(VERSION 3.15)
 
+set(CMAKE_COLOR_DIAGNOSTICS ON)
+
 project(libhal-arm-mcu LANGUAGES CXX)
 
 libhal_test_and_make_library(

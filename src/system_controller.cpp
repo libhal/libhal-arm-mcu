@@ -63,4 +63,54 @@ void wait_for_event()
   asm volatile("wfe");
 #endif
 }
+
+bool debugger_connected()
+{
+#if defined(__thumb2__)
+  // CoreDebug->DHCSR register (Cortex-M3/M4/M7/etc.)
+  uint32_t volatile* dhcsr = reinterpret_cast<uint32_t volatile*>(0xE000EDF0);
+  // Bit 0 (C_DEBUGEN) indicates debugger is connected
+  return (*dhcsr & 0x00000001) != 0;
+#else
+  return false;
+#endif
+}
 }  // namespace hal::cortex_m
+
+extern "C"
+{
+  // The implementation of LLVM calls a calls the breakpoint instruction
+  // unconditionally, preventing the program from proceeding past this point
+  // without a debugger connected with semihosting enabled. In order to get
+  // around this, we replace sys_semihost and check if a debugger is connected.
+  // If it is connected we call the breakpoint instruction with the appropriate
+  // input value 0xAB. Otherwise, return an error code.
+  int sys_semihost([[maybe_unused]] int p_reason, [[maybe_unused]] void* p_arg)
+  {
+    if (hal::cortex_m::debugger_connected()) {
+#if defined(__thumb2__)
+      // Let the real semihost call happen (BKPT will work)
+      // Need to inline the BKPT instruction here
+      register int r0 asm("r0") = p_reason;
+      register void* r1 asm("r1") = p_arg;
+      asm volatile("bkpt 0xAB" : "=r"(r0) : "r"(r0), "r"(r1) : "memory");
+      return r0;
+#endif
+    }
+    return -1;  // No debugger, return error
+  }
+
+  char* sys_semihost_get_cmdline()
+  {
+    if (hal::cortex_m::debugger_connected()) {
+      // SYS_GET_CMDLINE is semihost operation 0x15
+      static char cmdline[256];
+      int result = sys_semihost(0x15, cmdline);
+      if (result == 0) {
+        return cmdline;
+      }
+    }
+    static char empty[] = "";
+    return empty;
+  }
+}

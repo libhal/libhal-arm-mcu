@@ -132,6 +132,13 @@ void throw_if_pin_is_unavailable(pin_select p_pin_select)
 
 void configure_pin(pin_select p_pin_select, pin_config_t p_config)
 {
+  // The GPIO pins PB3, PB4, and PA15 are default initalized to be used for
+  // JTAG purposes. This releases them if they are being configured
+  if ((p_pin_select.port == 'B' && p_pin_select.pin == 3) ||
+      (p_pin_select.port == 'B' && p_pin_select.pin == 4) ||
+      (p_pin_select.port == 'A' && p_pin_select.pin == 15)) {
+    release_jtag_pins();
+  }
   auto& config_reg = config_register(p_pin_select);
   auto& odr_reg = odr_register(p_pin_select);
   safely_power_on(p_pin_select);

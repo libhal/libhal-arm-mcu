@@ -12,32 +12,19 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include <array>
-
-#include <libhal-util/serial.hpp>
-#include <libhal-util/steady_clock.hpp>
-#include <libhal/timeout.hpp>
+#include <cstdio>
 
 #include <resource_list.hpp>
 
 void application()
 {
-  using namespace std::chrono_literals;
-  using namespace hal::literals;
-
   auto clock = resources::clock();
-  auto console = resources::console();
+
+  std::puts("Starting 'semihost' application...");
 
   while (true) {
     using namespace std::chrono_literals;
-    using namespace std::string_view_literals;
-
-    std::string_view message = "Hello, World!\n";
-    hal::print(*console, message);
-    // Echo anything received
-    std::array<hal::byte, 64> read_buffer;
-    console->write(console->read(read_buffer).data);
-
+    std::puts("Hello, World!");
     hal::delay(*clock, 1s);
   }
 }

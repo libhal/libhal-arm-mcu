@@ -157,6 +157,7 @@ set(pico_dep
   hardware_spi_headers
   hardware_uart_headers
   hardware_timer_headers
+  hardware_dma_headers
 )
 
 endif()

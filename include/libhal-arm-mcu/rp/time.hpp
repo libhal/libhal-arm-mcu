@@ -1,5 +1,6 @@
 #pragma once
 
+#include <chrono>
 #include <libhal/steady_clock.hpp>
 
 namespace hal::rp::inline v4 {
@@ -11,5 +12,7 @@ struct clock final : public hal::steady_clock
   hertz driver_frequency() override;
   u64 driver_uptime() override;
 };
+
+using microseconds = std::chrono::duration<u64, std::micro>;
 
 }  // namespace hal::rp::inline v4

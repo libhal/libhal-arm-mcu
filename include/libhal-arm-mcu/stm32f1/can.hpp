@@ -365,6 +365,7 @@ public:
     u32 extended = 0;
   };
 
+  static constexpr disable_ids disable{ .standard = 0, .extended = 0 };
   /**
    * @brief Construct a new can peripheral manager object
    *
@@ -384,11 +385,10 @@ public:
                "system if a hardware can transceiver is not connected to the "
                "CAN RX and CAN TX pins. Use the constructor that accepts a "
                "`hal::steady_clock` and timeout time instead.")]]
-  can_peripheral_manager(
-    hal::u32 p_baud_rate,
-    can_pins p_pins = can_pins::pa11_pa12,
-    disable_ids p_disabled_ids = disable_ids{ .standard = 0, .extended = 0 },
-    bool p_self_test = false);
+  can_peripheral_manager(hal::u32 p_baud_rate,
+                         can_pins p_pins = can_pins::pa11_pa12,
+                         disable_ids p_disabled_ids = disable,
+                         bool p_self_test = false);
 
   /**
    * @brief Construct a new can peripheral manager object
@@ -412,7 +412,7 @@ public:
     hal::time_duration p_timeout_time = std::chrono::milliseconds(1),
     can_pins p_pins = can_pins::pa11_pa12,
     self_test p_enable_self_test = self_test::off,
-    disable_ids p_disabled_ids = disable_ids{ .standard = 0, .extended = 0 });
+    disable_ids p_disabled_ids = disable);
 
   can_peripheral_manager(can_peripheral_manager const&) = delete;
   can_peripheral_manager& operator=(can_peripheral_manager const&) = delete;

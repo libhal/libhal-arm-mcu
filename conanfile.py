@@ -45,7 +45,8 @@ class libhal_arm_mcu_conan(ConanFile):
         "use_picolibc": [True, False],
         "platform": ["ANY"],
         "use_default_linker_script": [True, False],
-        "variant": [None, "ANY"]
+        "variant": [None, "ANY"],
+        "board": [None, "ANY"]
     }
 
     default_options = {
@@ -53,7 +54,8 @@ class libhal_arm_mcu_conan(ConanFile):
         "use_picolibc": True,
         "platform": "ANY",
         "use_default_linker_script": True,
-        "variant": None
+        "variant": None,
+        "board": None,
     }
 
     def requirements(self):
@@ -95,6 +97,8 @@ class libhal_arm_mcu_conan(ConanFile):
         tc = CMakeToolchain(self)
         if str(self.options.platform).startswith("rp2"):
             tc.cache_variables["DO_NOT_BUILD_BOOT_HAL"] = True
+            if self.options.board:
+                tc.cache_variables["PICO_BOARD"] = str(self.options.board)
         if self.options.variant:
             tc.preprocessor_definitions["LIBHAL_VARIANT_" + self._macro(str(self.options.variant))] = "1"
         tc.preprocessor_definitions["LIBHAL_PLATFORM_" + self._macro(str(self.options.platform))] = "1"
@@ -104,6 +108,8 @@ class libhal_arm_mcu_conan(ConanFile):
 
     def validate(self):
         if str(self.options.platform).startswith("rp2"):
+            if not self.options.board:
+                raise ConanInvalidConfiguration("RP board not specified")
             if "rp2350" in str(self.options.platform):
                 if not self.options.variant:
                     raise ConanInvalidConfiguration("RP2350 variant not specified")

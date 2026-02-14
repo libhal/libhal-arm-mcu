@@ -66,10 +66,10 @@ struct adc16_pack
   {
   }
   adc16_pack(adc16_pack const&) = delete;
-  adc16_pack(adc16_pack&&) =
-    delete ("ADC pack needs to be immovable to store transaction");
+  adc16_pack(adc16_pack&&) = delete;
 
   void read_many_now(std::span<u16>);
+  // Uses up 1 DMA channel
   read_session async();
 
 private:
@@ -102,22 +102,23 @@ struct adc16_pack::read_session
 
   private:
     friend read_session;
-    promise(u8 dma)
+    promise(u8 dma, u8 first_pin)  // NOLINT
       : m_dma(dma)
+      , m_first_pin(first_pin)
     {
     }
-    u8 m_dma;
+    u8 m_dma, m_first_pin;
   };
 
 private:
   friend adc16_pack;
-  read_session(u8 dma, u8 read_size, u8 first_mask)  // NOLINT
+  read_session(u8 dma, u8 read_size, u8 first_pin)  // NOLINT
     : m_dma(dma)
     , m_read_size(read_size)
-    , m_first_mask(first_mask)
+    , m_first_pin(first_pin)
   {
   }
-  u8 m_dma, m_read_size, m_first_mask;
+  u8 m_dma, m_read_size, m_first_pin;
 };
 
 }  // namespace nonstandard

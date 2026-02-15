@@ -325,7 +325,7 @@ Coming soon...
 In one terminal:
 
 ```bash
-pyocd gdbserver --target=lpc4088 --persist --semihost
+pyocd gdbserver --semihost -Osemihost_console_type=True --persist --target=lpc4088
 ```
 
 In another terminal:

@@ -44,6 +44,7 @@ class libhal_arm_mcu_conan(ConanFile):
         "use_picolibc": [True, False],
         "use_default_linker_script": [True, False],
         "replace_std_terminate": [True, False],
+        "use_semihosting": [True, False],
     }
     default_options = {
         "platform": "ANY",
@@ -51,6 +52,7 @@ class libhal_arm_mcu_conan(ConanFile):
         "use_picolibc": True,
         "use_default_linker_script": True,
         "replace_std_terminate": True,
+        "use_semihosting": True,
     }
     options_description = {
         "platform": "Specifies which platform to provide binaries and build information for",
@@ -58,6 +60,7 @@ class libhal_arm_mcu_conan(ConanFile):
         "use_picolibc": "Use picolibc as the libc runtime for ARM GCC. Note: ARM's LLVM fork always uses picolibc and ignores this option.",
         "use_default_linker_script": "Enable automatic linker script selection based on the specified platform",
         "replace_std_terminate": "Replace the default std::terminate handler to reduce binary size by avoiding verbose text rendering",
+        "use_semihosting": "Enables semihosting support, allowing the MCU to perform host based I/O like writing to stdout or reading from files via the debug port. With LLVM from arm-toolchain, semihosting is enabled via the compiler and must be disabled via a build profile option and not this option.",
     }
 
     def set_version(self):
@@ -75,10 +78,11 @@ class libhal_arm_mcu_conan(ConanFile):
                 self.settings.os == "baremetal" and
                 self.settings.compiler == "gcc"):
             CV = str(self.settings.compiler.version)
-            # we use hosted because arm-mcu provides its own weak
-            # implementation of the _exit() API which simply spins. The default
-            # crt0 doesn't seem to work so we'ved decided on this.
-            self.requires("prebuilt-picolibc/" + CV)
+
+            CRT0 = "semihost" if self.options.use_semihosting else "default"
+            OSLIB = "semihost" if self.options.use_semihosting else None
+            self.requires("prebuilt-picolibc/" + CV,
+                          options={"crt0": CRT0, "oslib": OSLIB})
 
     def handle_stm32f1_linker_scripts(self):
         linker_script_name = list(str(self.options.platform))
@@ -89,8 +93,8 @@ class libhal_arm_mcu_conan(ConanFile):
         linker_script_name = "".join(linker_script_name)
 
         self.cpp_info.exelinkflags.extend([
-            "-L" + os.path.join(self.package_folder, "linker_scripts"),
-            "-T" + os.path.join("libhal-stm32f1", linker_script_name + ".ld"),
+            "-L" + str(Path(self.package_folder) / "linker_scripts"),
+            "-T" + str(Path("libhal-stm32f1") / linker_script_name + ".ld"),
         ])
 
     def package_info(self):
@@ -112,11 +116,7 @@ class libhal_arm_mcu_conan(ConanFile):
 
     def package_id(self):
         self.info.python_requires.major_mode()
-        del self.info.options.use_picolibc
-        del self.info.options.use_libhal_exceptions
-        del self.info.options.platform
-        del self.info.options.use_default_linker_script
-        del self.info.options.replace_std_terminate
+        self.info.options.clear()
 
     def setup_baremetal(self, platform: str):
         if self.options.replace_std_terminate:
@@ -137,25 +137,23 @@ class libhal_arm_mcu_conan(ConanFile):
                 "-Wl,--wrap=_ZSt13get_terminatev",
             ])
 
-        if (self.options.replace_std_terminate and
-                self.settings.compiler == "clang"):
-            self.cpp_info.exelinkflags.extend([
-                # Overrides the terminate handler from LLVM
-                # This results in a large reduction in binary size since this
-                # terminate handler renders text and that text rendering is
-                # expensive.
-                "-Wl,--wrap=__cxa_terminate_handler",
-            ])
-
-        if (self.options.replace_std_terminate and
-                self.settings.compiler == "gcc"):
-            self.cpp_info.exelinkflags.extend([
-                # Override the terminate handler for GCC.
-                # This results in a large reduction in binary size since this
-                # terminate handler renders text and that text rendering is
-                # expensive.
-                "-Wl,--wrap=_ZN10__cxxabiv119__terminate_handlerE",
-            ])
+        if self.options.replace_std_terminate:
+            if self.settings.compiler == "clang":
+                self.cpp_info.exelinkflags.extend([
+                    # Overrides the terminate handler from LLVM
+                    # This results in a large reduction in binary size since this
+                    # terminate handler renders text and that text rendering is
+                    # expensive.
+                    "-Wl,--wrap=__cxa_terminate_handler",
+                ])
+            if self.settings.compiler == "gcc":
+                self.cpp_info.exelinkflags.extend([
+                    # Override the terminate handler for GCC.
+                    # This results in a large reduction in binary size since this
+                    # terminate handler renders text and that text rendering is
+                    # expensive.
+                    "-Wl,--wrap=_ZN10__cxxabiv119__terminate_handlerE",
+                ])
 
         if self.options.use_default_linker_script:
             LINKER_SCRIPTS_PATH = Path(self.package_folder) / "linker_scripts"

@@ -34,6 +34,7 @@ libhal_build_demos(
   # stream_dac
   timer
   usb_cdc_raw
+  semihost
 
   PACKAGES
   minimp3

@@ -78,8 +78,7 @@ class libhal_arm_mcu_conan(ConanFile):
             # we use hosted because arm-mcu provides its own weak
             # implementation of the _exit() API which simply spins. The default
             # crt0 doesn't seem to work so we'ved decided on this.
-            self.requires("prebuilt-picolibc/" + CV,
-                          options={"crt0": "hosted"})
+            self.requires("prebuilt-picolibc/" + CV)
 
     def handle_stm32f1_linker_scripts(self):
         linker_script_name = list(str(self.options.platform))

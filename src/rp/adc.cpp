@@ -121,12 +121,11 @@ adc16_pack::read_session adc16_pack::async()
   if (read_dma == -1) {
     hal::safe_throw(hal::device_or_resource_busy(this));
   }
-  adc_fifo_setup(
-    true,   // Write each completed conversion to the sample FIFO
-    true,   // Enable DMA data request (DREQ)
-    1,      // DREQ (and IRQ) asserted when at least 1 sample present
-    false,  // We won't see the ERR bit because of 8 bit reads; disable.
-    false   // Shift each sample to 8 bits when pushing to FIFO
+  adc_fifo_setup(false,  // do not enable FIFO yet
+                 true,   // Enable DMA data request (DREQ)
+                 1,  // DREQ (and IRQ) asserted when at least 1 sample present
+                 true,  // Enable ADC errors
+                 false  // Shift each sample to 8 bits when pushing to FIFO
   );
 
   dma_channel_config cfg = dma_channel_get_default_config(read_dma);
@@ -158,7 +157,10 @@ adc16_pack::read_session::promise adc16_pack::read_session::read(
                         span.size(),    // transfer count
                         true            // start immediately
   );
+  adc_run(false);
+  adc_fifo_drain();
   adc_select_input(m_first_pin);
+  adc_hw->fcs |= bool_to_bit(true) << ADC_FCS_EN_LSB;
   adc_run(true);
   return promise{ m_dma, m_first_pin };
 }
@@ -169,6 +171,7 @@ microseconds adc16_pack::read_session::promise::poll()
                    DMA_CH0_TRANS_COUNT_COUNT_BITS) >>
                   DMA_CH0_TRANS_COUNT_COUNT_LSB;
   if (transfers == 0) {
+    adc_hw->fcs &= ~ADC_FCS_EN_BITS;
     adc_run(false);
   }
   return transfers * microseconds(2);

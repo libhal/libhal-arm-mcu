@@ -23,6 +23,7 @@ struct i2c final : public hal::i2c
     static_assert(sda() % 4 == 2 || bus() != 1, "SDA pin for I2C1 is invalid!");
     static_assert(scl() % 4 == 3 || bus() != 1, "SCL pin for I2C1 is invalid!");
   }
+  i2c(i2c&&) = delete;
   ~i2c() override;
 
 private:

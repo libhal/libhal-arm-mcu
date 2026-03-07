@@ -19,6 +19,7 @@ struct interrupt_pin final : public hal::interrupt_pin
     : interrupt_pin(pin(), callback, options)
   {
   }
+  interrupt_pin(interrupt_pin&&) = delete;
   ~interrupt_pin() override;
 
 private:

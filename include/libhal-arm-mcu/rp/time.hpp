@@ -8,6 +8,7 @@ namespace hal::rp::inline v4 {
 struct clock final : public hal::steady_clock
 {
   clock() = default;
+  clock(clock const&) = default;
   hertz driver_frequency() override;
   u64 driver_uptime() override;
 };

@@ -16,6 +16,7 @@ struct adc final : public hal::adc
     static_assert(internal::pin_max != 48 || (pin() >= 40 && pin() < 48),
                   "ADC pin is invalid!");
   }
+  adc(adc&&) = delete;
   ~adc() override;
 
 private:

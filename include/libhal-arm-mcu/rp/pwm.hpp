@@ -20,6 +20,7 @@ struct pwm_pin final : hal::pwm
   // any right to complain about two different PWM pins interfering
   // with each other because they are on the same slice.
   pwm_pin(hal::unsafe, u8 pin);
+  pwm_pin(pwm_pin&&) = delete;
   ~pwm_pin() override;
 
 private:
@@ -52,6 +53,7 @@ be instantiated normally */
 struct pwm_slice_runtime : hal::pwm_group_manager
 {
 
+  pwm_slice_runtime(pwm_slice_runtime&&) = delete;
   ~pwm_slice_runtime() override;
   
   void enable(bool enable = true);
@@ -74,6 +76,7 @@ protected:
 struct pwm_pin final : hal::pwm16_channel
 {
 
+  pwm_pin(pwm_pin&&) = delete;
   ~pwm_pin() override;
 
   friend pwm_slice_runtime;
@@ -106,6 +109,7 @@ template<u64 chan>
 struct pwm_slice final : pwm_slice_runtime
 {
 
+  pwm_slice(pwm_slice&&) = delete;
   pwm_slice(channel_param auto ch)
     : pwm_slice_runtime(ch())
   {

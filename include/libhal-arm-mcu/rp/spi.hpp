@@ -23,6 +23,7 @@ struct spi final : public hal::spi
     static_assert(sck() % 4 == 2, "SPI SCK pin is invalid");
     static_assert(copi() % 4 == 3, "SPI CS pin is invalid");
   }
+  spi(spi&&) = delete;
   ~spi() override;
 
 private:

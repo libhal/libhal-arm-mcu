@@ -11,6 +11,7 @@ struct input_pin final : public hal::input_pin
     : input_pin(pin(), s)
   {
   }
+  input_pin(input_pin&&) = delete;
   ~input_pin() override;
 
 private:

@@ -18,6 +18,7 @@ of this class as it is not guaranteed.
 struct stdio_serial final : public hal::serial
 {
   stdio_serial();
+  stdio_serial(stdio_serial&&) = delete;
 
 private:
   // This function is a sham that does nothing
@@ -50,6 +51,7 @@ struct uart final : public hal::serial
     static_assert(((rx() + 4) / 8) % 2 == bus(),
                   "UART RX pin and bus do not match!");
   }
+  uart(uart&&) = delete;
   ~uart() override;
 
 private:

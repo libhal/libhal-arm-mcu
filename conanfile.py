@@ -72,7 +72,7 @@ class libhal_arm_mcu_conan(ConanFile):
                 compiler_version = str(self.settings.compiler.version)
                 self.requires("prebuilt-picolibc/" + compiler_version)
         if str(self.options.platform).startswith("rp2"):
-            self.requires("picosdk/2.2.0")
+            self.requires("picosdk/2.2.1-alpha")
             self.tool_requires("pioasm/2.2.0")
             if self.options.board.value.startswith("libhal_"):
                 board = self.options.board.value.removeprefix('libhal_').replace('_', '-')

@@ -179,10 +179,9 @@ void enable_all_pwm(bool start)
   }
 }
 
-template<u64 s>
-void pwm_slice<s>::enable(bool enable)
+void pwm_slice_runtime::enable(bool enable)
 {
-  pwm_set_enabled(s, enable);
+  pwm_set_enabled(m_number, enable);
 }
 
 u32 pwm_pin::driver_frequency()

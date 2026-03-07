@@ -53,6 +53,8 @@ struct pwm_slice_runtime : hal::pwm_group_manager
 {
 
   ~pwm_slice_runtime() override;
+  
+  void enable(bool enable = true);
 
 protected:
   pwm_slice_runtime(u8 slice_num);
@@ -117,8 +119,6 @@ struct pwm_slice final : pwm_slice_runtime
     static_assert(ch() < max_slices(), "Invalid PWM slice!");
   }
 
-  void enable(bool enable = true);
-
   pwm_pin get_pin(pin_param auto pin, pwm_pin_configuration const& config = {})
   {
     static_assert(get_slice_number(pin) == chan, "Slice pin is incorrect!");
@@ -141,7 +141,7 @@ struct pwm_slice final : pwm_slice_runtime
     if (pin() < 32) {
       return (pin() / 2) % 8;
     } else {
-      return pin() / 2 - 8;
+      return 8 + ((pin() >> 1) & 3);
     }
   }
 };

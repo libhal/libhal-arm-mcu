@@ -16,4 +16,9 @@ u64 clock::driver_uptime()
   return time_us_64();
 }
 
+hertz core_clock()
+{
+  return SYS_CLK_HZ;
+}
+
 }  // namespace hal::rp::inline v4

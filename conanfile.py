@@ -100,6 +100,7 @@ class libhal_arm_mcu_conan(ConanFile):
         tc = CMakeToolchain(self)
         if str(self.options.platform).startswith("rp2"):
             tc.cache_variables["DO_NOT_BUILD_BOOT_HAL"] = True
+            tc.preprocessor_definitions["PICO_STDIO_SHORT_CIRCUIT_CLIB_FUNCS"] = "0"
             if self.options.board:
                 tc.cache_variables["PICO_BOARD"] = str(self.options.board)
         if self.options.variant:
@@ -111,6 +112,8 @@ class libhal_arm_mcu_conan(ConanFile):
 
     def validate(self):
         if str(self.options.platform).startswith("rp2"):
+            if not self.options.board:
+                raise ConanInvalidConfiguration("RP board not specified")
             if "rp2350" in str(self.options.platform):
                 if not self.options.variant:
                     raise ConanInvalidConfiguration("RP2350 variant not specified")
@@ -139,6 +142,7 @@ class libhal_arm_mcu_conan(ConanFile):
             if self.options.variant:
                 defines.append("LIBHAL_VARIANT_" + self._macro(str(self.options.variant)) + "=1")
             defines.append("LIBHAL_PLATFORM_" + self._macro(str(self.options.platform)) + "=1")
+            defines.append("PICO_STDIO_SHORT_CIRCUIT_CLIB_FUNCS=0")
             self.cpp_info.defines = defines
 
         if (self.settings.os == "baremetal" and

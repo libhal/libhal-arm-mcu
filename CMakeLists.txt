@@ -16,7 +16,6 @@ cmake_minimum_required(VERSION 3.15)
 
 if(DEFINED ENV{PICO_SDK_PATH})
 set(PICO_CXX_ENABLE_EXCEPTIONS 1)
-set(CMAKE_ASM_FLAGS_INIT "-mcpu=cortex-m33 -mfloat-abi=soft")
 set(PICO_NO_PICOTOOL 1)
 include($ENV{PICO_SDK_PATH}/external/pico_sdk_import.cmake)
 endif()
@@ -155,6 +154,7 @@ set(pico_dep
   hardware_spi_headers
   hardware_uart_headers
   hardware_timer_headers
+  hardware_dma_headers
 )
 
 endif()

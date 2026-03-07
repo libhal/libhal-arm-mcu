@@ -1,7 +1,10 @@
 #pragma once
 
 #include "rp.hpp"
+#include "time.hpp"
 #include <libhal/adc.hpp>
+#include <libhal/units.hpp>
+#include <span>
 
 namespace hal::rp {
 
@@ -52,4 +55,73 @@ private:
   u8 m_pin;
 };
 }  // namespace v5
+
+namespace nonstandard {
+struct adc16_pack
+{
+  struct read_session;
+
+  template<pin_param... Pins>
+  adc16_pack(Pins... ps)
+    : adc16_pack((to_mask(ps) | ...))
+  {
+  }
+  adc16_pack(adc16_pack const&) = delete;
+  adc16_pack(adc16_pack&&) = delete;
+
+  void read_many_now(std::span<u16>);
+  // Uses up 1 DMA channel
+  read_session async();
+
+private:
+  adc16_pack(u8 pin_mask);
+  u8 to_mask(pin_param auto pin)
+  {
+    if constexpr (internal::pin_max == 30) {
+      static_assert(pin() >= 26 && pin() < 30);
+      return 1 << (pin() - 26);
+    } else if constexpr (internal::pin_max == 48) {
+      static_assert(pin() >= 40 && pin() < 48);
+      return 1 << (pin() - 40);
+    }
+  }
+  u8 m_read_size, m_first_pin;
+};
+
+struct adc16_pack::read_session
+{
+  struct promise;
+  promise read(std::span<u16>);
+  ~read_session();
+  read_session(read_session const&) = delete;
+  read_session(read_session&&) = delete;
+
+  struct promise
+  {
+    microseconds poll();
+    promise(promise const&) = default;
+
+  private:
+    friend read_session;
+    promise(u8 dma, u8 first_pin)  // NOLINT
+      : m_dma(dma)
+      , m_first_pin(first_pin)
+    {
+    }
+    u8 m_dma, m_first_pin;
+  };
+
+private:
+  friend adc16_pack;
+  read_session(u8 dma, u8 read_size, u8 first_pin)  // NOLINT
+    : m_dma(dma)
+    , m_read_size(read_size)
+    , m_first_pin(first_pin)
+  {
+  }
+  u8 m_dma, m_read_size, m_first_pin;
+};
+
+}  // namespace nonstandard
+
 }  // namespace hal::rp

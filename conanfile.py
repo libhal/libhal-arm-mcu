@@ -45,7 +45,8 @@ class libhal_arm_mcu_conan(ConanFile):
         "use_picolibc": [True, False],
         "platform": ["ANY"],
         "use_default_linker_script": [True, False],
-        "variant": [None, "ANY"]
+        "variant": [None, "ANY"],
+        "board": [None, "ANY"],
     }
 
     default_options = {
@@ -53,7 +54,8 @@ class libhal_arm_mcu_conan(ConanFile):
         "use_picolibc": True,
         "platform": "ANY",
         "use_default_linker_script": True,
-        "variant": None
+        "variant": None,
+        "board": None,
     }
 
     def requirements(self):
@@ -72,6 +74,9 @@ class libhal_arm_mcu_conan(ConanFile):
         if str(self.options.platform).startswith("rp2"):
             self.requires("picosdk/2.2.0")
             self.tool_requires("pioasm/2.2.0")
+            if self.options.board.value.startswith("libhal_"):
+                board = self.options.board.value.removeprefix('libhal_').replace('_', '-')
+                self.requires(f"rp-board-header-{board}/latest", visible=True)
 
     def handle_stm32f1_linker_scripts(self):
         linker_script_name = list(str(self.options.platform))
@@ -95,6 +100,8 @@ class libhal_arm_mcu_conan(ConanFile):
         tc = CMakeToolchain(self)
         if str(self.options.platform).startswith("rp2"):
             tc.cache_variables["DO_NOT_BUILD_BOOT_HAL"] = True
+            if self.options.board:
+                tc.cache_variables["PICO_BOARD"] = str(self.options.board)
         if self.options.variant:
             tc.preprocessor_definitions["LIBHAL_VARIANT_" + self._macro(str(self.options.variant))] = "1"
         tc.preprocessor_definitions["LIBHAL_PLATFORM_" + self._macro(str(self.options.platform))] = "1"
@@ -109,6 +116,8 @@ class libhal_arm_mcu_conan(ConanFile):
                     raise ConanInvalidConfiguration("RP2350 variant not specified")
                 if self.options.variant not in ["rp2350a", "rp2350b"]:
                     raise ConanInvalidConfiguration("Invalid RP2350 variant specified")
+                if not self.options.board:
+                    raise ConanInvalidConfiguration("Board must be specified during build")
         super().validate()
 
     def package_info(self):

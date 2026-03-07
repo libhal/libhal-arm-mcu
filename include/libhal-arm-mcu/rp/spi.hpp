@@ -39,7 +39,7 @@ private:
 namespace v5 {
 /*
 RP chips suppport 16 bit transfers. It may be worthwhile to add an option
-to transfer 16 bits as a time.
+to transfer 16 bits as a time. TODO fix to add spi channel manager
 */
 struct spi final : public hal::spi_channel
 {

@@ -53,13 +53,18 @@ be instantiated normally */
 struct pwm_slice_runtime : hal::pwm_group_manager
 {
 
+  struct configuration
+  {
+    bool phase_correct = false;
+  };
+
   pwm_slice_runtime(pwm_slice_runtime&&) = delete;
   ~pwm_slice_runtime() override;
-  
+
   void enable(bool enable = true);
 
 protected:
-  pwm_slice_runtime(u8 slice_num);
+  pwm_slice_runtime(u8 slice_num, configuration const&);
 
   pwm_pin get_pin_raw(u8 pin, pwm_pin_configuration const&);
   /*
@@ -69,6 +74,7 @@ protected:
   */
   void driver_frequency(u32 p_frequency) final;
   u8 m_number;
+  bool m_phase_correct;
 };
 
 /* This cannot be constructed normally, and needs to be
@@ -110,8 +116,9 @@ struct pwm_slice final : pwm_slice_runtime
 {
 
   pwm_slice(pwm_slice&&) = delete;
-  pwm_slice(channel_param auto ch)
-    : pwm_slice_runtime(ch())
+  pwm_slice(channel_param auto ch,
+            pwm_slice_runtime::configuration const& cfg = {})
+    : pwm_slice_runtime(ch(), cfg)
   {
     using enum internal::processor_type;
     static_assert(internal::type == rp2040 || internal::type == rp2350,

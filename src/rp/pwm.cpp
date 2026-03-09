@@ -78,8 +78,9 @@ void pwm_pin::driver_frequency(float f)
 
 namespace v5 {
 
-pwm_slice_runtime::pwm_slice_runtime(u8 num)
+pwm_slice_runtime::pwm_slice_runtime(u8 num, configuration const& cfg)
   : m_number(num)
+  , m_phase_correct(cfg.phase_correct)
 {
   if (num >= NUM_PWM_SLICES) {
     hal::safe_throw(argument_out_of_domain(this));
@@ -101,6 +102,10 @@ void pwm_slice_runtime::driver_frequency(u32 f)
   }
 
   auto frequency = static_cast<float>(f);
+  // phase correct mode halfs output frequency, so we need to double it to
+  // compensate
+  if (m_phase_correct)
+    frequency *= 2;
   auto clock = static_cast<float>(SYS_CLK_HZ);
   // We try to adjust clock divider to maximize counter resolution
   float wrap_val = std::numeric_limits<uint16_t>::max();

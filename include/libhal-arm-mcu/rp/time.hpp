@@ -20,9 +20,5 @@ hertz core_clock();
 using microseconds = std::chrono::duration<u32, std::micro>;
 
 void sleep(std::chrono::duration<u64, std::micro> time) noexcept;
-inline void sleep(std::chrono::duration<u32, std::micro> time) noexcept
-{
-  sleep(std::chrono::duration<u64, std::micro>(time.count()));
-}
 
 }  // namespace hal::rp::inline v4

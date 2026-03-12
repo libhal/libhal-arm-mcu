@@ -89,4 +89,12 @@ void wait_for_interrupt();
  *
  */
 void wait_for_event();
+
+/**
+ * @brief Check if debugger is connected via CoreDebug->DHCSRd
+ *
+ * @return true - debugger connected
+ * @return false - debugger is not connected
+ */
+bool debugger_connected();
 }  // namespace hal::cortex_m

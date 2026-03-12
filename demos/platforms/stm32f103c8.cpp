@@ -12,10 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <memory_resource>
+
 #include <libhal-arm-mcu/dwt_counter.hpp>
 #include <libhal-arm-mcu/startup.hpp>
 #include <libhal-arm-mcu/stm32f1/adc.hpp>
-#include <libhal-arm-mcu/stm32f1/can.hpp>
+#include <libhal-arm-mcu/stm32f1/can2.hpp>
 #include <libhal-arm-mcu/stm32f1/clock.hpp>
 #include <libhal-arm-mcu/stm32f1/constants.hpp>
 #include <libhal-arm-mcu/stm32f1/gpio.hpp>
@@ -29,7 +31,6 @@
 #include <libhal-arm-mcu/stm32f1/usart.hpp>
 #include <libhal-arm-mcu/stm32f1/usb.hpp>
 #include <libhal-arm-mcu/system_control.hpp>
-#include <libhal-exceptions/control.hpp>
 #include <libhal-util/atomic_spin_lock.hpp>
 #include <libhal-util/bit_bang_i2c.hpp>
 #include <libhal-util/bit_bang_spi.hpp>
@@ -39,9 +40,8 @@
 #include <libhal/pointers.hpp>
 #include <libhal/pwm.hpp>
 #include <libhal/units.hpp>
-
 #include <libhal/usb.hpp>
-#include <memory_resource>
+
 #include <resource_list.hpp>
 
 namespace resources {
@@ -58,20 +58,38 @@ std::pmr::polymorphic_allocator<> driver_allocator()
   return &resource;
 }
 
-auto& gpio_a()
+hal::v5::optional_ptr<hal::stm32f1::gpio<st_peripheral::gpio_a>> gpio_a_ptr;
+hal::v5::optional_ptr<hal::stm32f1::gpio<st_peripheral::gpio_b>> gpio_b_ptr;
+hal::v5::optional_ptr<hal::stm32f1::gpio<st_peripheral::gpio_c>> gpio_c_ptr;
+
+hal::v5::strong_ptr<hal::stm32f1::gpio<st_peripheral::gpio_a>> gpio_a()
 {
-  static hal::stm32f1::gpio<st_peripheral::gpio_a> gpio;
-  return gpio;
+  if (not gpio_a_ptr) {
+    gpio_a_ptr =
+      hal::v5::make_strong_ptr<hal::stm32f1::gpio<st_peripheral::gpio_a>>(
+        driver_allocator());
+  }
+  return gpio_a_ptr;
 }
-auto& gpio_b()
+
+hal::v5::strong_ptr<hal::stm32f1::gpio<st_peripheral::gpio_b>> gpio_b()
 {
-  static hal::stm32f1::gpio<st_peripheral::gpio_b> gpio;
-  return gpio;
+  if (not gpio_b_ptr) {
+    gpio_b_ptr =
+      hal::v5::make_strong_ptr<hal::stm32f1::gpio<st_peripheral::gpio_b>>(
+        driver_allocator());
+  }
+  return gpio_b_ptr;
 }
-auto& gpio_c()
+
+hal::v5::strong_ptr<hal::stm32f1::gpio<st_peripheral::gpio_c>> gpio_c()
 {
-  static hal::stm32f1::gpio<st_peripheral::gpio_c> gpio;
-  return gpio;
+  if (not gpio_c_ptr) {
+    gpio_c_ptr =
+      hal::v5::make_strong_ptr<hal::stm32f1::gpio<st_peripheral::gpio_c>>(
+        driver_allocator());
+  }
+  return gpio_c_ptr;
 }
 
 hal::v5::optional_ptr<hal::cortex_m::dwt_counter> clock_ptr;
@@ -209,9 +227,7 @@ hal::v5::optional_ptr<hal::output_pin> led_ptr;
 hal::v5::strong_ptr<hal::output_pin> status_led()
 {
   if (not led_ptr) {
-    auto led = gpio_c().acquire_output_pin(13);
-    led_ptr = hal::v5::make_strong_ptr<decltype(led)>(driver_allocator(),
-                                                      std::move(led));
+    led_ptr = hal::acquire_output_pin(driver_allocator(), gpio_c(), 13);
   }
   return led_ptr;
 }
@@ -225,15 +241,19 @@ hal::v5::strong_ptr<hal::adc> adc()
 
 hal::v5::strong_ptr<hal::i2c> i2c()
 {
-  static auto sda_output_pin = gpio_b().acquire_output_pin(7);
-  static auto scl_output_pin = gpio_b().acquire_output_pin(6);
+  // TODO(#167): Use a version of bit_bang_i2c that accepts strong_ptr's
+  static auto sda_output_pin =
+    hal::acquire_output_pin(driver_allocator(), gpio_b(), 7);
+  static auto scl_output_pin =
+    hal::acquire_output_pin(driver_allocator(), gpio_b(), 6);
   auto clock = resources::clock();
-  return hal::v5::make_strong_ptr<hal::bit_bang_i2c>(driver_allocator(),
-                                                     hal::bit_bang_i2c::pins{
-                                                       .sda = &sda_output_pin,
-                                                       .scl = &scl_output_pin,
-                                                     },
-                                                     *clock);
+  return hal::v5::make_strong_ptr<hal::bit_bang_i2c>(
+    driver_allocator(),
+    hal::bit_bang_i2c::pins{
+      .sda = &(*sda_output_pin),
+      .scl = &(*scl_output_pin),
+    },
+    *clock);
 }
 
 hal::v5::strong_ptr<hal::spi> spi()
@@ -249,14 +269,12 @@ hal::v5::strong_ptr<hal::spi> spi()
 
 hal::v5::strong_ptr<hal::output_pin> spi_chip_select()
 {
-  return hal::v5::make_strong_ptr<decltype(gpio_a().acquire_output_pin(4))>(
-    driver_allocator(), gpio_a().acquire_output_pin(4));
+  return hal::acquire_output_pin(driver_allocator(), gpio_a(), 4);
 }
 
 hal::v5::strong_ptr<hal::input_pin> input_pin()
 {
-  return hal::v5::make_strong_ptr<decltype(gpio_b().acquire_input_pin(4))>(
-    driver_allocator(), gpio_b().acquire_input_pin(4));
+  return hal::acquire_input_pin(driver_allocator(), gpio_b(), 4);
 }
 
 auto& timer1()
@@ -299,27 +317,46 @@ hal::v5::strong_ptr<hal::pwm_group_manager> pwm_frequency()
     driver_allocator(), std::move(timer_pwm_frequency));
 }
 
+hal::v5::optional_ptr<hal::stm32f1::can_peripheral_manager_v2> can_manager;
+
+void initialize_can()
+{
+  if (not can_manager) {
+    auto clock_ref = clock();
+    can_manager =
+      hal::v5::make_strong_ptr<hal::stm32f1::can_peripheral_manager_v2>(
+        driver_allocator(),
+        32,
+        driver_allocator(),
+        100'000,
+        *clock_ref,
+        std::chrono::milliseconds(1),
+        hal::stm32f1::can_pins::pb9_pb8);
+  }
+}
+
 hal::v5::strong_ptr<hal::can_transceiver> can_transceiver()
 {
-  throw hal::operation_not_supported(nullptr);
-  // CAN is commented out in original due to potential stalling issues
-  // TODO(#125): Initializing the can peripheral without it connected to a can
-  // transceiver causes it to stall on occasion.
+  initialize_can();
+  return hal::acquire_can_transceiver(driver_allocator(), can_manager);
 }
 
 hal::v5::strong_ptr<hal::can_bus_manager> can_bus_manager()
 {
-  throw hal::operation_not_supported(nullptr);
+  initialize_can();
+  return hal::acquire_can_bus_manager(driver_allocator(), can_manager);
 }
 
 hal::v5::strong_ptr<hal::can_identifier_filter> can_identifier_filter()
 {
-  throw hal::operation_not_supported(nullptr);
+  initialize_can();
+  return hal::acquire_can_identifier_filter(driver_allocator(), can_manager)[0];
 }
 
 hal::v5::strong_ptr<hal::can_interrupt> can_interrupt()
 {
-  throw hal::operation_not_supported(nullptr);
+  initialize_can();
+  return hal::acquire_can_interrupt(driver_allocator(), can_manager);
 }
 
 hal::v5::strong_ptr<hal::interrupt_pin> interrupt_pin()
@@ -406,7 +443,7 @@ hal::v5::strong_ptr<custom::watchdog> watchdog()
 void initialize_platform()
 {
   using namespace hal::literals;
-  hal::set_terminate(resources::terminate_handler);
+  std::set_terminate(resources::terminate_handler);
   // Set the MCU to the maximum clock speed
 
   hal::stm32f1::configure_clocks(hal::stm32f1::clock_tree{

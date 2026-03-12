@@ -19,6 +19,7 @@ set(PICO_CXX_ENABLE_EXCEPTIONS 1)
 set(PICO_NO_PICOTOOL 1)
 include($ENV{PICO_SDK_PATH}/external/pico_sdk_import.cmake)
 endif()
+set(CMAKE_COLOR_DIAGNOSTICS ON)
 
 project(libhal-arm-mcu LANGUAGES CXX C ASM)
 
@@ -61,6 +62,7 @@ set(source_list
 
   # stm32f1
   src/stm32f1/can.cpp
+  src/stm32f1/can2.cpp
   src/stm32f1/clock.cpp
   src/stm32f1/gpio.cpp
   src/stm32f1/independent_watchdog.cpp
@@ -116,6 +118,7 @@ set(
 
   # stm32f1
   tests/stm32f1/can.test.cpp
+  tests/stm32f1/can2.test.cpp
   tests/stm32f1/output_pin.test.cpp
   tests/stm32f1/uart.test.cpp
   tests/stm32f1/spi.test.cpp
@@ -164,6 +167,7 @@ libhal_test_and_make_library(
 
   SOURCES
   ${source_list}
+  src/terminate_handler.cpp
 
   TEST_SOURCES
   ${test_sources}

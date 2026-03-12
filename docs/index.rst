@@ -17,3 +17,7 @@ ARM Cortex M processors embedded within them.
 
   Libhal Cortex M <cortex_m/index>
   Libhal LPC40xx <lpc40/index>
+  Libhal STM32F1 <stm32f1/index>
+  Libhal STM32F40 <stm32f40/index>
+  Libhal STM32F411 <stm32f411/index>
+  Libhal STM32 Generic <stm32_generic/index>

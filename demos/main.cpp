@@ -12,7 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include <libhal-exceptions/control.hpp>
+#include <cstdio>
+
+#include <exception>
+
 #include <libhal-util/serial.hpp>
 #include <libhal-util/steady_clock.hpp>
 #include <libhal/error.hpp>
@@ -46,10 +49,46 @@ int main()
   std::terminate();
 }
 
-extern "C"
+// Override global new operator
+void* operator new(std::size_t)
 {
-  // This gets rid of an issue with libhal-exceptions in Debug mode.
-  void __assert_func()  // NOLINT
-  {
-  }
+  std::terminate();
+}
+
+// Override global new[] operator
+void* operator new[](std::size_t)
+{
+  std::terminate();
+}
+
+void* operator new(unsigned int, std::align_val_t)
+{
+  std::terminate();
+}
+
+// Override global delete operator
+void operator delete(void*) noexcept
+{
+}
+
+// Override global delete[] operator
+void operator delete[](void*) noexcept
+{
+}
+
+// Optional: Override sized delete operators (C++14 and later)
+void operator delete(void*, std::size_t) noexcept
+{
+}
+
+void operator delete[](void*, std::size_t) noexcept
+{
+}
+
+void operator delete[](void*, std::align_val_t) noexcept
+{
+}
+
+void operator delete(void*, std::align_val_t) noexcept
+{
 }

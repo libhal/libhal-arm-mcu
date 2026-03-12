@@ -24,11 +24,8 @@ class demos(ConanFile):
     python_requires_extend = "libhal-bootstrap.demo"
 
     def requirements(self):
-        self.requires("libhal-util/[^5.4.0]")
-        self.requires("libhal-arm-mcu/[1.9.1 || latest]")
-        self.tool_requires("picotool/2.1.1")
+        self.requires("libhal-arm-mcu/latest")
         self.requires("minimp3/cci.20211201")
-        self.requires("micromod-header/1.0.0")
     
     # This is kinda sketch, but needs to be done manually until https://github.com/conan-io/conan/issues/13372
     # gets implemented

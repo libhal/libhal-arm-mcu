@@ -13,10 +13,11 @@
 // limitations under the License.
 
 #include <array>
+
 #include <libhal-util/serial.hpp>
 #include <libhal-util/steady_clock.hpp>
-
 #include <libhal/timeout.hpp>
+
 #include <resource_list.hpp>
 
 void application()

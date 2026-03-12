@@ -1,6 +1,7 @@
 # libhal-arm-mcu
 
-[![✅ CI](https://github.com/libhal/libhal-armcortex/actions/workflows/ci.yml/badge.svg)](https://github.com/libhal/libhal-armcortex/actions/workflows/ci.yml)
+[![✅ Demos Build](https://github.com/libhal/libhal-arm-mcu/actions/workflows/demos_test.yml/badge.svg)](https://github.com/libhal/libhal-arm-mcu/actions/workflows/demos_test.yml)
+[![✅ Library Builds](https://github.com/libhal/libhal-arm-mcu/actions/workflows/library_test.yml/badge.svg)](https://github.com/libhal/libhal-arm-mcu/actions/workflows/library_test.yml)
 [![GitHub stars](https://img.shields.io/github/stars/libhal/libhal-armcortex.svg)](https://github.com/libhal/libhal-armcortex/stargazers)
 [![GitHub forks](https://img.shields.io/github/forks/libhal/libhal-armcortex.svg)](https://github.com/libhal/libhal-armcortex/network)
 [![GitHub issues](https://img.shields.io/github/issues/libhal/libhal-armcortex.svg)](https://github.com/libhal/libhal-armcortex/issues)
@@ -9,6 +10,11 @@ This repo contains libhal compatible libraries for numerous ARM Cortex-M
 processor microcontrollers (MCUs). This is a platform library supporting
 generic ARM processor APIs and peripheral drivers from many different
 microcontrollers.
+
+> [!NOTE]
+> CI is failing due to a memory leak detected via ASAN when executing the unit tests on Linux.
+> Everything passes without an error or leak detected on MacOS builds.
+> This is the current cause of the CI to failure. Otherwise the rest of CI is passing.
 
 ## 📚 Software APIs & Usage
 
@@ -36,8 +42,7 @@ microcontrollers, you'll need to install both the ARM GNU toolchain and the ARM
 MCU profiles.
 
 ```bash
-conan config install -sf conan/profiles/v1 -tf profiles https://github.com/libhal/arm-gnu-toolchain.git
-conan config install -sf conan/profiles/v1 -tf profiles https://github.com/libhal/libhal-arm-mcu.git
+conan config install https://github.com/libhal/conan-config2.git
 ```
 
 The first command installs the ARM GNU compiler profiles, while the second adds
@@ -53,20 +58,19 @@ ARM microcontrollers.
 To build demos, start at the root of the repo and execute the following command:
 
 ```bash
-conan build demos -pr lpc4078 -s arm-gcc-12.3
+conan build demos -pr hal/mcu/lpc4078 -s hal/tc/arm-gcc
 ```
 
 This will build the demos for the `lpc4078` microcontroller in `MinSizeRel`
 mode. Replace `lpc4078` with any of the other complete profiles found in the
-`./conan/profiles/v1/`. An example of an incomplete profiles do not match an
-exact device such as `lpc40` or `stm32f1` which are used to build full
-profiles. You can also select the compiler you want to use with the
-`arm-gcc-12.3` compiler flag.
+`profiles/hal/mcu`. You must also supply the compiler you plan to use.
+`hal/tc/arm-gcc` is the currently support ARM GCC compiler for libhal which is
+set to `14.3`
 
 Add the flag `-s build_type=Debug` to build in debug mode:
 
 ```bash
-conan build demos -pr lpc4078 -s arm-gcc-12.3 -s build_type=Debug
+conan build demos -pr hal/mcu/lpc4078 -s hal/tc/arm-gcc -s build_type=Debug
 ```
 
 Build type `Debug`, `MinSizeRel`, and `Release` are all available.
@@ -321,17 +325,31 @@ Coming soon...
 In one terminal:
 
 ```bash
-pyocd gdbserver --target=lpc4088 --persist
+pyocd gdbserver --semihost -Osemihost_console_type=True --persist --target=lpc4088
 ```
 
 In another terminal:
 
 ```bash
-arm-none-eabi-gdb demos/build/lpc4078/blinker.elf -ex "target remote :3333"
+arm-none-eabi-gdb demos/build/lpc4078/blinker.elf -ex "target remote :3333" -ex "set mem inaccessible-by-default off"
 ```
 
 Replace `demos/build/lpc4078/blinker.elf` with the path to the elf file you'd
 like to use for the debugging session.
+
+> [!tip]
+> If you get this error:
+>
+> ```plaintext
+> Program received signal SIGTRAP, Trace/breakpoint trap.
+> 0x08002840 in sys_semihost ()
+> ```
+>
+> It means semihosting is not enabled but a semihost function has been
+> executed. This usually means that the `--semihost` argument was not added to
+> the `pyocd` command. To fix this, you can restart your `pyocd` session with
+> the argument OR you can enter `monitor arm semihosting enable` in GDB and
+> then continue debugging using the `continue` command.
 
 ### Using OpenOCD
 

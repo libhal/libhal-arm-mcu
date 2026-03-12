@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-cmake_minimum_required(VERSION 3.20)
+cmake_minimum_required(VERSION 4.0)
 
 if(DEFINED ENV{PICO_SDK_PATH})
 include($ENV{PICO_SDK_PATH}/external/pico_sdk_import.cmake)
@@ -52,7 +52,10 @@ set(demos
   spi
   blank
   # stream_dac
-
+  # watchdog
+  # timer
+  # usb_cdc_raw
+  # semihost
 )
 
 else()
@@ -71,6 +74,10 @@ set(demos
   spi
   blank
   stream_dac
+  watchdog
+  timer
+  usb_cdc_raw
+  semihost
 )
 
 set(demo_deps

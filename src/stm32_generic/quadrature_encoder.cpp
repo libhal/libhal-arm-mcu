@@ -91,8 +91,8 @@ void quadrature_encoder::initialize(unsafe,
   m_pulses_per_rotation = p_pulses_per_rotation;
   timer_reg_t* timer_register = get_timer_reg(m_reg);
   constexpr auto set_encoder_mode = bit_mask::from<0, 2>();
-  // encoder counts up/down on both TI1FP1 and TI2FP1 level
-  constexpr auto encoder_mode_3 = 0b011U;
+  // encoder counts up/down on only TI2FP1 level
+  constexpr auto encoder_mode_3 = 0b010U;
 
   setup_channel(channels.channel_a, timer_register);
   setup_channel(channels.channel_b, timer_register);

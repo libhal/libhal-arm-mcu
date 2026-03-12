@@ -19,6 +19,7 @@
 #include <libhal-util/serial.hpp>
 #include <libhal-util/steady_clock.hpp>
 #include <libhal/error.hpp>
+#include <libhal-exceptions/control.hpp>
 
 #include "resource_list.hpp"
 

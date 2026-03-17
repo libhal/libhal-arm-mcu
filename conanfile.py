@@ -132,6 +132,8 @@ class libhal_arm_mcu_conan(ConanFile):
 
     def validate(self):
         if str(self.options.platform).startswith("rp2"):
+            if self.options.use_default_linker_script:
+                raise ConanInvalidConfiguration("Default linker scripts are not compatible with RP chips, use pico-sdk linker scripts instead")
             if not self.options.board:
                 raise ConanInvalidConfiguration("RP board not specified")
             if "rp2350" in str(self.options.platform):

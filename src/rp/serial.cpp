@@ -52,6 +52,10 @@ serial::read_t stdio_serial::driver_read(std::span<byte> output)
   int len = stdio_get_until(reinterpret_cast<char*>(output.data()),
                             static_cast<int>(output.size_bytes()),
                             0);
+  if (len == PICO_ERROR_TIMEOUT)
+    len = 0;
+  if (len < 0)
+    hal::safe_throw(hal::io_error(this));
   return read_t{ .data = output.subspan(0, len),
                  .available = 0,
                  .capacity = 1 };

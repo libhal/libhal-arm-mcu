@@ -18,13 +18,35 @@
 
 #include <libhal-util/serial.hpp>
 #include <libhal-util/steady_clock.hpp>
+#include <libhal/error.hpp>
+#include <libhal-exceptions/control.hpp>
 
-#include <resource_list.hpp>
+#include "resource_list.hpp"
+
+[[noreturn]] void terminate_handler() noexcept
+{
+
+  // spin here forever
+  while (true) {
+    continue;
+  }
+}
 
 int main()
 {
-  initialize_platform();
-  application();
+  hal::set_terminate(terminate_handler);
+
+  try {
+    application();
+  } catch (hal::bad_optional_ptr_access const& e) {
+    auto console = resources::console();
+    hal::print(*console,
+               "A resource required by the application was not"
+               "available!\n"
+               "Calling terminate!\n");
+
+  }  // Allow any other exceptions to terminate the application
+
   std::terminate();
 }
 

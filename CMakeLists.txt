@@ -14,18 +14,20 @@
 
 cmake_minimum_required(VERSION 3.15)
 
+if(DEFINED ENV{PICO_SDK_PATH})
+set(PICO_CXX_ENABLE_EXCEPTIONS 1)
+set(PICO_NO_PICOTOOL 1)
+include($ENV{PICO_SDK_PATH}/external/pico_sdk_import.cmake)
+endif()
 set(CMAKE_COLOR_DIAGNOSTICS ON)
 
-project(libhal-arm-mcu LANGUAGES CXX)
+project(libhal-arm-mcu LANGUAGES CXX C ASM)
 
-libhal_test_and_make_library(
-  LIBRARY_NAME libhal-arm-mcu
-
-  SOURCES
-  # Exceptions code size reducer
-  src/terminate_handler.cpp
-
-  # cortex_m
+# Should probably refine this to actually not compile
+# drivers for all platforms all the time, but for now this
+# serves my purposes
+if(NOT DEFINED ENV{PICO_SDK_PATH})
+set(source_list
   src/system_controller.cpp
   src/dwt_counter.cpp
   src/interrupt.cpp
@@ -92,8 +94,10 @@ libhal_test_and_make_library(
 
   # stm32f40
   src/stm32f40/output_pin.cpp
+)
 
-  TEST_SOURCES
+set(
+  test_sources
   # cortex_m
   tests/dwt_counter.test.cpp
   tests/interrupt.test.cpp
@@ -124,6 +128,49 @@ libhal_test_and_make_library(
   # stm32f411
   tests/stm32f411/output_pin.test.cpp
   tests/stm32f411/spi.test.cpp
+)
+
+else()
+set(source_list
+  src/rp/gpio.cpp
+  src/rp/serial.cpp
+  src/rp/i2c.cpp
+  src/rp/pwm.cpp
+  src/rp/adc.cpp
+  src/rp/spi.cpp
+  src/rp/time.cpp
+  src/system_controller.cpp
+  src/dwt_counter.cpp
+  src/interrupt.cpp
+)
+
+pico_sdk_init()
+
+set(pico_dep 
+  hardware_gpio_headers 
+  pico_time_headers 
+  pico_stdio_headers 
+  hardware_sync_headers
+  hardware_i2c_headers
+  hardware_pwm_headers
+  hardware_adc_headers
+  hardware_spi_headers
+  hardware_uart_headers
+  hardware_timer_headers
+  hardware_dma_headers
+)
+
+endif()
+
+libhal_test_and_make_library(
+  LIBRARY_NAME libhal-arm-mcu
+
+  SOURCES
+  ${source_list}
+  src/terminate_handler.cpp
+
+  TEST_SOURCES
+  ${test_sources}
 
   PACKAGES
   libhal
@@ -136,4 +183,6 @@ libhal_test_and_make_library(
   libhal::util
   nonstd::ring-span-lite
   nonstd::scope-lite
+  ${pico_dep}
 )
+

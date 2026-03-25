@@ -14,10 +14,53 @@
 
 cmake_minimum_required(VERSION 4.0)
 
-project(demos LANGUAGES CXX)
+if(DEFINED ENV{PICO_SDK_PATH})
+include($ENV{PICO_SDK_PATH}/external/pico_sdk_import.cmake)
+endif()
 
-libhal_build_demos(
-  DEMOS
+project(demos LANGUAGES CXX C ASM)
+
+find_package(libhal-arm-mcu CONFIG REQUIRED)
+
+if(DEFINED ENV{PICO_SDK_PATH})
+pico_sdk_init()
+
+pico_enable_stdio_usb(libhal::arm-mcu 1)
+pico_enable_stdio_uart(libhal::arm-mcu 0)
+
+set(demo_deps
+  pico_stdlib
+  hardware_gpio
+  pico_stdio
+  hardware_i2c
+  hardware_adc
+  hardware_spi
+)
+
+# not all of the demos work at the moment
+set(demos
+  adc
+  blinker
+  # can
+  # dac
+  gpio
+  i2c
+  interrupt_pin
+  uart
+  pwm
+  pwm16
+  spi
+  blank
+  # stream_dac
+  # watchdog
+  # timer
+  # usb_cdc_raw
+  # semihost
+)
+
+else()
+
+set(demos
   adc
   blinker
   can
@@ -30,11 +73,23 @@ libhal_build_demos(
   pwm16
   spi
   blank
+  stream_dac
   watchdog
-  # stream_dac
   timer
   usb_cdc_raw
   semihost
+)
+
+set(demo_deps
+  minimp3::minimp3
+)
+endif()
+
+set(ENV{LIBHAL_PLATFORM_LIBRARY} arm-mcu)
+
+libhal_build_demos(
+  DEMOS
+  ${demos}
 
   PACKAGES
   minimp3
@@ -43,5 +98,5 @@ libhal_build_demos(
   .
 
   LINK_LIBRARIES
-  minimp3::minimp3
+  ${demo_deps}
 )

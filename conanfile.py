@@ -15,6 +15,9 @@
 # limitations under the License.
 
 from conan import ConanFile
+from conan.tools.cmake import CMakeDeps, CMakeToolchain
+from conan.tools.env import VirtualBuildEnv
+from conan.errors import ConanInvalidConfiguration
 from pathlib import Path
 import os
 
@@ -43,6 +46,8 @@ class libhal_arm_mcu_conan(ConanFile):
         "use_libhal_exceptions": [True, False],
         "use_picolibc": [True, False],
         "use_default_linker_script": [True, False],
+        "variant": [None, "ANY"],
+        "board": [None, "ANY"],
         "replace_std_terminate": [True, False],
         "use_semihosting": [True, False],
     }
@@ -53,6 +58,8 @@ class libhal_arm_mcu_conan(ConanFile):
         "use_default_linker_script": True,
         "replace_std_terminate": True,
         "use_semihosting": True,
+        "variant": None,
+        "board": None,
     }
     options_description = {
         "platform": "Specifies which platform to provide binaries and build information for",
@@ -83,6 +90,13 @@ class libhal_arm_mcu_conan(ConanFile):
             OSLIB = "semihost" if self.options.use_semihosting else None
             self.requires("prebuilt-picolibc/" + CV,
                           options={"crt0": CRT0, "oslib": OSLIB})
+    
+        if str(self.options.platform).startswith("rp2"):
+            self.requires("picosdk/2.2.1-alpha")
+            self.tool_requires("pioasm/2.2.0")
+            if self.options.board.value.startswith("libhal_"):
+                board = self.options.board.value.removeprefix('libhal_').replace('_', '-')
+                self.requires(f"rp-board-header-{board}/latest", visible=True)
 
     def handle_stm32f1_linker_scripts(self):
         linker_script_name = list(str(self.options.platform))
@@ -97,6 +111,40 @@ class libhal_arm_mcu_conan(ConanFile):
             "-T" + str(Path("libhal-stm32f1") / linker_script_name + ".ld"),
         ])
 
+    def _macro(self, string):
+        return string.upper().replace("-", "_")
+
+    def generate(self):
+        virt = VirtualBuildEnv(self)
+        virt.generate()
+        tc = CMakeToolchain(self)
+        if str(self.options.platform).startswith("rp2"):
+            tc.cache_variables["DO_NOT_BUILD_BOOT_HAL"] = True
+            tc.preprocessor_definitions["PICO_STDIO_SHORT_CIRCUIT_CLIB_FUNCS"] = "0"
+            if self.options.board:
+                tc.cache_variables["PICO_BOARD"] = str(self.options.board)
+        if self.options.variant:
+            tc.preprocessor_definitions["LIBHAL_VARIANT_" + self._macro(str(self.options.variant))] = "1"
+        tc.preprocessor_definitions["LIBHAL_PLATFORM_" + self._macro(str(self.options.platform))] = "1"
+        tc.generate()
+        cmake = CMakeDeps(self)
+        cmake.generate()
+
+    def validate(self):
+        if str(self.options.platform).startswith("rp2"):
+            if self.options.use_default_linker_script:
+                raise ConanInvalidConfiguration("Default linker scripts are not compatible with RP chips, use pico-sdk linker scripts instead")
+            if not self.options.board:
+                raise ConanInvalidConfiguration("RP board not specified")
+            if "rp2350" in str(self.options.platform):
+                if not self.options.variant:
+                    raise ConanInvalidConfiguration("RP2350 variant not specified")
+                if self.options.variant not in ["rp2350a", "rp2350b"]:
+                    raise ConanInvalidConfiguration("Invalid RP2350 variant specified")
+                if not self.options.board:
+                    raise ConanInvalidConfiguration("Board must be specified during build")
+        super().validate()
+
     def package_info(self):
         self.cpp_info.libs = ["libhal-arm-mcu"]
         self.cpp_info.set_property("cmake_target_name", "libhal::arm-mcu")
@@ -104,11 +152,19 @@ class libhal_arm_mcu_conan(ConanFile):
             "libhal::lpc40",
             "libhal::stm32f1",
             "libhal::stm32f4",
+            "libhal::rp2350"
         ])
 
         PLATFORM = str(self.options.platform)
         self.buildenv_info.define("LIBHAL_PLATFORM", PLATFORM)
         self.buildenv_info.define("LIBHAL_PLATFORM_LIBRARY", "arm-mcu")
+        if str(self.options.platform).startswith("rp2"):
+            defines = []
+            if self.options.variant:
+                defines.append("LIBHAL_VARIANT_" + self._macro(str(self.options.variant)) + "=1")
+            defines.append("LIBHAL_PLATFORM_" + self._macro(str(self.options.platform)) + "=1")
+            defines.append("PICO_STDIO_SHORT_CIRCUIT_CLIB_FUNCS=0")
+            self.cpp_info.defines = defines
 
         self.cpp_info.exelinkflags = []
         if self.settings.os == "baremetal":

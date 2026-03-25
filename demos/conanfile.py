@@ -14,8 +14,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from conan import ConanFile
+import os
 
+from conan import ConanFile
+from conan.tools.cmake import CMake
 
 class demos(ConanFile):
     python_requires = "libhal-bootstrap/[>=4.3.0 <5]"
@@ -24,3 +26,15 @@ class demos(ConanFile):
     def requirements(self):
         self.requires("libhal-arm-mcu/latest")
         self.requires("minimp3/cci.20211201")
+    
+    # This is kinda sketch, but needs to be done manually until https://github.com/conan-io/conan/issues/13372
+    # gets implemented
+    def build(self):
+        cmake = CMake(self)
+        defs = {
+            "CMAKE_ASM_FLAGS_INIT": "-mcpu=cortex-m33 -mfloat-abi=soft",
+            "PICO_BOARD": "rp2350_micromod",
+            "PICO_CXX_ENABLE_EXCEPTIONS": "1"
+        }
+        cmake.configure(variables = defs)
+        cmake.build()

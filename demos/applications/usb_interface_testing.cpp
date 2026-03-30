@@ -21,9 +21,8 @@ public:
     : m_name(p_name) {};
 
 private:
-  descriptor_count driver_write_descriptors(
-    descriptor_start p_start,
-    endpoint_writer const& p_callback) override
+  descriptor_count driver_write_descriptors(descriptor_start p_start,
+                                            endpoint_io& p_ep_req) override
   {
 
     if (p_start.interface.has_value()) {
@@ -37,13 +36,12 @@ private:
     auto scatter_arr =
       make_scatter_bytes(std::span<byte const>(m_packed_array));
 
-    p_callback(scatter_arr);
+    p_ep_req.write(scatter_arr);
     return { .interface = 1, .string = 1 };
   }
 
-  bool driver_write_string_descriptor(
-    u8 p_index,
-    endpoint_writer const& p_callback) override
+  bool driver_write_string_descriptor(u8 p_index,
+                                      endpoint_io& p_ep_req) override
   {
     if (p_index != m_packed_array[8]) {
       return false;
@@ -55,21 +53,21 @@ private:
       hdr_array,
       std::span(reinterpret_cast<byte const*>(m_name.data()), m_name.length()));
 
-    p_callback(scatter_payload);
+    p_ep_req.write(scatter_payload);
     return true;
   }
 
   bool driver_handle_request(setup_packet const& p_setup,
-                             endpoint_writer const& p_callback) override
+                             endpoint_io& p_ep_req) override
   {
     std::ignore = p_setup;
-    std::ignore = p_callback;
+    std::ignore = p_ep_req;
     return true;
   }
 
 public:
   std::array<u8, 9> m_packed_array = {
-    constants::inferface_desc_size,                 // size
+    constants::inferface_descriptor_size,           // size
     static_cast<byte>(descriptor_type::interface),  // desc type
     0,                                              // interface_number
     0,                                              // alternate_setting
@@ -105,14 +103,14 @@ void application()
 
   auto dev = hal::v5::make_strong_ptr<usb::device>(
     pool,
-    usb::device::device_arguments{ .p_bcd_usb = 0x2,
-                                   .p_device_class =
+    usb::device::device_arguments{ .bcd_usb = 0x2,
+                                   .device_class =
                                      usb::class_code::use_interface_descriptor,
-                                   .p_device_subclass = 0,
-                                   .p_device_protocol = 0,
-                                   .p_id_vendor = 0x1234,
-                                   .p_id_product = 0x5678,
-                                   .p_bcd_device = 0x1,
+                                   .device_subclass = 0,
+                                   .device_protocol = 0,
+                                   .id_vendor = 0x1234,
+                                   .id_product = 0x5678,
+                                   .bcd_device = 0x1,
                                    .p_manufacturer = manu_str,
                                    .p_product = prod_str,
                                    .p_serial_number_str = sn_str });
@@ -127,12 +125,12 @@ void application()
 
   auto confs = hal::v5::make_strong_ptr<std::array<usb::configuration, 1>>(
     pool,
-    std::array<usb::configuration, 1>{
-      usb::configuration{ conf_str,  // yeet
-                          usb::configuration::bitmap(false, false),
-                          1,
-                          pool,
-                          iface_ptr } });
+    std::array<usb::configuration, 1>{ usb::configuration{
+      { .name = conf_str,
+        .attributes = usb::configuration::bitmap(false, false),
+        .max_power = 1,
+        .allocator = pool },
+      iface_ptr } });
 
   hal::print(*console, "conf array made\n");
 
@@ -140,16 +138,25 @@ void application()
   hal::u16 const en_lang_str = 0x0409;
 
   hal::print(*console, "ctrl ep called\n");
-
+  usb::enumerator<1> en({
+    .ctrl_ep = ctrl_ep,
+    .device = dev,
+    .configs = confs,
+    .lang_str = en_lang_str,
+    .retry_max = 3,
+  });
   try {
-    usb::enumerator<1> en(ctrl_ep,
-                          dev,
-                          confs,
-                          en_lang_str,  // f
-                          1,
-                          false);
 
-    en.enumerate();
+    hal::print(*console, "Enumerator made\n");
+
+    en.start_enumeration();
+    hal::print(*console, "start_enumeration() ran\n");
+    while (!en.is_enumerated()) {
+      en.process_ctrl_transfer();
+    }
+
+    hal::print(*console, "Enumerator made\n");
+    hal::print(*console, "Enumeration complete\n");
   }  // Catch statements for specific hal exceptions
 
   catch (hal::no_such_device const& e) {
@@ -231,11 +238,8 @@ void application()
     hal::print(*console, "what?\n");
   }
 
-  hal::print(*console, "Enumerator made\n");
-
-  hal::print(*console, "Enumeration complete\n");
   while (true) {
-    continue;
+    en.process_ctrl_transfer();
   }
   // return;
 }

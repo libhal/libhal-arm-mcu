@@ -31,10 +31,12 @@ libhal_build_demos(
   spi
   blank
   watchdog
+  usb_interface_testing
   # stream_dac
   timer
-  usb_cdc_raw
-  semihost
+  # usb_cdc_raw
+  # usb_cdc
+  #semihost
 
   PACKAGES
   minimp3

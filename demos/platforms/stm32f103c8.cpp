@@ -48,7 +48,7 @@ namespace resources {
 using namespace hal::literals;
 using st_peripheral = hal::stm32f1::peripheral;
 
-std::array<hal::byte, 1024> driver_memory{};
+std::array<hal::byte, 2048> driver_memory{};
 std::pmr::monotonic_buffer_resource resource(driver_memory.data(),
                                              driver_memory.size(),
                                              std::pmr::null_memory_resource());

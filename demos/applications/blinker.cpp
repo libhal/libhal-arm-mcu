@@ -21,12 +21,15 @@ void application()
 {
   auto clock = resources::clock();
   auto led = resources::status_led();
+  auto console = resources::console();
 
   while (true) {
     using namespace std::chrono_literals;
     led->level(false);
-    hal::delay(*clock, 500ms);
+    hal::print(*console, "CLAP ON!!!\n");
+    hal::delay(*clock, 1000ms);
     led->level(true);
-    hal::delay(*clock, 500ms);
+    hal::print(*console, "CLAP OFF!!!\n");
+    hal::delay(*clock, 1000ms);
   }
 }

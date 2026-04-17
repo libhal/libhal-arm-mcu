@@ -33,6 +33,15 @@ bit_mask config_mask(u8 p_pin)
     .width = 4,
   };
 }
+
+bit_mask config_mode_mask(u8 p_pin)
+{
+  return {
+    .position = static_cast<uint32_t>((p_pin * 4) % 32),
+    .width = 2,
+  };
+}
+
 /// Returns a bit mask indicating where the odr bit is in the output data
 /// register.
 bit_mask odr_mask(u8 p_pin)
@@ -99,7 +108,7 @@ void safely_power_on(pin_select const& p_pin_select)
 
 std::array<gpio_t*, 8> gpio_reg_map{
   reinterpret_cast<gpio_t*>(0x4001'0800),  // 'A'
-  reinterpret_cast<gpio_t*>(0x4001'0c00),  // 'B'
+  reinterpret_cast<gpio_t*>(0x4001'0C00),  // 'B'
   reinterpret_cast<gpio_t*>(0x4001'1000),  // 'C'
   reinterpret_cast<gpio_t*>(0x4001'1400),  // 'D'
   reinterpret_cast<gpio_t*>(0x4001'1800),  // 'E'
@@ -110,10 +119,18 @@ std::array<gpio_t*, 8> gpio_reg_map{
 bool is_pin_reset(pin_select p_pin_select)
 {
   auto& config_reg = config_register(p_pin_select);
+  // NOTE: To check if a pin is in "reset" mode, we simply check to see if the
+  // pin is in the input MODE (MODE=0b00). We ignore the pull up/down resistor
+  // states since these can be different for the JTAG pins (see RM0008 pg. 161)
+  //
+  //    PA15: JTDI in PU
+  //    PA14: JTCK in PD
+  //    PA13: JTMS in PU
+  //    PB4: NJTRST in PU
   auto const current_configuration =
-    bit_extract(config_mask(p_pin_select.pin), config_reg);
+    bit_extract(config_mode_mask(p_pin_select.pin), config_reg);
 
-  return reset_pin_config == current_configuration;
+  return reset_pin_mode == current_configuration;
 }
 }  // namespace
 
@@ -139,6 +156,7 @@ void configure_pin(pin_select p_pin_select, pin_config_t p_config)
       (p_pin_select.port == 'A' && p_pin_select.pin == 15)) {
     release_jtag_pins();
   }
+
   auto& config_reg = config_register(p_pin_select);
   auto& odr_reg = odr_register(p_pin_select);
   safely_power_on(p_pin_select);

@@ -136,6 +136,12 @@ static constexpr auto reset_pin_config = bit_value<u32>(0)
                                            .insert<cnf0>(input_float.CNF0)
                                            .insert<mode>(input_float.MODE)
                                            .get();
+/**
+ * @brief The state of the MODE of a pin in RESET
+ *
+ */
+static constexpr auto reset_pin_mode =
+  bit_value<u32>(0).insert<mode>(input_float.MODE).get();
 
 /**
  * @brief Construct pin manipulation object

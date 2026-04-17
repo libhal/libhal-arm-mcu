@@ -470,6 +470,7 @@ void initialize_platform()
       },
     },
   });
+
   hal::stm32f1::activate_mco_pa8(
     hal::stm32f1::mco_source::pll_clock_divided_by_2);
 

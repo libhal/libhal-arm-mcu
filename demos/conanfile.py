@@ -15,11 +15,21 @@
 # limitations under the License.
 
 from conan import ConanFile
+from pathlib import Path
+from conan.tools.cmake import cmake_layout
 
 
 class demos(ConanFile):
     python_requires = "libhal-bootstrap/[>=4.3.0 <5]"
     python_requires_extend = "libhal-bootstrap.demo"
+
+    def layout(self):
+        build_path = Path("build") / (
+            str(self.options.platform) + "-" +
+            str(self.settings.compiler) + "-" +
+            str(self.settings.compiler.version)
+        )
+        cmake_layout(self, build_folder=str(build_path))
 
     def requirements(self):
         self.requires("libhal-arm-mcu/latest")

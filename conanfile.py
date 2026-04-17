@@ -16,7 +16,7 @@
 
 from conan import ConanFile
 from pathlib import Path
-import os
+from conan.tools.cmake import cmake_layout
 
 
 required_conan_version = ">=2.0.14"
@@ -62,6 +62,14 @@ class libhal_arm_mcu_conan(ConanFile):
         "replace_std_terminate": "Replace the default std::terminate handler to reduce binary size by avoiding verbose text rendering",
         "use_semihosting": "Enables semihosting support, allowing the MCU to perform host based I/O like writing to stdout or reading from files via the debug port. With LLVM from arm-toolchain, semihosting is enabled via the compiler and must be disabled via a build profile option and not this option.",
     }
+
+    def layout(self):
+        build_path = Path("build") / (
+            str(self.options.platform) + "-" +
+            str(self.settings.compiler) + "-" +
+            str(self.settings.compiler.version)
+        )
+        cmake_layout(self, build_folder=str(build_path))
 
     def set_version(self):
         # Use latest if not specified via command line

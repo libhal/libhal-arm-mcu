@@ -444,6 +444,17 @@ void application()
       continue;
     }
 
+    if (control_endpoint->has_setup().has_value()) {
+      if (control_endpoint->has_setup().value() == false) {
+        // ignore the host command, continue waiting for a new SETUP packet.
+        host_command_available = false;
+        hal::print(*console, "Non-SETUP PACKET on EP0 ¯\\_(ツ)_/¯\n");
+        continue;
+      }
+      // Otherwise just proceed and simply assume that the last transmission was
+      // a SETUP packet.
+    }
+
     std::array<hal::u8, 8> rx_buffer;
     auto bytes_read =
       control_endpoint->read(hal::v5::make_writable_scatter_bytes(rx_buffer));

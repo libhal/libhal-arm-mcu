@@ -190,7 +190,7 @@ struct endpoint  // NOLINT
   // EP_TYPE: Endpoint Type
   static constexpr auto type = bit_mask::from<9, 10>();
   // SETUP: Setup Transaction Completed
-  [[maybe_unused]] static constexpr auto setup_complete = bit_mask::from<11>();
+  static constexpr auto setup_complete = bit_mask::from<11>();
   // STAT_RX: Status Bits, for reception transfers
   static constexpr auto status_rx = bit_mask::from<12, 13>();
   // DTOG_RX: Data Toggle, for reception transfers
@@ -463,6 +463,10 @@ void handle_bus_reset()
   hal::bit_modify(reg().DADDR).set(device_address::enable_function);
 }
 
+// Using a global variable because we cannot pass setup packet information to
+// the control endpoint directly.
+bool control_encountered_a_setup_packet = false;
+
 // NOLINTNEXTLINE(bugprone-exception-escape)
 void usb::interrupt_handler() noexcept
 {
@@ -475,6 +479,12 @@ void usb::interrupt_handler() noexcept
     hal::bit_extract<interrupt_status::direction>(interrupt_reg_value);
   bool const transfer_completed =
     hal::bit_extract<interrupt_status::correct_transfer>(interrupt_reg_value);
+
+  if (endpoint_id == 0) {
+    control_encountered_a_setup_packet =
+      hal::bit_extract<::hal::stm32f1::endpoint::setup_complete>(
+        reg().EP[0].EPR);
+  }
 
   if (transfer_completed) {
     if (direction == 0 /* meaning tx */) {
@@ -806,6 +816,12 @@ private:
       auto const data_copied = m_usb->read_endpoint(0, data, m_bytes_read);
 
       if (data_copied == 0) {
+        if (m_bytes_read == 8 && control_encountered_a_setup_packet) {
+          // if the `control_encountered_a_setup_packet` was set and we read out
+          // all 8 bytes, then we have consumed the setup packet and can receive
+          // another.
+          control_encountered_a_setup_packet = false;
+        }
         break;
       }
 
@@ -823,6 +839,11 @@ private:
   void driver_reset() override
   {
     reset();
+  }
+
+  [[nodiscard]] std::optional<bool> driver_has_setup() const noexcept override
+  {
+    return control_encountered_a_setup_packet;
   }
 
   hal::v5::strong_ptr<usb> m_usb;

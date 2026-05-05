@@ -24,6 +24,7 @@
 #include <libhal-util/steady_clock.hpp>
 #include <libhal-util/usb.hpp>
 #include <libhal-util/usb/descriptors.hpp>
+#include <libhal/error.hpp>
 #include <libhal/pointers.hpp>
 #include <libhal/scatter_span.hpp>
 #include <libhal/timeout.hpp>
@@ -56,11 +57,17 @@ public:
   void write_hello_world()
   {
     using namespace std::literals;
-    if (m_port_connected) {
-      m_serial_data_ep_in->write(hal::v5::make_scatter_array<hal::u8 const>(
-        hal::as_bytes("Hello, World\n"sv)));
-    } else {
-      hal::print(*g_console, "X");
+    try {
+      if (not m_serial_data_ep_in->info().stalled) {
+
+        hal::v5::write_and_flush(*m_serial_data_ep_in,
+                                 hal::v5::make_scatter_array<hal::u8 const>(
+                                   hal::as_bytes("Hello, World\n"sv)));
+        hal::print(*g_console, "+");
+      }
+    } catch (hal::timed_out const&) {
+      hal::print(*g_console, "-");
+      m_serial_data_ep_in->reset();
     }
   }
 
@@ -75,6 +82,11 @@ public:
         m_serial_data_ep_out->read(hal::make_writable_scatter_bytes(buffer));
     }
     m_data_avail = false;
+  }
+
+  [[nodiscard]] bool port_open() const
+  {
+    return (m_dtr_rts & 0x01) != 0;
   }
 
   bool data_available()
@@ -209,6 +221,7 @@ private:
     constexpr hal::u8 cdc_get_line_coding = 0x21;
     constexpr hal::u8 cdc_set_control_line_state = 0x22;
     constexpr hal::u8 cdc_send_break = 0x23;
+    constexpr hal::u8 clear_feature = 0x01;
 
     hal::print(*g_console, "R");
 
@@ -240,8 +253,11 @@ private:
           std::array<hal::u8, 7> rx_buffer{};
           std::ignore =
             p_endpoint.read(hal::v5::make_writable_scatter_bytes(rx_buffer));
-          m_port_connected = true;
-          hal::print(*g_console, "(SL)");
+          hal::print(*g_console, "(SL:[");
+          for (auto const& byte : rx_buffer) {
+            hal::print<32>(*g_console, "0x%02X, ", byte);
+          }
+          hal::print(*g_console, "]");
           return true;
         }
         break;
@@ -252,8 +268,7 @@ private:
           // Bit 0: DTR state
           // Bit 1: RTS state
           m_dtr_rts = p_setup.value();
-          m_port_connected = true;
-          hal::print(*g_console, "(SCL)");
+          hal::print<32>(*g_console, "(SCL:0x%02X)", m_dtr_rts);
           return true;
         }
         break;
@@ -265,8 +280,21 @@ private:
           return true;
         }
         break;
+      case clear_feature: {
+        auto const ep_addr = static_cast<hal::u8>(p_setup.index());
+        if (ep_addr == m_serial_data_ep_out->info().number) {
+          m_serial_data_ep_out->reset();
+        } else if (ep_addr == m_serial_data_ep_in->info().number) {
+          m_serial_data_ep_in->reset();
+        } else if (ep_addr == m_status_ep_in->info().number) {
+          m_status_ep_in->reset();
+        }
+        hal::print<32>(*g_console, "(CLR:0x%02X)", ep_addr);
+        p_endpoint.write({});
+        return true;
+      }
       default:
-        hal::print(*g_console, "(SKIP)");
+        hal::print<32>(*g_console, "(SKIP:0x%02X)", p_setup.request());
         return false;
     }
     // Command not handled
@@ -277,8 +305,8 @@ private:
   hal::strong_ptr<hal::usb::bulk_in_endpoint> m_serial_data_ep_in;
   hal::strong_ptr<hal::usb::interrupt_in_endpoint> m_status_ep_in;
   descriptor_start m_start;
-  std::bitset<2> m_dtr_rts{ 0 };
-  bool m_port_connected = false;
+  hal::u16 m_dtr_rts{ 0 };
+  // bool m_port_connected = true;
   bool m_data_avail = false;
 };
 

@@ -58,8 +58,7 @@ public:
   {
     using namespace std::literals;
     try {
-      if (not m_serial_data_ep_in->info().stalled) {
-
+      if (m_port_connected) {
         hal::v5::write_and_flush(*m_serial_data_ep_in,
                                  hal::v5::make_scatter_array<hal::u8 const>(
                                    hal::as_bytes("Hello, World\n"sv)));
@@ -67,7 +66,7 @@ public:
       }
     } catch (hal::timed_out const&) {
       hal::print(*g_console, "-");
-      m_serial_data_ep_in->reset();
+      m_port_connected = false;
     }
   }
 
@@ -253,11 +252,7 @@ private:
           std::array<hal::u8, 7> rx_buffer{};
           std::ignore =
             p_endpoint.read(hal::v5::make_writable_scatter_bytes(rx_buffer));
-          hal::print(*g_console, "(SL:[");
-          for (auto const& byte : rx_buffer) {
-            hal::print<32>(*g_console, "0x%02X, ", byte);
-          }
-          hal::print(*g_console, "]");
+          hal::print(*g_console, "(SL)");
           return true;
         }
         break;
@@ -286,11 +281,12 @@ private:
           m_serial_data_ep_out->reset();
         } else if (ep_addr == m_serial_data_ep_in->info().number) {
           m_serial_data_ep_in->reset();
+          m_port_connected = true;
         } else if (ep_addr == m_status_ep_in->info().number) {
           m_status_ep_in->reset();
         }
         hal::print<32>(*g_console, "(CLR:0x%02X)", ep_addr);
-        p_endpoint.write({});
+        // p_endpoint.write({});
         return true;
       }
       default:
@@ -306,7 +302,7 @@ private:
   hal::strong_ptr<hal::usb::interrupt_in_endpoint> m_status_ep_in;
   descriptor_start m_start;
   hal::u16 m_dtr_rts{ 0 };
-  // bool m_port_connected = true;
+  bool m_port_connected = false;
   bool m_data_avail = false;
 };
 

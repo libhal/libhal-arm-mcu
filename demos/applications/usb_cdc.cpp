@@ -72,10 +72,11 @@ public:
 
   void log()
   {
-    std::array<hal::u8, 128> buffer{};
+    std::array<hal::u8, 16> buffer{};
     auto data_length =
       m_serial_data_ep_out->read(hal::make_writable_scatter_bytes(buffer));
     while (data_length > 0) {
+      hal::print(*g_console, "LOG:");
       hal::print<64>(*g_console, "%.s", data_length, buffer.data());
       data_length =
         m_serial_data_ep_out->read(hal::make_writable_scatter_bytes(buffer));
@@ -375,7 +376,10 @@ void application()
           connect_time = hal::future_deadline(*clock, 250ms);
         }
         if (clock->uptime() >= future_deadline) {
-          virtual_serial->log();
+          if (virtual_serial->data_available()) {
+            hal::print(*g_console, "L");
+            virtual_serial->log();
+          }
           virtual_serial->write_hello_world();
           future_deadline = hal::future_deadline(*clock, 5s);
           hal::print(*g_console, "H");

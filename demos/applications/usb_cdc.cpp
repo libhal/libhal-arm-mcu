@@ -42,21 +42,44 @@ public:
   usb_serial(
     hal::strong_ptr<hal::usb::bulk_out_endpoint> const& p_serial_data_ep_out,
     hal::strong_ptr<hal::usb::bulk_in_endpoint> const& p_serial_data_ep_in,
-    hal::strong_ptr<hal::usb::interrupt_out_endpoint> const& p_status_ep_out,
     hal::strong_ptr<hal::usb::interrupt_in_endpoint> const& p_status_ep_in)
     : m_serial_data_ep_out(p_serial_data_ep_out)
     , m_serial_data_ep_in(p_serial_data_ep_in)
-    , m_status_ep_out(p_status_ep_out)
     , m_status_ep_in(p_status_ep_in)
   {
+    m_serial_data_ep_out->on_receive(
+      [this](hal::usb::bulk_out_endpoint::on_receive_tag) {
+        m_data_avail = true;
+      });
   }
 
   void write_hello_world()
   {
     using namespace std::literals;
+    if (m_port_connected) {
+      m_serial_data_ep_in->write(hal::v5::make_scatter_array<hal::u8 const>(
+        hal::as_bytes("Hello, World\n"sv)));
+    } else {
+      hal::print(*g_console, "X");
+    }
+  }
 
-    m_serial_data_ep_in->write(hal::v5::make_scatter_array<hal::u8 const>(
-      hal::as_bytes("Hello, World\n"sv)));
+  void log()
+  {
+    std::array<hal::u8, 128> buffer{};
+    auto data_length =
+      m_serial_data_ep_out->read(hal::make_writable_scatter_bytes(buffer));
+    while (data_length > 0) {
+      hal::print<64>(*g_console, "%.s", data_length, buffer.data());
+      data_length =
+        m_serial_data_ep_out->read(hal::make_writable_scatter_bytes(buffer));
+    }
+    m_data_avail = false;
+  }
+
+  bool data_available()
+  {
+    return m_data_avail;
   }
 
 private:
@@ -64,7 +87,14 @@ private:
     descriptor_start p_start,
     hal::usb::endpoint_io& p_endpoint) override
   {
-    auto const start = p_start.interface.value_or(0);
+    if (p_start.interface.has_value()) {
+      m_start.interface = p_start.interface;
+    }
+    if (p_start.string.has_value()) {
+      m_start.string = p_start.string;
+    }
+    auto const start = m_start.interface.value_or(0);
+
     auto const idx1 = static_cast<hal::u8>(start + 0);
     auto const idx2 = static_cast<hal::u8>(start + 1);
 
@@ -82,7 +112,7 @@ private:
       // Interface Descriptor (Control)
       0x09,  // bLength
       0x04,  // bDescriptorType (Interface)
-      0x00,  // bInterfaceNumber
+      idx1,  // bInterfaceNumber
       0x00,  // bAlternateSetting
       0x01,  // bNumEndpoints
       0x02,  // bInterfaceClass (CDC)
@@ -107,15 +137,15 @@ private:
       0x05,  // bLength
       0x24,  // bDescriptorType (CS_INTERFACE)
       0x06,  // bDescriptorSubtype (Union)
-      0x00,  // bControlInterface
-      0x01,  // bSubordinateInterface0
+      idx1,  // bControlInterface
+      idx2,  // bSubordinateInterface0
 
       // CDC Call Management Functional Descriptor
       0x05,  // bLength
       0x24,  // bDescriptorType (CS_INTERFACE)
       0x01,  // bDescriptorSubtype (Call Management)
       0x00,  // bmCapabilities
-      0x01,  // bDataInterface
+      idx2,  // bDataInterface
 
       // Endpoint Descriptor (Control IN)
       0x07,                           // bLength
@@ -124,7 +154,7 @@ private:
       0x03,                           // bmAttributes (Interrupt)
       static_cast<hal::u8>(m_status_ep_in->info().size),
       0x00,  // wMaxPacketSize 16
-      0x10,  // bInterval (16 ms)
+      0xFF,  // bInterval (255 ms)
 
       // Interface Descriptor (Data)
       0x09,  // bLength
@@ -157,14 +187,16 @@ private:
     });
 
     p_endpoint.write(hal::make_scatter_array<hal::u8 const>(config_descriptor));
-
+    if (g_console) {
+      hal::print(*g_console, "E");
+    }
     return hal::usb::interface::descriptor_count{ .interface = 2, .string = 0 };
   }
 
   bool driver_write_string_descriptor(hal::u8, hal::usb::endpoint_io&) override
   {
     if (g_console) {
-      hal::print(*g_console, "W");
+      hal::print(*g_console, "S");
     }
     return false;
   }
@@ -177,6 +209,8 @@ private:
     constexpr hal::u8 cdc_get_line_coding = 0x21;
     constexpr hal::u8 cdc_set_control_line_state = 0x22;
     constexpr hal::u8 cdc_send_break = 0x23;
+
+    hal::print(*g_console, "R");
 
     switch (p_setup.request()) {
       case cdc_get_line_coding: {
@@ -194,6 +228,8 @@ private:
 
           // Send current line coding
           p_endpoint.write(hal::make_scatter_array<hal::u8 const>(line_coding));
+
+          hal::print(*g_console, "(GL)");
           return true;
         }
         break;
@@ -201,11 +237,11 @@ private:
 
       case cdc_set_line_coding:
         if (not p_setup.is_device_to_host()) {  // Direction: Host to Device
-          std::array<hal::u8, 8> rx_buffer{};
+          std::array<hal::u8, 7> rx_buffer{};
           std::ignore =
             p_endpoint.read(hal::v5::make_writable_scatter_bytes(rx_buffer));
-          p_endpoint.write({});
           m_port_connected = true;
+          hal::print(*g_console, "(SL)");
           return true;
         }
         break;
@@ -215,21 +251,22 @@ private:
           // wValue contains the control signals:
           // Bit 0: DTR state
           // Bit 1: RTS state
-          m_dtr_rts.set(p_setup.value() & 0x01);
-          m_dtr_rts.set(p_setup.value() & 0x02);
-          p_endpoint.write({});
+          m_dtr_rts = p_setup.value();
+          m_port_connected = true;
+          hal::print(*g_console, "(SCL)");
           return true;
         }
         break;
 
       case cdc_send_break:
         if (not p_setup.is_device_to_host()) {
-          p_endpoint.write({});
           // SEND BREAK
+          hal::print(*g_console, "(BRK)");
           return true;
         }
         break;
       default:
+        hal::print(*g_console, "(SKIP)");
         return false;
     }
     // Command not handled
@@ -238,12 +275,100 @@ private:
 
   hal::strong_ptr<hal::usb::bulk_out_endpoint> m_serial_data_ep_out;
   hal::strong_ptr<hal::usb::bulk_in_endpoint> m_serial_data_ep_in;
-  hal::strong_ptr<hal::usb::interrupt_out_endpoint> m_status_ep_out;
   hal::strong_ptr<hal::usb::interrupt_in_endpoint> m_status_ep_in;
   descriptor_start m_start;
   std::bitset<2> m_dtr_rts{ 0 };
   bool m_port_connected = false;
+  bool m_data_avail = false;
 };
+
+std::string_view to_string_view(std::errc p_errc);
+
+void application()
+{
+  using namespace hal::literals;
+  using namespace std::literals;
+  using namespace std::chrono_literals;
+
+  auto clock = resources::clock();
+  auto console = resources::console();
+  g_console = console;
+
+  hal::print(*console, "Staring USB CDC application...\n");
+
+  auto allocator = resources::driver_allocator();
+  auto control_endpoint = resources::usb_control_endpoint();
+  auto serial_data_ep_out = resources::usb_bulk_out_endpoint1();
+  auto serial_data_ep_in = resources::usb_bulk_in_endpoint1();
+  auto status_ep_in = resources::usb_interrupt_in_endpoint1();
+
+  auto usb_device = hal::make_strong_ptr<hal::usb::device>(
+    allocator,
+    hal::usb::device::device_arguments{
+      .bcd_usb = 0x0200,
+      .device_class = hal::usb::class_code::cdc_control,
+      .device_subclass = 0x2,
+      .device_protocol = 0x0,
+      .id_vendor = 0xDEAD,
+      .id_product = 0xBEEF,
+      .bcd_device = 0x01,
+      .p_manufacturer = u"libhal inc"sv,
+      .p_product = u"libhal USB device"sv,
+      .p_serial_number_str = u"ab01"sv,
+    });
+
+  auto virtual_serial = hal::make_strong_ptr<usb_serial>(
+    allocator, serial_data_ep_out, serial_data_ep_in, status_ep_in);
+
+  auto configs = hal::make_strong_ptr<std::array<hal::usb::configuration, 1>>(
+    allocator,
+    std::to_array<hal::usb::configuration>({ hal::usb::configuration{
+      hal::usb::configuration::configuration_info{
+        .name = u"my_config"sv,
+        .attributes = hal::usb::configuration::bitmap(false, false),
+        .max_power = 200,
+        .allocator = allocator,
+      },
+      virtual_serial } }));
+
+  hal::usb::enumerator<1> usb_enumerator(hal::usb::enumerator<1>::args{
+    .ctrl_ep = control_endpoint,
+    .device = usb_device,
+    .configs = configs,
+    .lang_str = 0x0409,
+    .retry_max = 100,
+  });
+
+  auto future_deadline = hal::future_deadline(*clock, 5s);
+  auto dot_time = hal::future_deadline(*clock, 250ms);
+  auto connect_time = hal::future_deadline(*clock, 250ms);
+  while (true) {
+    try {
+      usb_enumerator.process_ctrl_transfer();
+      if (usb_enumerator.is_enumerated()) {
+        if (clock->uptime() >= connect_time) {
+          hal::print(*g_console, "C");
+          connect_time = hal::future_deadline(*clock, 250ms);
+        }
+        if (clock->uptime() >= future_deadline) {
+          virtual_serial->log();
+          virtual_serial->write_hello_world();
+          future_deadline = hal::future_deadline(*clock, 5s);
+          hal::print(*g_console, "H");
+        }
+      } else {
+        if (clock->uptime() >= dot_time) {
+          hal::print(*g_console, ".");
+          dot_time = hal::future_deadline(*clock, 250ms);
+        }
+      }
+    } catch (hal::exception const& p_error) {
+      auto const view = to_string_view(p_error.error_code());
+      hal::print<256>(
+        *console, "Exception '%.*s' caught\n", view.size(), view.data());
+    }
+  }
+}
 
 std::string_view to_string_view(std::errc p_errc)
 {
@@ -396,67 +521,5 @@ std::string_view to_string_view(std::errc p_errc)
       return "wrong_protocol_type";
     default:
       return "unknown";
-  }
-}
-
-void application()
-{
-  using namespace hal::literals;
-  using namespace std::literals;
-  using namespace std::chrono_literals;
-
-  auto clock = resources::clock();
-  auto console = resources::console();
-  g_console = console;
-
-  hal::print(*console, "Staring USB CDC application...\n");
-
-  auto allocator = resources::driver_allocator();
-  auto control_endpoint = resources::usb_control_endpoint();
-  auto serial_data_ep_out = resources::usb_bulk_out_endpoint1();
-  auto serial_data_ep_in = resources::usb_bulk_in_endpoint1();
-  auto status_ep_out = resources::usb_interrupt_out_endpoint1();
-  auto status_ep_in = resources::usb_interrupt_in_endpoint1();
-
-  auto usb_device = hal::make_strong_ptr<hal::usb::device>(
-    allocator,
-    hal::usb::device::device_arguments{
-      .bcd_usb = 0x02,
-      .device_class = hal::usb::class_code::cdc_control,
-      .device_subclass = 0x2,
-      .device_protocol = 0x0,
-      .id_vendor = 0xDEAD,
-      .id_product = 0xBEEF,
-      .bcd_device = 0x01,
-      .p_manufacturer = u"libhal"sv,
-      .p_product = u"libhal serial device"sv,
-      .p_serial_number_str = u"aabbupdownleftright"sv,
-    });
-
-  auto configs = hal::make_strong_ptr<std::array<hal::usb::configuration, 1>>(
-    allocator,
-    std::to_array<hal::usb::configuration>(
-      { hal::usb::configuration{ hal::usb::configuration::configuration_info{
-        .name = u"my_config"sv,
-        .attributes = hal::usb::configuration::bitmap(false, false),
-        .max_power = 200,
-        .allocator = allocator,
-      } } }));
-
-  hal::usb::enumerator<1> usb_enumerator(hal::usb::enumerator<1>::args{
-    .ctrl_ep = control_endpoint,
-    .device = usb_device,
-    .configs = configs,
-    .lang_str = 0x00,
-    .retry_max = 255,
-  });
-
-  while (true) {
-    try {
-      usb_enumerator.process_ctrl_transfer();
-    } catch (hal::exception const& p_error) {
-      auto const view = to_string_view(p_error.error_code());
-      hal::print<256>(*console, "exception caught with ID %s\n", view.data());
-    }
   }
 }

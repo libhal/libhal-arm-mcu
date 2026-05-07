@@ -64,6 +64,9 @@ public:
                                    hal::as_bytes("Hello, World\n"sv)));
         hal::print(*g_console, "+");
       }
+    } catch (hal::operation_not_permitted const&) {
+      hal::print(*g_console, "X");
+      m_port_connected = false;
     } catch (hal::timed_out const&) {
       hal::print(*g_console, "-");
       m_port_connected = false;
@@ -86,7 +89,7 @@ public:
 
   [[nodiscard]] bool port_open() const
   {
-    return (m_dtr_rts & 0x01) != 0;
+    return m_port_connected;
   }
 
   bool data_available()
@@ -225,6 +228,8 @@ private:
 
     hal::print(*g_console, "R");
 
+    m_port_connected = true;
+
     switch (p_setup.request()) {
       case cdc_get_line_coding: {
         if (p_setup.is_device_to_host()) {  // Direction: Device to Host
@@ -241,7 +246,6 @@ private:
 
           // Send current line coding
           p_endpoint.write(hal::make_scatter_array<hal::u8 const>(line_coding));
-
           hal::print(*g_console, "(GL)");
           return true;
         }
@@ -282,12 +286,10 @@ private:
           m_serial_data_ep_out->reset();
         } else if (ep_addr == m_serial_data_ep_in->info().number) {
           m_serial_data_ep_in->reset();
-          m_port_connected = true;
         } else if (ep_addr == m_status_ep_in->info().number) {
           m_status_ep_in->reset();
         }
         hal::print<32>(*g_console, "(CLR:0x%02X)", ep_addr);
-        // p_endpoint.write({});
         return true;
       }
       default:
@@ -296,6 +298,22 @@ private:
     }
     // Command not handled
     return false;
+  }
+
+  void driver_handle_host_event(hal::v5::usb::host_event p_event) override
+  {
+    hal::print(*g_console, "H");
+    switch (p_event) {
+      case hal::v5::usb::host_event::reset:
+      case hal::v5::usb::host_event::suspend_with_wakeup:
+      case hal::v5::usb::host_event::suspend_without_wakeup:
+        m_port_connected = false;
+        break;
+      case hal::v5::usb::host_event::setup_packet:
+      case hal::v5::usb::host_event::data_packet:
+      default:  // The rest...
+        break;
+    }
   }
 
   hal::strong_ptr<hal::usb::bulk_out_endpoint> m_serial_data_ep_out;
@@ -382,7 +400,7 @@ void application()
           }
           virtual_serial->write_hello_world();
           future_deadline = hal::future_deadline(*clock, 5s);
-          hal::print(*g_console, "H");
+          hal::print(*g_console, "W");
         }
       } else {
         if (clock->uptime() >= dot_time) {

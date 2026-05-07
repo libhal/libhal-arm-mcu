@@ -492,7 +492,7 @@ void usb::interrupt_handler() noexcept
     } else {
       // Call callback using variant visitor
       std::visit(
-        [](auto&& p_callback) {
+        [&](auto&& p_callback) {
           using T = std::decay_t<decltype(p_callback)>;
           auto constexpr is_control_tag =
             std::is_same_v<T, hal::callback<void(ctrl_receive_tag)>>;
@@ -502,6 +502,14 @@ void usb::interrupt_handler() noexcept
                                  T,
                                  hal::callback<void(out_receive_tag)>>) {
             p_callback(out_receive_tag{});
+          } else if constexpr (std::is_same_v<
+                                 T,
+                                 hal::callback<void(v5::usb::host_event)>>) {
+            if (control_encountered_a_setup_packet) {
+              p_callback(hal::v5::usb::host_event::setup_packet);
+            } else {
+              p_callback(hal::v5::usb::host_event::data_packet);
+            }
           } else {
             static_assert(hal::error::invalid_option<is_control_tag>,
                           "USB RX Out callback visitor is non-exhaustive!");
@@ -518,6 +526,9 @@ void usb::interrupt_handler() noexcept
 
   if (reset_request) {
     handle_bus_reset();
+    if (auto* handler = std::get_if<0>(&m_out_callbacks[0])) {
+      (*handler)(hal::v5::usb::host_event::reset);
+    }
   }
 
   bool const error_detected =
@@ -536,6 +547,9 @@ void usb::interrupt_handler() noexcept
   if (suspend_detected) {
     // assignment to this register acts as an AND gate
     interrupt_reg = ~(1U << interrupt_status::suspend_mode_request.position);
+    if (auto* handler = std::get_if<0>(&m_out_callbacks[0])) {
+      (*handler)(hal::v5::usb::host_event::suspend_with_wakeup);
+    }
   }
 
   bool const wake_detected =
@@ -544,6 +558,9 @@ void usb::interrupt_handler() noexcept
   if (wake_detected) {
     // assignment to this register acts as an AND gate
     interrupt_reg = ~(1U << interrupt_status::wake_up.position);
+    if (auto* handler = std::get_if<0>(&m_out_callbacks[0])) {
+      (*handler)(hal::v5::usb::host_event::resume);
+    }
   }
 
   bool const overrun_detected =
@@ -659,11 +676,11 @@ usize usb::read_endpoint(u8 p_endpoint,
 
 void usb::wait_for_endpoint_transfer_completion(u8 p_endpoint)
 {
-  constexpr auto nak_u32_value = static_cast<hal::u32>(stat::nak);
+  constexpr auto nak_u32 = static_cast<hal::u32>(stat::nak);
   auto& endpoint_reg = reg().EP[p_endpoint].EPR;
   auto endpoint_tx_status = hal::bit_extract<endpoint::status_tx>(endpoint_reg);
   auto const deadline = hal::future_deadline(*m_clock, m_write_timeout);
-  while (endpoint_tx_status != nak_u32_value) {
+  while (endpoint_tx_status != nak_u32) {
     endpoint_tx_status = hal::bit_extract<endpoint::status_tx>(endpoint_reg);
     if (m_clock->uptime() >= deadline) {
       hal::safe_throw(hal::timed_out(this));
@@ -844,6 +861,22 @@ private:
   [[nodiscard]] std::optional<bool> driver_has_setup() const noexcept override
   {
     return control_encountered_a_setup_packet;
+  }
+
+  void driver_on_host_event(
+    callback<void(v5::usb::host_event)> const& p_callback) override
+  {
+    m_usb->m_out_callbacks[0] = p_callback;
+  }
+  void driver_set_remote_wakeup_enabled(bool) override
+  {
+  }
+  void driver_acknowledge_sleep(bool) override
+  {
+  }
+  v5::usb::lpm_support driver_supports_lpm() override
+  {
+    return {};
   }
 
   hal::v5::strong_ptr<usb> m_usb;

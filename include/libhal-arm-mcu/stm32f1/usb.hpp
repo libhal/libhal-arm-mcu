@@ -67,8 +67,10 @@ class usb
 public:
   using ctrl_receive_tag = hal::v5::usb::control_endpoint::on_receive_tag;
   using out_receive_tag = hal::v5::usb::out_endpoint::on_receive_tag;
-  using callback_variant_t = std::variant<hal::callback<void(ctrl_receive_tag)>,
-                                          hal::callback<void(out_receive_tag)>>;
+  using callback_variant_t =
+    std::variant<hal::callback<void(v5::usb::host_event)>,
+                 hal::callback<void(ctrl_receive_tag)>,
+                 hal::callback<void(out_receive_tag)>>;
 
   static constexpr std::size_t usb_endpoint_count = 8;
 

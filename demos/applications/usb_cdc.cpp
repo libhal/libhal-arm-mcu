@@ -345,42 +345,21 @@ void application()
   auto serial_data_ep_in = resources::usb_bulk_in_endpoint1();
   auto status_ep_in = resources::usb_interrupt_in_endpoint1();
 
-  auto usb_device = hal::make_strong_ptr<hal::usb::device>(
-    allocator,
-    hal::usb::device::device_arguments{
-      .bcd_usb = 0x0200,
-      .device_class = hal::usb::class_code::cdc_control,
-      .device_subclass = 0x2,
-      .device_protocol = 0x0,
-      .id_vendor = 0xDEAD,
-      .id_product = 0xBEEF,
-      .bcd_device = 0x01,
-      .p_manufacturer = u"libhal inc"sv,
-      .p_product = u"libhal USB device"sv,
-      .p_serial_number_str = u"ab01"sv,
-    });
-
   auto virtual_serial = hal::make_strong_ptr<usb_serial>(
     allocator, serial_data_ep_out, serial_data_ep_in, status_ep_in);
 
-  auto configs = hal::make_strong_ptr<std::array<hal::usb::configuration, 1>>(
-    allocator,
-    std::to_array<hal::usb::configuration>({ hal::usb::configuration{
-      hal::usb::configuration::configuration_info{
-        .name = u"my_config"sv,
-        .attributes = hal::usb::configuration::bitmap(false, false),
-        .max_power = 200,
-        .allocator = allocator,
-      },
-      virtual_serial } }));
-
-  hal::usb::enumerator<1> usb_enumerator(hal::usb::enumerator<1>::args{
-    .ctrl_ep = control_endpoint,
-    .device = usb_device,
-    .configs = configs,
-    .lang_str = 0x0409,
-    .retry_max = 100,
-  });
+  hal::usb::inplace_enumerator usb_enumerator(
+    control_endpoint,
+    {
+      .vendor_id = 0xDEAD,
+      .product_id = 0xBEEF,
+      .manufacturer = u"libhal",
+      .product = u"HALbORD",
+      .serial_number = u"AAB1",
+      .configuration = u"Default",
+      // everything else takes its default
+    },
+    virtual_serial);
 
   auto future_deadline = hal::future_deadline(*clock, 5s);
   auto dot_time = hal::future_deadline(*clock, 250ms);

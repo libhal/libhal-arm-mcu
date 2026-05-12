@@ -465,6 +465,13 @@ void handle_bus_reset()
 // the control endpoint directly.
 bool control_encountered_a_setup_packet = false;
 
+void usb::fire_bus_event(hal::v5::usb::bus_event p_event)
+{
+  if (auto* handler = std::get_if<0>(&m_out_callbacks[0])) {
+    (*handler)(p_event);
+  }
+}
+
 // NOLINTNEXTLINE(bugprone-exception-escape)
 void usb::interrupt_handler() noexcept
 {
@@ -490,7 +497,7 @@ void usb::interrupt_handler() noexcept
     } else {
       // Call callback using variant visitor
       std::visit(
-        [&](auto&& p_callback) {
+        [](auto&& p_callback) {
           using T = std::decay_t<decltype(p_callback)>;
           auto constexpr is_control_tag =
             std::is_same_v<T, hal::callback<void(ctrl_receive_tag)>>;
@@ -524,9 +531,7 @@ void usb::interrupt_handler() noexcept
 
   if (reset_request) {
     handle_bus_reset();
-    if (auto* handler = std::get_if<0>(&m_out_callbacks[0])) {
-      (*handler)(hal::v5::usb::bus_event::reset);
-    }
+    fire_bus_event(hal::v5::usb::bus_event::reset);
   }
 
   bool const error_detected =
@@ -544,9 +549,7 @@ void usb::interrupt_handler() noexcept
   if (suspend_detected) {
     // Put USB peripheral into force suspend mode
     hal::bit_modify(reg().CNTR).set<control::force_suspend>();
-    if (auto* handler = std::get_if<0>(&m_out_callbacks[0])) {
-      (*handler)(hal::v5::usb::bus_event::suspend);
-    }
+    fire_bus_event(hal::v5::usb::bus_event::suspend);
     interrupt_reg = ~(1U << interrupt_status::suspend_mode_request.position);
   }
 
@@ -556,9 +559,7 @@ void usb::interrupt_handler() noexcept
   if (wake_detected) {
     // Take USB off of suspend
     hal::bit_modify(reg().CNTR).clear<control::force_suspend>();
-    if (auto* handler = std::get_if<0>(&m_out_callbacks[0])) {
-      (*handler)(hal::v5::usb::bus_event::resume);
-    }
+    fire_bus_event(hal::v5::usb::bus_event::resume);
     interrupt_reg = ~(1U << interrupt_status::wake_up.position);
   }
 

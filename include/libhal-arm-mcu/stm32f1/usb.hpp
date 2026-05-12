@@ -114,6 +114,7 @@ private:
   usb(hal::steady_clock& p_clock, timeout_t p_write_timeout = timeout_t(3));
 
   void interrupt_handler() noexcept;
+  void fire_bus_event(hal::v5::usb::bus_event p_event);
   void fill_endpoint(hal::u8 p_endpoint,
                      std::span<hal::byte const> p_data,
                      hal::u16 p_max_length);

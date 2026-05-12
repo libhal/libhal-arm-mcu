@@ -192,13 +192,9 @@ struct port_state
     return hal::bit_extract<data_available_bit>(raw.get());
   }
 
-  constexpr void set_data_available(bool p_available)
+  constexpr void data_available(bool p_available)
   {
-    if (p_available) {
-      raw.set<data_available_bit>();
-    } else {
-      raw.clear<data_available_bit>();
-    }
+    raw.insert<data_available_bit>(p_available);
   }
 
   constexpr bool operator==(port_state const& p_other) const
@@ -222,7 +218,7 @@ public:
   {
     m_serial_host_tx->on_receive(
       [this](hal::usb::bulk_out_endpoint::on_receive_tag) {
-        m_state.set_data_available(true);
+        m_state.data_available(true);
       });
   }
 
@@ -241,10 +237,14 @@ public:
 
   hal::usize read(hal::scatter_span<hal::byte> p_buffer)
   {
+    auto length = 0uz;
     if (m_state.data_available() and m_state.port_connected()) {
-      return m_serial_host_tx->read(p_buffer);
+      length = m_serial_host_tx->read(p_buffer);
     }
-    return 0uz;
+    if (length == 0) {
+      m_state.data_available(false);
+    }
+    return length;
   }
 
   [[nodiscard]] bool port_connected() const
@@ -494,7 +494,18 @@ void application()
   auto console = resources::console();
 
   hal::print(*console,
-             "Staring USB Enumeration & Virtual CDC Serial application...\n");
+             R"(
+Starting USB CDC virtual serial port application...
+
+This demo does the following:
+
+- Sends 'Hello, World' every 4 seconds
+- Echoes received data
+- Logs if DTR or RTS have changed state
+- Prints '-' on USB RESET
+- Prints '+' if enumeration was completed
+
+)");
 
   auto allocator = resources::driver_allocator();
   auto control_endpoint = resources::usb_control_endpoint();
@@ -502,24 +513,24 @@ void application()
   auto serial_host_ep_in = resources::usb_bulk_in_endpoint1();
   auto status_ep_in = resources::usb_interrupt_in_endpoint1();
 
-  hal::print<64>(*console,
-                 ">>>> status_ep_in->info().number = 0x%02X\n",
-                 status_ep_in->info().number);
-  hal::print<64>(*console,
-                 ">>>> status_ep_in->info().size = %d\n",
-                 status_ep_in->info().size);
-  hal::print<64>(*console,
-                 ">>>> serial_host_ep_out->info().number = 0x%02X\n",
-                 serial_host_ep_out->info().number);
-  hal::print<64>(*console,
-                 ">>>> serial_host_ep_out->info().size = %d\n",
-                 serial_host_ep_out->info().size);
-  hal::print<64>(*console,
-                 ">>>> serial_host_ep_in->info().number = 0x%02X\n",
-                 serial_host_ep_in->info().number);
-  hal::print<64>(*console,
-                 ">>>> serial_host_ep_in->info().size = %d\n",
-                 serial_host_ep_in->info().size);
+  hal::print<256>(*console,
+                  // Using fixed width for name, hex, and size
+                  "+--------------------+------------+----------+\n"
+                  "| Endpoint Name      | Number     | Size     |\n"
+                  "+--------------------+------------+----------+\n"
+                  "| %-18s | 0x%02X | %7zu | \n"
+                  "| %-18s | 0x%02X | %7zu | \n"
+                  "| %-18s | 0x%02X | %7zu | \n"
+                  "+--------------------+------------+----------+\n\n",
+                  "status_ep_in",
+                  status_ep_in->info().number,
+                  status_ep_in->info().size,
+                  "serial_host_ep_out",
+                  serial_host_ep_out->info().number,
+                  serial_host_ep_out->info().size,
+                  "serial_host_ep_in",
+                  serial_host_ep_in->info().number,
+                  serial_host_ep_in->info().size);
 
   auto virtual_usb_serial = hal::make_strong_ptr<usb_cdc_serial>(
     allocator, serial_host_ep_out, serial_host_ep_in, status_ep_in);
@@ -536,28 +547,64 @@ void application()
     },
     virtual_usb_serial);
 
-  auto const send_time_period = 2s;
-  auto send_deadline = hal::future_deadline(*clock, send_time_period);
-  auto const send_time_period = 2s;
-  auto send_deadline = hal::future_deadline(*clock, send_time_period);
+  auto const send_period = 4s;
+  auto send_deadline = hal::future_deadline(*clock, send_period);
+
+  auto const activity_period = 250ms;
+  auto dot_deadline = hal::future_deadline(*clock, activity_period);
+
+  auto last_control_line_state = virtual_usb_serial->get_control_line_state();
 
   while (true) {
     try {
       usb_enumerator.process_ctrl_transfer();
+
+      // =======================================================================
+      // Check the DTR & RTS states
+      // =======================================================================
+      if (auto const current_control_line_state =
+            virtual_usb_serial->get_control_line_state();
+          current_control_line_state != last_control_line_state) {
+        if (current_control_line_state.dtr() != last_control_line_state.dtr()) {
+          hal::print<32>(
+            *console, "\n[DTR]: %d\n", current_control_line_state.dtr());
+        }
+        if (current_control_line_state.rts() != last_control_line_state.rts()) {
+          hal::print<32>(
+            *console, "\n[RTS]: %d\n", current_control_line_state.rts());
+        }
+        last_control_line_state = current_control_line_state;
+      }
+
+      // =======================================================================
+      // Send "Hello, World" to HOST
+      // =======================================================================
       if (usb_enumerator.is_enumerated()) {
+        if (clock->uptime() >= dot_deadline) {
+          hal::print(*console, "+");
+          dot_deadline = hal::future_deadline(*clock, activity_period);
+        }
         if (clock->uptime() >= send_deadline) {
           virtual_usb_serial->write(hal::make_scatter_array<hal::byte const>(
             hal::as_bytes("Hello, World\n"sv)));
-          send_deadline = hal::future_deadline(*clock, send_time_period);
-          hal::print(*console, "[SENT: 'Hello, World\\n']\n");
+          send_deadline = hal::future_deadline(*clock, send_period);
+          hal::print(*console, "[SENT]");
+        }
+      } else {
+        if (clock->uptime() >= dot_deadline) {
+          hal::print(*console, "-");
+          dot_deadline = hal::future_deadline(*clock, activity_period);
         }
       }
 
+      // =======================================================================
+      // Log data received from the HOST
+      // =======================================================================
       if (virtual_usb_serial->data_available()) {
         std::array<char, 16> buffer{};
         auto length = virtual_usb_serial->read(
           hal::make_scatter_array<hal::u8>(hal::as_writable_bytes(buffer)));
-        hal::print<32>(*console, "[INCOMING]: %*.s\n", length, buffer.data());
+        hal::print<32>(*console, "[INCOMING]: %.*s\n", length, buffer.data());
       }
     } catch (hal::exception const& p_error) {
       hal::print<256>(

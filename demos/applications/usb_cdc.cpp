@@ -604,7 +604,7 @@ This demo does the following:
         std::array<char, 16> buffer{};
         auto length = virtual_usb_serial->read(
           hal::make_scatter_array<hal::u8>(hal::as_writable_bytes(buffer)));
-        hal::print<32>(*console, "[INCOMING]: %.*s\n", length, buffer.data());
+        hal::print<32>(*console, "\n[Received]: %.*s\n", length, buffer.data());
       }
     } catch (hal::exception const& p_error) {
       hal::print<256>(

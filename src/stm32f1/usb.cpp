@@ -12,11 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include <cstdint>
-
 #include <bit>
-#include <memory_resource>
 
+#include <chrono>
 #include <libhal-arm-mcu/interrupt.hpp>
 #include <libhal-arm-mcu/stm32f1/clock.hpp>
 #include <libhal-arm-mcu/stm32f1/constants.hpp>
@@ -32,6 +30,7 @@
 #include <libhal/output_pin.hpp>
 #include <libhal/pointers.hpp>
 #include <libhal/steady_clock.hpp>
+#include <libhal/units.hpp>
 #include <libhal/usb.hpp>
 
 #include "power.hpp"
@@ -105,7 +104,7 @@ struct control  // NOLINT
   // LPMODE: Low-power Mode
   [[maybe_unused]] static constexpr auto low_power_mode = bit_mask::from<2>();
   // FSUSP: Force Suspend
-  [[maybe_unused]] static constexpr auto force_suspend = bit_mask::from<3>();
+  static constexpr auto force_suspend = bit_mask::from<3>();
   // RESUME: Resume Request
   [[maybe_unused]] static constexpr auto resume_request = bit_mask::from<4>();
   // ESOFM: Expected Start Of Frame Interrupt Mask
@@ -430,7 +429,6 @@ int error_detected_count = 0;
 
 void handle_bus_reset()
 {
-  // assignment to this register acts as an AND gate
   reg().ISTR = 0;
   reg().DADDR = 0u;  // disable USB Function
 
@@ -504,11 +502,11 @@ void usb::interrupt_handler() noexcept
             p_callback(out_receive_tag{});
           } else if constexpr (std::is_same_v<
                                  T,
-                                 hal::callback<void(v5::usb::host_event)>>) {
+                                 hal::callback<void(v5::usb::bus_event)>>) {
             if (control_encountered_a_setup_packet) {
-              p_callback(hal::v5::usb::host_event::setup_packet);
+              p_callback(hal::v5::usb::bus_event::setup_packet);
             } else {
-              p_callback(hal::v5::usb::host_event::data_packet);
+              p_callback(hal::v5::usb::bus_event::data_packet);
             }
           } else {
             static_assert(hal::error::invalid_option<is_control_tag>,
@@ -527,7 +525,7 @@ void usb::interrupt_handler() noexcept
   if (reset_request) {
     handle_bus_reset();
     if (auto* handler = std::get_if<0>(&m_out_callbacks[0])) {
-      (*handler)(hal::v5::usb::host_event::reset);
+      (*handler)(hal::v5::usb::bus_event::reset);
     }
   }
 
@@ -535,7 +533,6 @@ void usb::interrupt_handler() noexcept
     hal::bit_extract<interrupt_status::error>(interrupt_reg_value);
 
   if (error_detected) {
-    // assignment to this register acts as an AND gate
     interrupt_reg = ~(1U << interrupt_status::error.position);
     error_detected_count++;
   }
@@ -545,22 +542,24 @@ void usb::interrupt_handler() noexcept
       interrupt_reg_value);
 
   if (suspend_detected) {
-    // assignment to this register acts as an AND gate
-    interrupt_reg = ~(1U << interrupt_status::suspend_mode_request.position);
+    // Put USB peripheral into force suspend mode
+    hal::bit_modify(reg().CNTR).set<control::force_suspend>();
     if (auto* handler = std::get_if<0>(&m_out_callbacks[0])) {
-      (*handler)(hal::v5::usb::host_event::suspend_with_wakeup);
+      (*handler)(hal::v5::usb::bus_event::suspend);
     }
+    interrupt_reg = ~(1U << interrupt_status::suspend_mode_request.position);
   }
 
   bool const wake_detected =
     hal::bit_extract<interrupt_status::wake_up>(interrupt_reg_value);
 
   if (wake_detected) {
-    // assignment to this register acts as an AND gate
-    interrupt_reg = ~(1U << interrupt_status::wake_up.position);
+    // Take USB off of suspend
+    hal::bit_modify(reg().CNTR).clear<control::force_suspend>();
     if (auto* handler = std::get_if<0>(&m_out_callbacks[0])) {
-      (*handler)(hal::v5::usb::host_event::resume);
+      (*handler)(hal::v5::usb::bus_event::resume);
     }
+    interrupt_reg = ~(1U << interrupt_status::wake_up.position);
   }
 
   bool const overrun_detected =
@@ -568,19 +567,57 @@ void usb::interrupt_handler() noexcept
       interrupt_reg_value);
 
   if (overrun_detected) {
-    // assignment to this register acts as an AND gate
     interrupt_reg =
       ~(1U << interrupt_status::packet_memory_over_underrun.position);
+  }
+
+  bool const sof_detected =
+    hal::bit_extract<interrupt_status::start_of_frame>(interrupt_reg_value);
+
+  if (sof_detected) {
+    interrupt_reg = ~(1U << interrupt_status::start_of_frame.position);
+  }
+
+  bool const expected_sof_detected =
+    hal::bit_extract<interrupt_status::expected_start_of_frame>(
+      interrupt_reg_value);
+
+  if (expected_sof_detected) {
+    interrupt_reg = ~(1U << interrupt_status::expected_start_of_frame.position);
   }
 }
 
 usb::usb(hal::v5::strong_ptr_only_token,
-         hal::v5::strong_ptr<hal::steady_clock> const& p_clock,
-         hal::time_duration p_write_timeout)
-  : m_clock(p_clock)
-  , m_write_timeout(p_write_timeout)
-  , m_available_endpoint_memory(initial_packet_buffer_memory)
+         hal::strong_ptr<hal::steady_clock> const& p_clock,
+         time_duration p_write_timeout)
+  : usb(*p_clock, [&p_write_timeout]() -> auto {
+    if (p_write_timeout > timeout_t::max()) {
+      return timeout_t::max();
+    } else {
+      return std::chrono::duration_cast<timeout_t>(p_write_timeout);
+    }
+  }())
 {
+}
+
+usb::usb(hal::v5::strong_ptr_only_token,
+         hal::steady_clock& p_clock,
+         timeout_t p_write_timeout)
+  : usb(p_clock, p_write_timeout)
+{
+}
+
+usb::usb(hal::steady_clock& p_clock, timeout_t p_write_timeout)
+  : m_available_endpoint_memory(initial_packet_buffer_memory)
+  , m_write_timeout{ p_write_timeout }
+{
+  using namespace std::chrono_literals;
+
+  // Ensure that the timeout is at least 1ms.
+  if (m_write_timeout == 0ms) {
+    m_write_timeout = 1ms;
+  }
+
   // USB already active by some other means
   if (is_on(peripheral::usb) || is_on(peripheral::can1)) {
     hal::safe_throw(hal::device_or_resource_busy(this));
@@ -611,18 +648,18 @@ usb::usb(hal::v5::strong_ptr_only_token,
 
   using namespace std::chrono_literals;
 
-  hal::delay(*p_clock, 1ms);
+  hal::delay(p_clock, 1ms);
   // Perform reset
   hal::bit_modify(reg().CNTR)
     .set(control::power_down)
     .set(control::force_reset);
-  hal::delay(*p_clock, 1ms);
+  hal::delay(p_clock, 1ms);
 
   // The USB peripheral sets this bit on system reset, we need to clear it to
   // allow the device to power on. We must wait approximately 1us before we can
   // proceed for the stm32f103.
   hal::bit_modify(reg().CNTR).clear(control::power_down);
-  hal::delay(*p_clock, 1ms);
+  hal::delay(p_clock, 1ms);
 
   // Clears everything including the force reset, enabling the USB device.
   reg().CNTR = 0;
@@ -676,16 +713,47 @@ usize usb::read_endpoint(u8 p_endpoint,
 
 void usb::wait_for_endpoint_transfer_completion(u8 p_endpoint)
 {
+  using namespace std::chrono_literals;
+
   constexpr auto nak_u32 = static_cast<hal::u32>(stat::nak);
   auto& endpoint_reg = reg().EP[p_endpoint].EPR;
   auto endpoint_tx_status = hal::bit_extract<endpoint::status_tx>(endpoint_reg);
-  auto const deadline = hal::future_deadline(*m_clock, m_write_timeout);
+  timeout_t frame_count = 0ms;
+
   while (endpoint_tx_status != nak_u32) {
     endpoint_tx_status = hal::bit_extract<endpoint::status_tx>(endpoint_reg);
-    if (m_clock->uptime() >= deadline) {
+
+    if (hal::bit_extract<interrupt_status::start_of_frame>(reg().ISTR)) {
+      // Clear SOF flag to continue count.
+      hal::bit_modify(reg().ISTR).clear<interrupt_status::start_of_frame>();
+      frame_count += 1ms;
+    }
+    if (hal::bit_extract<interrupt_status::expected_start_of_frame>(
+          reg().ISTR)) {
+      // Clear SOF flag to continue count.
+      hal::bit_modify(reg().ISTR)
+        .clear<interrupt_status::expected_start_of_frame>();
+      frame_count += 1ms;
+    }
+    if (frame_count >= m_write_timeout) {
       hal::safe_throw(hal::timed_out(this));
     }
+    endpoint_tx_status = hal::bit_extract<endpoint::status_tx>(endpoint_reg);
   }
+}
+
+void usb::resume_if_suspended()
+{
+  if (not m_wake_enable /* and suspended */) {
+    safe_throw(hal::operation_not_supported(this));
+  }
+
+  hal::bit_modify(reg().CNTR).clear<control::force_suspend>();
+  hal::bit_modify(reg().CNTR).set<control::resume_request>();
+  // TODO(kammce): Migrate from using a steady clock to using the ESOF count as
+  // an uptime ms counter.
+
+  // Resume event detection check here...
 }
 
 void usb::fill_endpoint(hal::u8 p_endpoint,
@@ -786,7 +854,11 @@ private:
 
   [[nodiscard]] hal::v5::usb::endpoint_info driver_info() const override
   {
-    return { .size = fixed_endpoint_size, .number = 0, .stalled = false };
+    return {
+      .size = fixed_endpoint_size,
+      .number = 0,
+      .stalled = false,
+    };
   }
 
   void driver_stall(bool p_should_stall) override
@@ -864,19 +936,28 @@ private:
   }
 
   void driver_on_host_event(
-    callback<void(v5::usb::host_event)> const& p_callback) override
+    callback<void(v5::usb::bus_event)> const& p_callback) override
   {
     m_usb->m_out_callbacks[0] = p_callback;
   }
-  void driver_set_remote_wakeup_enabled(bool) override
+
+  void driver_remote_wakeup_enable(bool p_wake_enable) override
   {
+    m_usb->m_wake_enable = p_wake_enable;
   }
+
+  bool driver_remote_wakeup_granted() override
+  {
+    return m_usb->m_wake_enable;
+  }
+
   void driver_acknowledge_sleep(bool) override
   {
   }
+
   v5::usb::lpm_support driver_supports_lpm() override
   {
-    return {};
+    return v5::usb::lpm_support().remote_wakeup_supported(true);
   }
 
   hal::v5::strong_ptr<usb> m_usb;

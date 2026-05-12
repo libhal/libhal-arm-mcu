@@ -14,6 +14,7 @@
 
 #pragma once
 
+#include <chrono>
 #include <memory_resource>
 #include <variant>
 
@@ -68,15 +69,17 @@ public:
   using ctrl_receive_tag = hal::v5::usb::control_endpoint::on_receive_tag;
   using out_receive_tag = hal::v5::usb::out_endpoint::on_receive_tag;
   using callback_variant_t =
-    std::variant<hal::callback<void(v5::usb::host_event)>,
+    std::variant<hal::callback<void(v5::usb::bus_event)>,
                  hal::callback<void(ctrl_receive_tag)>,
                  hal::callback<void(out_receive_tag)>>;
 
   static constexpr std::size_t usb_endpoint_count = 8;
+  using timeout_t = std::chrono::duration<u8, std::milli>;
 
   /**
    * @brief Construct a new usb object
    *
+   * @deprecated Steady clock no longer needed, use the constructor without it.
    * @param p_clock - clocked used for detecting endpoint stalls for write
    * operations. This can occur when the device is disconnected, the host has
    * stopped sending OUT packets, or something wrong with the bus.
@@ -86,7 +89,21 @@ public:
    */
   usb(hal::v5::strong_ptr_only_token,
       hal::v5::strong_ptr<hal::steady_clock> const& p_clock,
-      hal::time_duration p_write_timeout = std::chrono::milliseconds(5));
+      hal::time_duration p_write_timeout = std::chrono::milliseconds(10));
+
+  /**
+   * @brief Construct a new usb object
+   *
+   * @param p_clock - clocked used for timing parts of the usb initialization.
+   * @param p_write_timeout - the amount of milliseconds of time before throwing
+   * a timed_out exception for an OUT endpoint with data to transmit but the
+   * HOST has not requested it yet. Its max duration is is 255ms. Temporal
+   * resolution is +/- 1ms.
+   */
+  usb(hal::v5::strong_ptr_only_token,
+      hal::steady_clock& p_clock,
+      timeout_t p_write_timeout = timeout_t(10));
+
   usb(usb&) = delete;
   usb operator=(usb&) = delete;
   usb(usb&&) = delete;
@@ -94,11 +111,14 @@ public:
   ~usb();
 
 private:
+  usb(hal::steady_clock& p_clock, timeout_t p_write_timeout = timeout_t(3));
+
   void interrupt_handler() noexcept;
   void fill_endpoint(hal::u8 p_endpoint,
                      std::span<hal::byte const> p_data,
                      hal::u16 p_max_length);
   void flush_endpoint(u8 p_endpoint);
+  void resume_if_suspended();
   void write_to_endpoint(hal::u8 p_endpoint, std::span<hal::byte const> p_data);
   usize read_endpoint(u8 p_endpoint,
                       std::span<hal::byte> p_buffer,
@@ -123,11 +143,11 @@ private:
   friend class in_endpoint;
 
   std::array<callback_variant_t, usb_endpoint_count> m_out_callbacks;
-  hal::v5::strong_ptr<hal::steady_clock> m_clock;
-  hal::time_duration m_write_timeout;
   std::uint16_t m_available_endpoint_memory;
+  timeout_t m_write_timeout;
   // Starts at 1 because endpoint 0 is always occupied by the control endpoint
   hal::u8 m_endpoints_allocated = 1;
+  bool m_wake_enable = false;
 };
 
 /**

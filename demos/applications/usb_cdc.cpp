@@ -605,13 +605,13 @@ This demo does the following:
       if (auto const current_line_coding =
             virtual_usb_serial->get_line_coding();
           current_line_coding != last_line_coding) {
-        hal::print<64>(*console,
-                       "\n[⚙️ LINE CODING]:(baud=%lu, stop=%d, parity=%d, "
-                       "data_bits=%d)\n",
-                       current_line_coding.baud_rate(),
-                       static_cast<int>(current_line_coding.stop_bits()),
-                       static_cast<int>(current_line_coding.parity()),
-                       static_cast<int>(current_line_coding.data_bits()));
+        hal::print<128>(*console,
+                        "\n[⚙️ LINE CODING]:(baud=%lu, stop=%d, parity=%d, "
+                        "data_bits=%d)\n",
+                        current_line_coding.baud_rate(),
+                        static_cast<int>(current_line_coding.stop_bits()),
+                        static_cast<int>(current_line_coding.parity()),
+                        static_cast<int>(current_line_coding.data_bits()));
         last_line_coding = current_line_coding;
       }
 
@@ -646,7 +646,7 @@ This demo does the following:
       }
 
     } catch (hal::exception const& p_error) {
-      hal::print<128>(
+      hal::print<64>(
         *console, "\nException Error Code '%d' caught\n", p_error.error_code());
     }
   }

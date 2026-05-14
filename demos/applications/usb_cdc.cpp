@@ -163,6 +163,8 @@ struct control_line_state
   hal::bit_value<hal::u16> raw{ 0 };
 };
 
+hal::optional_ptr<hal::serial> g_console;
+
 class usb_cdc_serial : public hal::usb::interface
 {
 public:
@@ -273,7 +275,6 @@ private:
     auto const idx2 = static_cast<hal::u8>(start + 1);
     auto const cdc = std::to_underlying(hal::v5::usb::class_code::cdc_control);
 
-    // This is copied from experience found online
     auto const interface_association_descriptor = std::to_array<hal::byte>({
       // Interface Association Descriptor
       0x08,  // bLength (length of this descriptor)
@@ -359,7 +360,6 @@ private:
                                              data_tx_descriptor);
 
     p_endpoint.write(descriptor);
-
     // Report back to the enumerator that we hae 2 interfaces available
     return hal::usb::interface::descriptor_count{ .interface = 2, .string = 0 };
   }
@@ -502,6 +502,7 @@ void application()
 
   auto clock = resources::clock();
   auto console = resources::console();
+  g_console = console;
 
   hal::print(*console,
              R"(
@@ -520,29 +521,41 @@ This demo does the following:
   auto allocator = resources::driver_allocator();
   auto control_endpoint = resources::usb_control_endpoint();
   auto serial_host_ep_out = resources::usb_bulk_out_endpoint1();
-  auto serial_host_ep_in = resources::usb_bulk_in_endpoint1();
-  auto status_ep_in = resources::usb_interrupt_in_endpoint1();
   auto serial_host_ep_out2 = resources::usb_bulk_out_endpoint2();
+  auto serial_host_ep_in = resources::usb_bulk_in_endpoint1();
   auto serial_host_ep_in2 = resources::usb_bulk_in_endpoint2();
+  auto status_ep_in = resources::usb_interrupt_in_endpoint1();
   auto status_ep_in2 = resources::usb_interrupt_in_endpoint2();
 
-  hal::print<512 + 256>(*console,
-                        "+--------------------+--------+------+\n"
-                        "| Endpoint Name      | Number | Size |\n"
-                        "+--------------------+--------+------+\n"
-                        "| %-18s |  0x%02X  | %4zu |\n"
-                        "| %-18s |  0x%02X  | %4zu |\n"
-                        "| %-18s |  0x%02X  | %4zu |\n"
-                        "+--------------------+--------+------+\n\n",
-                        "status_ep_in",
-                        status_ep_in->info().number,
-                        status_ep_in->info().size,
-                        "serial_host_ep_out",
-                        serial_host_ep_out->info().number,
-                        serial_host_ep_out->info().size,
-                        "serial_host_ep_in",
-                        serial_host_ep_in->info().number,
-                        serial_host_ep_in->info().size);
+  hal::print<512 * 2>(*console,
+                      "+---------------------+--------+------+\n"
+                      "| Endpoint Name       | Number | Size |\n"
+                      "+---------------------+--------+------+\n"
+                      "| %-19s |  0x%02X  | %4zu |\n"
+                      "| %-19s |  0x%02X  | %4zu |\n"
+                      "| %-19s |  0x%02X  | %4zu |\n"
+                      "| %-19s |  0x%02X  | %4zu |\n"
+                      "| %-19s |  0x%02X  | %4zu |\n"
+                      "| %-19s |  0x%02X  | %4zu |\n"
+                      "+---------------------+--------+------+\n\n",
+                      "serial_host_ep_out",
+                      serial_host_ep_out->info().number,
+                      serial_host_ep_out->info().size,
+                      "serial_host_ep_out2",
+                      serial_host_ep_out2->info().number,
+                      serial_host_ep_out2->info().size,
+                      "status_ep_in",
+                      status_ep_in->info().number,
+                      status_ep_in->info().size,
+                      "status_ep_in2",
+                      status_ep_in2->info().number,
+                      status_ep_in2->info().size,
+                      "serial_host_ep_in",
+                      serial_host_ep_in->info().number,
+                      serial_host_ep_in->info().size,
+                      "serial_host_ep_in2",
+                      serial_host_ep_in2->info().number,
+                      serial_host_ep_in2->info().size);
 
   auto virtual_usb_serial = hal::make_strong_ptr<usb_cdc_serial>(
     allocator, clock, serial_host_ep_out, serial_host_ep_in, status_ep_in);
@@ -582,12 +595,24 @@ This demo does the following:
 
       {
         std::array<char, 16> buffer{};
-        auto length = virtual_usb_serial->read(
+        auto length = 0uz;
+
+        // Check serial port 1
+        length = virtual_usb_serial->read(
           hal::make_scatter_array<hal::u8>(hal::as_writable_bytes(buffer)));
 
         if (length != 0) {
           hal::print<128>(
-            *console, "\n[📨 Received]:(%.*s)\n", length, buffer.data());
+            *console, "\n[📨 Received 1]:(%.*s)\n", length, buffer.data());
+        }
+
+        // Check serial port 2
+        length = virtual_usb_serial2->read(
+          hal::make_scatter_array<hal::u8>(hal::as_writable_bytes(buffer)));
+
+        if (length != 0) {
+          hal::print<128>(
+            *console, "\n[📨 Received 2]:(%.*s)\n", length, buffer.data());
         }
       }
 
@@ -600,11 +625,11 @@ This demo does the following:
           current_control_line_state != last_control_line_state) {
         if (current_control_line_state.dtr() != last_control_line_state.dtr()) {
           hal::print<32>(
-            *console, "\n[📡 DTR]:(%d)\n", current_control_line_state.dtr());
+            *console, "\n[📡 DTR 1]:(%d)\n", current_control_line_state.dtr());
         }
         if (current_control_line_state.rts() != last_control_line_state.rts()) {
           hal::print<32>(
-            *console, "\n[📡 RTS]:(%d)\n", current_control_line_state.rts());
+            *console, "\n[📡 RTS 1]:(%d)\n", current_control_line_state.rts());
         }
         last_control_line_state = current_control_line_state;
       }
@@ -617,7 +642,7 @@ This demo does the following:
             virtual_usb_serial->get_line_coding();
           current_line_coding != last_line_coding) {
         hal::print<128>(*console,
-                        "\n[⚙️ LINE CODING]:(baud=%lu, stop=%d, parity=%d, "
+                        "\n[⚙️ LINE CODING 1]:(baud=%lu, stop=%d, parity=%d, "
                         "data_bits=%d)\n",
                         current_line_coding.baud_rate(),
                         static_cast<int>(current_line_coding.stop_bits()),
@@ -642,10 +667,12 @@ This demo does the following:
         if (clock->uptime() >= send_deadline) {
           virtual_usb_serial->write(hal::make_scatter_array<hal::byte const>(
             hal::as_bytes("Hello, World\n"sv)));
+          hal::print(*console, "\n[📬 SENT 1]:(Hello, World\\n)\n");
+
           virtual_usb_serial2->write(hal::make_scatter_array<hal::byte const>(
             hal::as_bytes("Goodbye, World\n"sv)));
+          hal::print(*console, "\n[📬 SENT 2]:(Goodbye, World\\n)\n");
           send_deadline = hal::future_deadline(*clock, send_period);
-          hal::print(*console, "\n[📬 SENT]:(Hello, World\\n)\n");
         }
       } else {
         if (previously_enumerated) {

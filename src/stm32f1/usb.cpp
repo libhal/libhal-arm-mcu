@@ -936,7 +936,7 @@ private:
     return control_encountered_a_setup_packet;
   }
 
-  void driver_on_host_event(
+  void driver_on_bus_event(
     callback<void(v5::usb::bus_event)> const& p_callback) override
   {
     m_usb->m_out_callbacks[0] = p_callback;

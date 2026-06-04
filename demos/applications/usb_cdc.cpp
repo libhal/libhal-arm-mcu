@@ -158,7 +158,10 @@ struct control_line_state
     raw.insert<rts_mask>(p_state);
   }
 
-  constexpr bool operator==(control_line_state const&) const = default;
+  constexpr bool operator==(control_line_state const& p_other) const
+  {
+    return raw.get() == p_other.raw.get();
+  }
 
   hal::bit_value<hal::u16> raw{ 0 };
 };
@@ -583,6 +586,8 @@ This demo does the following:
 
   auto last_control_line_state = virtual_usb_serial->get_control_line_state();
   auto last_line_coding = virtual_usb_serial->get_line_coding();
+  auto last_control_line_state2 = virtual_usb_serial2->get_control_line_state();
+  auto last_line_coding2 = virtual_usb_serial2->get_line_coding();
   bool previously_enumerated = false;
 
   while (true) {
@@ -634,6 +639,22 @@ This demo does the following:
         last_control_line_state = current_control_line_state;
       }
 
+      if (auto const current_control_line_state2 =
+            virtual_usb_serial2->get_control_line_state();
+          current_control_line_state2 != last_control_line_state2) {
+        if (current_control_line_state2.dtr() !=
+            last_control_line_state2.dtr()) {
+          hal::print<32>(
+            *console, "\n[📡 DTR 2]:(%d)\n", current_control_line_state2.dtr());
+        }
+        if (current_control_line_state2.rts() !=
+            last_control_line_state2.rts()) {
+          hal::print<32>(
+            *console, "\n[📡 RTS 2]:(%d)\n", current_control_line_state2.rts());
+        }
+        last_control_line_state2 = current_control_line_state2;
+      }
+
       // =======================================================================
       // Check the line coding (baud rate, stop bits, parity, data bits)
       // =======================================================================
@@ -649,6 +670,19 @@ This demo does the following:
                         static_cast<int>(current_line_coding.parity()),
                         static_cast<int>(current_line_coding.data_bits()));
         last_line_coding = current_line_coding;
+      }
+
+      if (auto const current_line_coding2 =
+            virtual_usb_serial2->get_line_coding();
+          current_line_coding2 != last_line_coding2) {
+        hal::print<128>(*console,
+                        "\n[⚙️ LINE CODING 2]:(baud=%lu, stop=%d, parity=%d, "
+                        "data_bits=%d)\n",
+                        current_line_coding2.baud_rate(),
+                        static_cast<int>(current_line_coding2.stop_bits()),
+                        static_cast<int>(current_line_coding2.parity()),
+                        static_cast<int>(current_line_coding2.data_bits()));
+        last_line_coding2 = current_line_coding2;
       }
 
       // =======================================================================

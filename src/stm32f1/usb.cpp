@@ -13,8 +13,8 @@
 // limitations under the License.
 
 #include <bit>
-
 #include <chrono>
+
 #include <libhal-arm-mcu/interrupt.hpp>
 #include <libhal-arm-mcu/stm32f1/clock.hpp>
 #include <libhal-arm-mcu/stm32f1/constants.hpp>
@@ -33,8 +33,8 @@
 #include <libhal/units.hpp>
 #include <libhal/usb.hpp>
 
+#include "pin.hpp"
 #include "power.hpp"
-#include "stm32f1/pin.hpp"
 
 namespace hal::stm32f1 {
 namespace {
@@ -751,7 +751,7 @@ void usb::resume_if_suspended()
 
   hal::bit_modify(reg().CNTR).clear<control::force_suspend>();
   hal::bit_modify(reg().CNTR).set<control::resume_request>();
-  // TODO(kammce): Migrate from using a steady clock to using the ESOF count as
+  // TODO(#201): Migrate from using a steady clock to using the ESOF count as
   // an uptime ms counter.
 
   // Resume event detection check here...

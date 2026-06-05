@@ -1,0 +1,68 @@
+# Copyright 2024 - 2025 Khalil Estell and the libhal contributors
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# ==============================================================================
+# NOTICE: This test package is written without libhal-cmake-util to demonstrate
+#         what is needed with normal CMake to use the libhal library.
+# ==============================================================================
+
+cmake_minimum_required(VERSION 3.28)
+
+# Generate compile commands for anyone using our libraries.
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+set(CMAKE_COLOR_DIAGNOSTICS ON)
+
+project(test_package LANGUAGES CXX)
+
+# Require Ninja or Visual Studio for modules
+if(NOT CMAKE_GENERATOR MATCHES "Ninja|Visual Studio")
+    message(FATAL_ERROR "C++20 modules require Ninja or Visual Studio generator")
+endif()
+
+find_package(libhal REQUIRED CONFIG)
+
+# Suppress clang's "argument unused during compilation: '-c'" warning that
+# fires during CMake's C++20 module dependency scanning phase. clang-scan-deps
+# passes both --precompile and -c to the compiler, making -c unused. Using
+# -Qunused-arguments via CMAKE_CXX_FLAGS ensures the flag is visible to module
+# scanning commands for imported targets.
+if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|AppleClang")
+    string(APPEND CMAKE_CXX_FLAGS " -Qunused-arguments")
+endif()
+
+add_executable(${PROJECT_NAME} main.cpp)
+
+target_include_directories(${PROJECT_NAME} PUBLIC .)
+target_compile_features(${PROJECT_NAME} PRIVATE cxx_std_23)
+target_compile_options(${PROJECT_NAME} PRIVATE -fno-rtti)
+target_link_libraries(${PROJECT_NAME} PRIVATE libhal::libhal)
+
+
+# ==============================================================================
+# NOTICE: Everything below this line is simply here for testing and CI
+#         purposes. If CI fails, having a detailed trace of what went wrong is
+#         very helpful.
+# ==============================================================================
+
+if (NOT CMAKE_CROSSCOMPILING)
+    target_compile_options(${PROJECT_NAME} PRIVATE -fsanitize=address)
+    target_link_options(${PROJECT_NAME} PRIVATE -g -fsanitize=address)
+endif(NOT CMAKE_CROSSCOMPILING)
+
+# Always run this custom target by making it depend on ALL
+add_custom_target(copy_compile_commands ALL
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+    ${CMAKE_BINARY_DIR}/compile_commands.json
+    ${CMAKE_SOURCE_DIR}/compile_commands.json
+    DEPENDS ${CMAKE_BINARY_DIR}/compile_commands.json)

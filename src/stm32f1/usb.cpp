@@ -425,8 +425,6 @@ void clear_correct_transfer_for(u8 endpoint_id)
 }
 }  // namespace
 
-int error_detected_count = 0;
-
 void handle_bus_reset()
 {
   reg().ISTR = 0;
@@ -461,10 +459,6 @@ void handle_bus_reset()
   hal::bit_modify(reg().DADDR).set(device_address::enable_function);
 }
 
-// Using a global variable because we cannot pass setup packet information to
-// the control endpoint directly.
-bool control_encountered_a_setup_packet = false;
-
 void usb::fire_bus_event(hal::v5::usb::bus_event p_event)
 {
   if (auto* handler = std::get_if<0>(&m_out_callbacks[0])) {
@@ -472,6 +466,10 @@ void usb::fire_bus_event(hal::v5::usb::bus_event p_event)
   }
 }
 
+// Using a global variable because we cannot pass setup packet information to
+// the control endpoint directly.
+bool control_encountered_a_setup_packet = false;
+hal::time_duration usb_uptime_ms{ 0 };
 // NOLINTNEXTLINE(bugprone-exception-escape)
 void usb::interrupt_handler() noexcept
 {
@@ -534,14 +532,6 @@ void usb::interrupt_handler() noexcept
     fire_bus_event(hal::v5::usb::bus_event::reset);
   }
 
-  bool const error_detected =
-    hal::bit_extract<interrupt_status::error>(interrupt_reg_value);
-
-  if (error_detected) {
-    interrupt_reg = ~(1U << interrupt_status::error.position);
-    error_detected_count++;
-  }
-
   bool const suspend_detected =
     hal::bit_extract<interrupt_status::suspend_mode_request>(
       interrupt_reg_value);
@@ -575,7 +565,10 @@ void usb::interrupt_handler() noexcept
   bool const sof_detected =
     hal::bit_extract<interrupt_status::start_of_frame>(interrupt_reg_value);
 
+  using namespace std::chrono_literals;
+
   if (sof_detected) {
+    usb_uptime_ms = usb_uptime_ms + 1ms;
     interrupt_reg = ~(1U << interrupt_status::start_of_frame.position);
   }
 
@@ -584,36 +577,32 @@ void usb::interrupt_handler() noexcept
       interrupt_reg_value);
 
   if (expected_sof_detected) {
+    usb_uptime_ms += 1ms;
     interrupt_reg = ~(1U << interrupt_status::expected_start_of_frame.position);
   }
-}
 
-usb::usb(hal::v5::strong_ptr_only_token,
-         hal::strong_ptr<hal::steady_clock> const& p_clock,
-         time_duration p_write_timeout)
-  : usb(*p_clock, [&p_write_timeout]() -> auto {
-    if (p_write_timeout > timeout_t::max()) {
-      return timeout_t::max();
-    } else {
-      return std::chrono::duration_cast<timeout_t>(p_write_timeout);
-    }
-  }())
-{
+  // TODO(#202): Do something with USB error detected interrupt
+  bool const error_detected =
+    hal::bit_extract<interrupt_status::error>(interrupt_reg_value);
+
+  if (error_detected) {
+    interrupt_reg = ~(1U << interrupt_status::error.position);
+  }
 }
 
 usb::usb(hal::v5::strong_ptr_only_token,
          hal::steady_clock& p_clock,
          timeout_t p_write_timeout)
-  : usb(p_clock, p_write_timeout)
-{
-}
-
-usb::usb(hal::steady_clock& p_clock, timeout_t p_write_timeout)
   : m_available_endpoint_memory(initial_packet_buffer_memory)
   , m_write_timeout{ p_write_timeout }
 {
   using namespace std::chrono_literals;
 
+  if (m_write_timeout > timeout_t::max()) {
+    m_write_timeout = timeout_t::max();
+  } else {
+    m_write_timeout = std::chrono::duration_cast<timeout_t>(p_write_timeout);
+  }
   // Ensure that the timeout is at least 1ms.
   if (m_write_timeout == 0ms) {
     m_write_timeout = 1ms;
@@ -742,19 +731,32 @@ void usb::wait_for_endpoint_transfer_completion(u8 p_endpoint)
     endpoint_tx_status = hal::bit_extract<endpoint::status_tx>(endpoint_reg);
   }
 }
-
+// TODO(#203): Integrate resume_if_suspended into USB codebase
 void usb::resume_if_suspended()
 {
-  if (not m_wake_enable /* and suspended */) {
+  auto const suspended =
+    hal::bit_extract<interrupt_status::suspend_mode_request>(reg().ISTR);
+  if (not suspended) {
+    return;
+  }
+
+  if (not m_wake_enable and suspended) {
     safe_throw(hal::operation_not_supported(this));
   }
 
+  // Waking is enabled and the device is suspended, time to wake the HOST.
+  // See p.636 or RM0008.pdf for a description of the process
   hal::bit_modify(reg().CNTR).clear<control::force_suspend>();
   hal::bit_modify(reg().CNTR).set<control::resume_request>();
-  // TODO(#201): Migrate from using a steady clock to using the ESOF count as
-  // an uptime ms counter.
 
-  // Resume event detection check here...
+  using namespace std::chrono_literals;
+  auto const timeout = usb_uptime_ms + 2ms;
+
+  while (timeout <= usb_uptime_ms) {
+    continue;
+  }
+
+  hal::bit_modify(reg().CNTR).clear<control::resume_request>();
 }
 
 void usb::fill_endpoint(hal::u8 p_endpoint,

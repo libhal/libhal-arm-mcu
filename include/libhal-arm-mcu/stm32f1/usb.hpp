@@ -79,21 +79,6 @@ public:
   /**
    * @brief Construct a new usb object
    *
-   * @deprecated Steady clock no longer needed, use the constructor without it.
-   * @param p_clock - clocked used for detecting endpoint stalls for write
-   * operations. This can occur when the device is disconnected, the host has
-   * stopped sending OUT packets, or something wrong with the bus.
-   * @param p_write_timeout - the amount of time before throwing a timed_out
-   * exception for an OUT endpoint with data to transmit but the HOST has not
-   * requested it yet.
-   */
-  usb(hal::v5::strong_ptr_only_token,
-      hal::v5::strong_ptr<hal::steady_clock> const& p_clock,
-      hal::time_duration p_write_timeout = std::chrono::milliseconds(10));
-
-  /**
-   * @brief Construct a new usb object
-   *
    * @param p_clock - clocked used for timing parts of the usb initialization.
    * @param p_write_timeout - the amount of milliseconds of time before throwing
    * a timed_out exception for an OUT endpoint with data to transmit but the
@@ -111,8 +96,6 @@ public:
   ~usb();
 
 private:
-  usb(hal::steady_clock& p_clock, timeout_t p_write_timeout = timeout_t(3));
-
   void interrupt_handler() noexcept;
   void fire_bus_event(hal::v5::usb::bus_event p_event);
   void fill_endpoint(hal::u8 p_endpoint,

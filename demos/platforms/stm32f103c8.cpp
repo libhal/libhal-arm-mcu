@@ -108,8 +108,9 @@ auto usb()
 {
   using namespace std::chrono_literals;
   if (not usb_ptr) {
+    auto clock = resources::clock();
     usb_ptr = hal::v5::make_strong_ptr<hal::stm32f1::usb>(
-      driver_allocator(), clock(), 100ms);
+      driver_allocator(), *clock, 10ms);
   }
   return usb_ptr;
 }

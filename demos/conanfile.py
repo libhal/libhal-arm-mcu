@@ -33,4 +33,5 @@ class demos(ConanFile):
 
     def requirements(self):
         self.requires("libhal-arm-mcu/latest")
+        self.requires("libhal-util/[^5.10.0]")
         self.requires("minimp3/cci.20211201")

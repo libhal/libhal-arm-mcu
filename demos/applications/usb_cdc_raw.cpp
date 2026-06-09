@@ -444,8 +444,11 @@ void application()
       continue;
     }
 
-    if (control_endpoint->has_setup().has_value()) {
-      if (control_endpoint->has_setup().value() == false) {
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+    if (control_endpoint->has_setup().has_value()) {         // NOLINT
+      if (control_endpoint->has_setup().value() == false) {  // NOLINT
+#pragma GCC diagnostic pop
         // ignore the host command, continue waiting for a new SETUP packet.
         host_command_available = false;
         hal::print(*console, "Non-SETUP PACKET on EP0 ¯\\_(ツ)_/¯\n");

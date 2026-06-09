@@ -23,6 +23,7 @@ libhal_build_demos(
   can
   dac
   gpio
+  hid
   i2c
   interrupt_pin
   uart
@@ -33,8 +34,8 @@ libhal_build_demos(
   watchdog
   # stream_dac
   timer
-  usb_cdc_raw
   usb_cdc
+  #usb_cdc_raw
   semihost
 
   PACKAGES

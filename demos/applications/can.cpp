@@ -75,7 +75,7 @@ void application()
   while (true) {
     using namespace std::chrono_literals;
     hal::can_message standard_message {
-      .id=0x112,
+      .id=0x111,
       .extended=false,
       .remote_request=false,
       .length = 8,
@@ -106,17 +106,23 @@ void application()
     };
 
     hal::print(*console, "📮 Sending 4x payloads...\n");
-
+    int send_count = 0;
     try {
       can_transceiver->send(standard_message);
+      send_count++;
       can_transceiver->send(standard_message2);
+      send_count++;
       can_transceiver->send(extended_message);
+      send_count++;
       can_transceiver->send(extended_message2);
+      send_count++;
     } catch (hal::resource_unavailable_try_again const&) {
-      hal::print(
-        *console,
-        "❌ CAN messages are not getting acknowledged by the bus! Trying "
-        "again...\n");
+      if (send_count == 0) {
+        hal::print(
+          *console,
+          "❌ CAN messages are not getting acknowledged by the bus! Trying "
+          "again...\n");
+      }
     }
 
     hal::delay(*clock, 1s);
@@ -124,6 +130,11 @@ void application()
     for (auto msg = message_finder.find(); msg.has_value();
          msg = message_finder.find()) {
       print_can_message(*console, *msg);
+      auto const total_received = can_transceiver->receive_count();
+      if (total_received.has_value()) {
+        hal::print<64>(
+          *console, "📊 Total Messages Received: %zu\n\n", total_received);
+      }
     }
   }
 }

@@ -34,7 +34,7 @@ libhal_build_demos(
   watchdog
   # stream_dac
   timer
-  usb_cdc_raw
+  #usb_cdc_raw
   usb_cdc
   semihost
 

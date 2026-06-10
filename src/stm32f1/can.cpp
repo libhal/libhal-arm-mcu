@@ -657,7 +657,7 @@ void can::driver_on_receive(hal::callback<handler> p_handler)
 namespace hal::stm32f1 {
 namespace {
 std::span<hal::can_message> can_receive_buffer{};
-hal::u32 receive_count{};
+hal::u32 message_rx_count{};
 hal::u32 current_baud_rate = 0;
 can_interrupt::optional_receive_handler can_v2_receive_handler{};
 can_bus_manager::optional_bus_off_handler can_v2_bus_off_handler{};
@@ -682,7 +682,7 @@ void handler_circular_buffer_interrupt()
   }
 
   if (not can_receive_buffer.empty()) {
-    auto const write_index = receive_count++ % can_receive_buffer.size();
+    auto const write_index = message_rx_count++ % can_receive_buffer.size();
     can_receive_buffer[write_index] = message;
   }
 }
@@ -804,7 +804,7 @@ can_peripheral_manager::transceiver::transceiver(
   std::span<can_message> p_receive_buffer)
 {
   can_receive_buffer = p_receive_buffer;
-  receive_count = 0;
+  message_rx_count = 0;
 }
 
 u32 can_peripheral_manager::transceiver::driver_baud_rate()
@@ -857,7 +857,7 @@ can_peripheral_manager::transceiver::driver_receive_buffer()
 
 std::size_t can_peripheral_manager::transceiver::driver_receive_cursor()
 {
-  return receive_count % can_receive_buffer.size();
+  return message_rx_count % can_receive_buffer.size();
 }
 
 can_peripheral_manager::interrupt::interrupt()

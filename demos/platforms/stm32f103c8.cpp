@@ -327,12 +327,19 @@ void initialize_can()
     can_manager =
       hal::v5::make_strong_ptr<hal::stm32f1::can_peripheral_manager_v2>(
         driver_allocator(),
-        32,
+        16,
         driver_allocator(),
         100'000,
         *clock_ref,
         std::chrono::milliseconds(1),
         hal::stm32f1::can_pins::pb9_pb8);
+
+    // Set if statement to true if you want to enable self test, meaning you'll
+    // receive your own messages. This is useful to test the driver without
+    // needing another CAN device.
+    if constexpr (true) {
+      can_manager->enable_self_test(true);
+    }
   }
 }
 

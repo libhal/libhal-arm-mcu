@@ -12,10 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include <cstdint>
-
 #include <bit>
-#include <memory_resource>
+#include <chrono>
 
 #include <libhal-arm-mcu/interrupt.hpp>
 #include <libhal-arm-mcu/stm32f1/clock.hpp>
@@ -32,10 +30,11 @@
 #include <libhal/output_pin.hpp>
 #include <libhal/pointers.hpp>
 #include <libhal/steady_clock.hpp>
+#include <libhal/units.hpp>
 #include <libhal/usb.hpp>
 
+#include "pin.hpp"
 #include "power.hpp"
-#include "stm32f1/pin.hpp"
 
 namespace hal::stm32f1 {
 namespace {
@@ -105,7 +104,7 @@ struct control  // NOLINT
   // LPMODE: Low-power Mode
   [[maybe_unused]] static constexpr auto low_power_mode = bit_mask::from<2>();
   // FSUSP: Force Suspend
-  [[maybe_unused]] static constexpr auto force_suspend = bit_mask::from<3>();
+  static constexpr auto force_suspend = bit_mask::from<3>();
   // RESUME: Resume Request
   [[maybe_unused]] static constexpr auto resume_request = bit_mask::from<4>();
   // ESOFM: Expected Start Of Frame Interrupt Mask
@@ -426,11 +425,8 @@ void clear_correct_transfer_for(u8 endpoint_id)
 }
 }  // namespace
 
-int error_detected_count = 0;
-
 void handle_bus_reset()
 {
-  // assignment to this register acts as an AND gate
   reg().ISTR = 0;
   reg().DADDR = 0u;  // disable USB Function
 
@@ -463,10 +459,17 @@ void handle_bus_reset()
   hal::bit_modify(reg().DADDR).set(device_address::enable_function);
 }
 
+void usb::fire_bus_event(hal::v5::usb::bus_event p_event)
+{
+  if (auto* handler = std::get_if<0>(&m_out_callbacks[0])) {
+    (*handler)(p_event);
+  }
+}
+
 // Using a global variable because we cannot pass setup packet information to
 // the control endpoint directly.
 bool control_encountered_a_setup_packet = false;
-
+hal::time_duration usb_uptime_ms{ 0 };
 // NOLINTNEXTLINE(bugprone-exception-escape)
 void usb::interrupt_handler() noexcept
 {
@@ -502,6 +505,14 @@ void usb::interrupt_handler() noexcept
                                  T,
                                  hal::callback<void(out_receive_tag)>>) {
             p_callback(out_receive_tag{});
+          } else if constexpr (std::is_same_v<
+                                 T,
+                                 hal::callback<void(v5::usb::bus_event)>>) {
+            if (control_encountered_a_setup_packet) {
+              p_callback(hal::v5::usb::bus_event::setup_packet);
+            } else {
+              p_callback(hal::v5::usb::bus_event::data_packet);
+            }
           } else {
             static_assert(hal::error::invalid_option<is_control_tag>,
                           "USB RX Out callback visitor is non-exhaustive!");
@@ -518,15 +529,7 @@ void usb::interrupt_handler() noexcept
 
   if (reset_request) {
     handle_bus_reset();
-  }
-
-  bool const error_detected =
-    hal::bit_extract<interrupt_status::error>(interrupt_reg_value);
-
-  if (error_detected) {
-    // assignment to this register acts as an AND gate
-    interrupt_reg = ~(1U << interrupt_status::error.position);
-    error_detected_count++;
+    fire_bus_event(hal::v5::usb::bus_event::reset);
   }
 
   bool const suspend_detected =
@@ -534,7 +537,9 @@ void usb::interrupt_handler() noexcept
       interrupt_reg_value);
 
   if (suspend_detected) {
-    // assignment to this register acts as an AND gate
+    // Put USB peripheral into force suspend mode
+    hal::bit_modify(reg().CNTR).set<control::force_suspend>();
+    fire_bus_event(hal::v5::usb::bus_event::suspend);
     interrupt_reg = ~(1U << interrupt_status::suspend_mode_request.position);
   }
 
@@ -542,7 +547,9 @@ void usb::interrupt_handler() noexcept
     hal::bit_extract<interrupt_status::wake_up>(interrupt_reg_value);
 
   if (wake_detected) {
-    // assignment to this register acts as an AND gate
+    // Take USB off of suspend
+    hal::bit_modify(reg().CNTR).clear<control::force_suspend>();
+    fire_bus_event(hal::v5::usb::bus_event::resume);
     interrupt_reg = ~(1U << interrupt_status::wake_up.position);
   }
 
@@ -551,19 +558,56 @@ void usb::interrupt_handler() noexcept
       interrupt_reg_value);
 
   if (overrun_detected) {
-    // assignment to this register acts as an AND gate
     interrupt_reg =
       ~(1U << interrupt_status::packet_memory_over_underrun.position);
+  }
+
+  bool const sof_detected =
+    hal::bit_extract<interrupt_status::start_of_frame>(interrupt_reg_value);
+
+  using namespace std::chrono_literals;
+
+  if (sof_detected) {
+    usb_uptime_ms = usb_uptime_ms + 1ms;
+    interrupt_reg = ~(1U << interrupt_status::start_of_frame.position);
+  }
+
+  bool const expected_sof_detected =
+    hal::bit_extract<interrupt_status::expected_start_of_frame>(
+      interrupt_reg_value);
+
+  if (expected_sof_detected) {
+    usb_uptime_ms += 1ms;
+    interrupt_reg = ~(1U << interrupt_status::expected_start_of_frame.position);
+  }
+
+  // TODO(#202): Do something with USB error detected interrupt
+  bool const error_detected =
+    hal::bit_extract<interrupt_status::error>(interrupt_reg_value);
+
+  if (error_detected) {
+    interrupt_reg = ~(1U << interrupt_status::error.position);
   }
 }
 
 usb::usb(hal::v5::strong_ptr_only_token,
-         hal::v5::strong_ptr<hal::steady_clock> const& p_clock,
-         hal::time_duration p_write_timeout)
-  : m_clock(p_clock)
-  , m_write_timeout(p_write_timeout)
-  , m_available_endpoint_memory(initial_packet_buffer_memory)
+         hal::steady_clock& p_clock,
+         timeout_t p_write_timeout)
+  : m_available_endpoint_memory(initial_packet_buffer_memory)
+  , m_write_timeout{ p_write_timeout }
 {
+  using namespace std::chrono_literals;
+
+  if (m_write_timeout > timeout_t::max()) {
+    m_write_timeout = timeout_t::max();
+  } else {
+    m_write_timeout = std::chrono::duration_cast<timeout_t>(p_write_timeout);
+  }
+  // Ensure that the timeout is at least 1ms.
+  if (m_write_timeout == 0ms) {
+    m_write_timeout = 1ms;
+  }
+
   // USB already active by some other means
   if (is_on(peripheral::usb) || is_on(peripheral::can1)) {
     hal::safe_throw(hal::device_or_resource_busy(this));
@@ -594,18 +638,18 @@ usb::usb(hal::v5::strong_ptr_only_token,
 
   using namespace std::chrono_literals;
 
-  hal::delay(*p_clock, 1ms);
+  hal::delay(p_clock, 1ms);
   // Perform reset
   hal::bit_modify(reg().CNTR)
     .set(control::power_down)
     .set(control::force_reset);
-  hal::delay(*p_clock, 1ms);
+  hal::delay(p_clock, 1ms);
 
   // The USB peripheral sets this bit on system reset, we need to clear it to
   // allow the device to power on. We must wait approximately 1us before we can
   // proceed for the stm32f103.
   hal::bit_modify(reg().CNTR).clear(control::power_down);
-  hal::delay(*p_clock, 1ms);
+  hal::delay(p_clock, 1ms);
 
   // Clears everything including the force reset, enabling the USB device.
   reg().CNTR = 0;
@@ -659,16 +703,60 @@ usize usb::read_endpoint(u8 p_endpoint,
 
 void usb::wait_for_endpoint_transfer_completion(u8 p_endpoint)
 {
-  constexpr auto nak_u32_value = static_cast<hal::u32>(stat::nak);
+  using namespace std::chrono_literals;
+
+  constexpr auto nak_u32 = static_cast<hal::u32>(stat::nak);
   auto& endpoint_reg = reg().EP[p_endpoint].EPR;
   auto endpoint_tx_status = hal::bit_extract<endpoint::status_tx>(endpoint_reg);
-  auto const deadline = hal::future_deadline(*m_clock, m_write_timeout);
-  while (endpoint_tx_status != nak_u32_value) {
+  timeout_t frame_count = 0ms;
+
+  while (endpoint_tx_status != nak_u32) {
     endpoint_tx_status = hal::bit_extract<endpoint::status_tx>(endpoint_reg);
-    if (m_clock->uptime() >= deadline) {
+
+    if (hal::bit_extract<interrupt_status::start_of_frame>(reg().ISTR)) {
+      // Clear SOF flag to continue count.
+      hal::bit_modify(reg().ISTR).clear<interrupt_status::start_of_frame>();
+      frame_count += 1ms;
+    }
+    if (hal::bit_extract<interrupt_status::expected_start_of_frame>(
+          reg().ISTR)) {
+      // Clear SOF flag to continue count.
+      hal::bit_modify(reg().ISTR)
+        .clear<interrupt_status::expected_start_of_frame>();
+      frame_count += 1ms;
+    }
+    if (frame_count >= m_write_timeout) {
       hal::safe_throw(hal::timed_out(this));
     }
+    endpoint_tx_status = hal::bit_extract<endpoint::status_tx>(endpoint_reg);
   }
+}
+// TODO(#203): Integrate resume_if_suspended into USB codebase
+void usb::resume_if_suspended()
+{
+  auto const suspended =
+    hal::bit_extract<interrupt_status::suspend_mode_request>(reg().ISTR);
+  if (not suspended) {
+    return;
+  }
+
+  if (not m_wake_enable and suspended) {
+    safe_throw(hal::operation_not_supported(this));
+  }
+
+  // Waking is enabled and the device is suspended, time to wake the HOST.
+  // See p.636 or RM0008.pdf for a description of the process
+  hal::bit_modify(reg().CNTR).clear<control::force_suspend>();
+  hal::bit_modify(reg().CNTR).set<control::resume_request>();
+
+  using namespace std::chrono_literals;
+  auto const timeout = usb_uptime_ms + 2ms;
+
+  while (timeout <= usb_uptime_ms) {
+    continue;
+  }
+
+  hal::bit_modify(reg().CNTR).clear<control::resume_request>();
 }
 
 void usb::fill_endpoint(hal::u8 p_endpoint,
@@ -769,7 +857,11 @@ private:
 
   [[nodiscard]] hal::v5::usb::endpoint_info driver_info() const override
   {
-    return { .size = fixed_endpoint_size, .number = 0, .stalled = false };
+    return {
+      .size = fixed_endpoint_size,
+      .number = 0,
+      .stalled = false,
+    };
   }
 
   void driver_stall(bool p_should_stall) override
@@ -844,6 +936,31 @@ private:
   [[nodiscard]] std::optional<bool> driver_has_setup() const noexcept override
   {
     return control_encountered_a_setup_packet;
+  }
+
+  void driver_on_bus_event(
+    callback<void(v5::usb::bus_event)> const& p_callback) override
+  {
+    m_usb->m_out_callbacks[0] = p_callback;
+  }
+
+  void driver_remote_wakeup_enable(bool p_wake_enable) override
+  {
+    m_usb->m_wake_enable = p_wake_enable;
+  }
+
+  bool driver_remote_wakeup_granted() override
+  {
+    return m_usb->m_wake_enable;
+  }
+
+  void driver_acknowledge_sleep(bool) override
+  {
+  }
+
+  v5::usb::lpm_support driver_supports_lpm() override
+  {
+    return v5::usb::lpm_support().remote_wakeup_supported(true);
   }
 
   hal::v5::strong_ptr<usb> m_usb;

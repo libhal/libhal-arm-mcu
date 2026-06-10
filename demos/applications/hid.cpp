@@ -13,6 +13,7 @@
 // limitations under the License.
 
 #include <array>
+#include <cstddef>
 #include <libhal/steady_clock.hpp>
 #include <string_view>
 
@@ -49,6 +50,7 @@ public:
   {
     if (m_enumerated) {
       m_mouse_data->write(p_buffer);
+
       return p_buffer.size();
     }
     return 0;
@@ -71,11 +73,11 @@ private:
     // In the event that the interface value is not set, it is always valid to
     // use the 0 index for the interface. Prefer to use 0 since thats simple to
     // work with.
-    // auto const start = m_start.interface.value_or(0);
+    auto const start = m_start.interface.value_or(0);
 
     auto const interface_descriptor =
       hal::v5::usb::generate_interface_descriptor({
-        .interface_number = 0,
+        .interface_number = start,
         .alternate_setting = 0x00,
         .num_endpoints = 1,
         .interface_class = hal::v5::usb::class_code::hid,
@@ -97,74 +99,22 @@ private:
       0x00   // wDescriptorLength
     };
 
-    auto const endpoint_descriptor = std::array<hal::u8, 7>{
-      0x07,  // bLength: 7
-      0x05,  // bDescriptorType: 0x05 (ENDPOINT)
-      0x83,  // bEndpointAddress: 0x82  IN  Endpoint:2
-      0x03,  // bmAttributes: 0000 0011 = Interrupt-Transfer
-      0x03,  // wMaxPacketSize: 3 bytes
-      0x00,  // wMaxPacketSize:
-      0x01   // bInterval: 1
-    };
+    // auto const endpoint_descriptor = std::array<hal::u8, 7>{
+    //   0x07,                         // bLength: 7
+    //   0x05,                         // bDescriptorType: 0x05 (ENDPOINT)
+    //   m_mouse_data->info().number,  // bEndpointAddress: 0x82  IN  Endpoint:2
+    //   0x03,  // bmAttributes: 0000 0011 = Interrupt-Transfer
+    //   0x03,  // wMaxPacketSize: 3 bytes
+    //   0x00,  // wMaxPacketSize:
+    //   0x01   // bInterval: 1
+    // };
 
-    // auto const endpoint_descriptor =
-    //   hal::v5::usb::generate_endpoint_descriptor(*m_mouse_data, 1);
-
-    auto const repost_descriptor = std::array<hal::u8, 44>{
-      0x05,  // usage page
-      0x01,  // generic desktop
-      0x09,  // usage
-      0x02,  // mouse
-      0xA1,  // collection
-      0x01,  // application
-      // 0x85,  // report id (1 byte, global, report ID) might not need this?
-      // 0x03,  // 2
-      0x09,  // usage
-      0x01,  // pointer
-      0xA1,  // collection
-      0x00,  // physical
-      0x05,  // usage page
-      0x09,  // button
-      0x19,  // usage min
-      0x01,  // button 1
-      0x29,  // usage max
-      0x03,  //  button 3
-      0x15,  // logical min
-      0x00,  // 0
-      0x25,  // logical max
-      0x01,  // 1
-      0x95,  // report count
-      0x03,  // 3
-      0x75,  // report size
-      0x01,  // 1
-      0x81,  // input
-      0x02,  // data, var, abs
-      0x05,  // usage page
-      0x01,  // generic desktop
-      0x09,  // usage
-      0x30,  // X
-      0x09,  // usage
-      0x31,  // Y
-      0x15,  // logical min
-      0x81,  // -127
-      0x25,  // logical max
-      0x7F,  // 127
-      0x75,  // report size
-      0x08,  // 8 bits
-      0x95,  // report count
-      0x02,  // 2
-      0x81,  // input
-      0x06,  // data, var, rel
-      0xC0,  // end collection
-      0xC0   // end collection
-    };
+    auto const endpoint_descriptor =
+      hal::v5::usb::generate_endpoint_descriptor(*m_mouse_data, 1);
 
     // Combine all of the endpoints together in one big scatter array
-    auto const descriptors =
-      hal::make_scatter_array<hal::u8 const>(interface_descriptor,
-                                             hid_descriptor,
-                                             endpoint_descriptor,
-                                             repost_descriptor);
+    auto const descriptors = hal::make_scatter_array<hal::u8 const>(
+      interface_descriptor, hid_descriptor, endpoint_descriptor);
 
     p_endpoint.write(descriptors);
     // Report back to the enumerator that we have 1 interface available
@@ -188,89 +138,75 @@ private:
     }
   }
 
-  bool driver_handle_request(
-    [[maybe_unused]] hal::usb::setup_packet const& p_setup,
-    [[maybe_unused]] hal::usb::endpoint_io& p_endpoint) override
+  bool driver_handle_request(hal::usb::setup_packet const& p_setup,
+                             hal::usb::endpoint_io& p_endpoint) override
   {
-    // CDC Class-Specific Request Codes
-    // constexpr hal::u8 clear_feature = 0x01;
 
     // To get a request from the host means that we can assume we are connected.
     m_port_connected = true;
+    hal::print(*g_console, "request received...\n");
+
+    constexpr hal::u8 request_hid_report = 0x81;
+    if (p_setup.bm_request_type() == request_hid_report) {
+
+      auto const report_descriptor = std::array<hal::u8, 44>{
+        0x05,  // usage page
+        0x01,  // generic desktop
+        0x09,  // usage
+        0x02,  // mouse
+        0xA1,  // collection
+        0x01,  // application
+        // 0x85,  // report id (1 byte, global, report ID) might not need this?
+        // 0x02,  // 2
+        0x09,  // usage
+        0x01,  // pointer
+        0xA1,  // collection
+        0x00,  // physical
+        0x05,  // usage page
+        0x09,  // button
+        0x19,  // usage min
+        0x01,  // button 1
+        0x29,  // usage max
+        0x03,  //  button 3
+        0x15,  // logical min
+        0x00,  // 0
+        0x25,  // logical max
+        0x01,  // 1
+        0x95,  // report count
+        0x03,  // 3
+        0x75,  // report size
+        0x01,  // 1
+        0x81,  // input
+        0x02,  // data, var, abs
+        0x05,  // usage page
+        0x01,  // generic desktop
+        0x09,  // usage
+        0x30,  // X
+        0x09,  // usage
+        0x31,  // Y
+        0x15,  // logical min
+        0x81,  // -127
+        0x25,  // logical max
+        0x7F,  // 127
+        0x75,  // report size
+        0x08,  // 8 bits
+        0x95,  // report count
+        0x02,  // 2
+        0x81,  // input
+        0x06,  // data, var, rel
+        0xC0,  // end collection
+        0xC0   // end collection
+      };
+      hal::print(*g_console, "Sending report...\n");
+
+      auto bytes_written = p_endpoint.write(
+        hal::make_scatter_array<hal::u8 const>(report_descriptor));
+      hal::print<64>(
+        *g_console, "Report sent, %d bytes written...\n", bytes_written);
+
+      return true;
+    }
     return false;
-
-    // switch (p_setup.request()) {
-    //   case clear_feature: {
-    //     auto const ep_addr = static_cast<hal::u8>(p_setup.index());
-    //     if (ep_addr == m_serial_rx->info().number) {
-    //       m_serial_rx->reset();
-    //     } else if (ep_addr == m_serial_tx->info().number) {
-    //       m_serial_tx->reset();
-    //     } else if (ep_addr == m_status_in->info().number) {
-    //       m_status_in->reset();
-    //     } else {
-    //       return false;  // Unknown endpoint
-    //     }
-    //     return true;
-    //   }
-
-    //   case cdc_get_line_coding: {
-    //     // Read contents into the m_line_coding array
-    //     p_endpoint.write(
-    //       hal::make_scatter_array<hal::u8 const>(m_line_coding.raw_bytes));
-    //     return true;
-    //   }
-
-    //   case cdc_set_line_coding: {
-    //     // It takes time for the HOST to send additional data packets after
-    //     the
-    //     // setup, so we use a deadline of 1ms of time to retrieve the 7-bytes
-    //     we
-    //     // need for the line coding.
-    //     using namespace std::chrono_literals;
-
-    //     auto const deadline = hal::future_deadline(*m_clock, 1ms);
-    //     auto bytes_read = 0uz;
-    //     while (deadline > m_clock->uptime()) {
-    //       // NOTE: Technically, the reading from the control endpoint, when
-    //       // there is any data, should result in the entire payload being
-    //       // delivered for this class specific host command. The line coding
-    //       // payload is 7 bytes and the control endpoint capacity must be at
-    //       // least 8 bytes. Meaning, when the endpoint contains the data
-    //       after
-    //       // the setup command, it should have all of the bytes and the
-    //       // following read will acquire all bytes.
-    //       //
-    //       // The choice below to subspan the already read bytes is to play it
-    //       // safe and not assume that the read API always drains all of the
-    //       data
-    //       // from the endpoint.
-    //       auto const sub_buffer =
-    //         std::span(m_line_coding.raw_bytes).subspan(bytes_read);
-
-    //       bytes_read +=
-    //         p_endpoint.read(hal::v5::make_writable_scatter_bytes(sub_buffer));
-
-    //       if (bytes_read >= m_line_coding.raw_bytes.size()) {
-    //         return true;
-    //       }
-    //     }
-    //     return false;
-    //   }
-
-    //   case cdc_set_control_line_state: {
-    //     m_control_line_state.raw = p_setup.value();
-    //     return true;
-    //   }
-
-    //   case cdc_send_break: {
-    //     // SEND BREAK (do nothing currently)
-    //     return true;
-    //   }
-
-    //   default:
-    //     return false;
-    // }
   }
 
   hal::strong_ptr<hal::usb::interrupt_in_endpoint> m_mouse_data;
@@ -336,7 +272,7 @@ void application()
     control_endpoint,
     {
       .manufacturer = u"Milosoft",
-      .product = u"MOWS",
+      .product = u"Milosoft MOWS",
       .serial_number = u"0001",
       .vendor_id = 0xDEAD,
       .product_id = 0xBEEF,
@@ -351,15 +287,29 @@ void application()
   auto const mouse_right_data =
     hal::make_scatter_array<hal::u8 const>(mouse_right);
 
+  auto const activity_period = 250ms;
+  auto dot_deadline = hal::future_deadline(*clock, activity_period);
+
+  bool left = true;
   while (true) {
     try {
       usb_enumerator.process_ctrl_transfer();
       if (usb_enumerator.is_enumerated()) {
-        hal::delay(*clock, 1000ms);
-        hid_mouse->write(mouse_left_data);
-
-        hal::delay(*clock, 1000ms);
-        hid_mouse->write(mouse_right_data);
+        if (clock->uptime() >= dot_deadline) {
+          hal::print(*console, "+");
+          if (left) {
+            hid_mouse->write(mouse_left_data);
+            left = false;
+          } else {
+            {
+              hid_mouse->write(mouse_right_data);
+              left = true;
+            }
+          }
+          dot_deadline = hal::future_deadline(*clock, activity_period);
+        }
+      } else {
+        hal::print(*console, "Waiting for enumeration...\n");
       }
     } catch (hal::exception const& p_error) {
       hal::print<64>(

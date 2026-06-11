@@ -35,3 +35,4 @@ class demos(ConanFile):
         self.requires("libhal-arm-mcu/latest")
         self.requires("libhal-util/[^5.10.0]")
         self.requires("minimp3/cci.20211201")
+        self.requires("libhal-input/[^1.1.2]")

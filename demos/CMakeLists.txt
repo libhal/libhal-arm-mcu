@@ -24,6 +24,7 @@ libhal_build_demos(
   dac
   gpio
   hid
+  hid_nunchuck
   i2c
   interrupt_pin
   uart
@@ -40,10 +41,12 @@ libhal_build_demos(
 
   PACKAGES
   minimp3
+  libhal-input
 
   INCLUDES
   .
 
   LINK_LIBRARIES
   minimp3::minimp3
+  libhal::input
 )

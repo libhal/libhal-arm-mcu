@@ -14,11 +14,14 @@
 
 #include <array>
 #include <cstddef>
+#include <cstdint>
 #include <libhal/steady_clock.hpp>
 #include <string_view>
 
+#include <libhal-input/gamepad/nunchuck.hpp>
 #include <libhal-util/as_bytes.hpp>
 #include <libhal-util/bit.hpp>
+#include <libhal-util/map.hpp>
 #include <libhal-util/serial.hpp>
 #include <libhal-util/steady_clock.hpp>
 #include <libhal-util/usb.hpp>
@@ -255,7 +258,10 @@ void application()
 
   auto clock = resources::clock();
   auto console = resources::console();
+  auto i2c = resources::i2c();
   g_console = console;
+
+  hal::input::nunchuck nunchuck(*i2c);
 
   auto allocator = resources::driver_allocator();
   auto control_endpoint = resources::usb_control_endpoint();
@@ -265,36 +271,6 @@ void application()
   auto serial_host_ep_in2 = resources::usb_bulk_in_endpoint2();
   auto status_ep_in = resources::usb_interrupt_in_endpoint1();
   auto status_ep_in2 = resources::usb_interrupt_in_endpoint2();
-
-  hal::print<512 * 2>(*console,
-                      "+---------------------+--------+------+\n"
-                      "| Endpoint Name       | Number | Size |\n"
-                      "+---------------------+--------+------+\n"
-                      "| %-19s |  0x%02X  | %4zu |\n"
-                      "| %-19s |  0x%02X  | %4zu |\n"
-                      "| %-19s |  0x%02X  | %4zu |\n"
-                      "| %-19s |  0x%02X  | %4zu |\n"
-                      "| %-19s |  0x%02X  | %4zu |\n"
-                      "| %-19s |  0x%02X  | %4zu |\n"
-                      "+---------------------+--------+------+\n\n",
-                      "serial_host_ep_out",
-                      serial_host_ep_out->info().number,
-                      serial_host_ep_out->info().size,
-                      "serial_host_ep_out2",
-                      serial_host_ep_out2->info().number,
-                      serial_host_ep_out2->info().size,
-                      "status_ep_in",
-                      status_ep_in->info().number,
-                      status_ep_in->info().size,
-                      "status_ep_in2",
-                      status_ep_in2->info().number,
-                      status_ep_in2->info().size,
-                      "serial_host_ep_in",
-                      serial_host_ep_in->info().number,
-                      serial_host_ep_in->info().size,
-                      "serial_host_ep_in2",
-                      serial_host_ep_in2->info().number,
-                      serial_host_ep_in2->info().size);
 
   auto hid_mouse = hal::make_strong_ptr<usb_hid_mouse>(allocator, status_ep_in);
 
@@ -317,32 +293,42 @@ void application()
   [[maybe_unused]] auto const mouse_right_data =
     hal::make_scatter_array<hal::u8 const>(mouse_right);
 
-  auto const activity_period = 250ms;
+  auto const activity_period = 10ms;
   auto dot_deadline = hal::future_deadline(*clock, activity_period);
   auto wait_deadline = hal::future_deadline(*clock, activity_period);
 
-  [[maybe_unused]] bool left = true;
+  auto nunchuck_range = std::make_pair(0, 255);
+  auto mouse_range = std::make_pair(-127, 127);
+
   while (true) {
     try {
+      auto nunchuck_data = nunchuck.read();
+      auto x = nunchuck_data.joystick_x();
+      auto y = nunchuck_data.joystick_y();
+
+      std::bitset<8> btns{ 0x00 };
+      btns.set(0, nunchuck_data.c_button());
+      btns.set(1, nunchuck_data.z_button());
+
+      auto x_byte =
+        static_cast<int8_t>(hal::map(x, nunchuck_range, mouse_range));
+      auto y_byte =
+        static_cast<int8_t>(-hal::map(y, nunchuck_range, mouse_range));
+      auto const mouse_bytes =
+        std::array<hal::u8, 3>{ static_cast<hal::u8>(x_byte / 6),
+                                static_cast<hal::u8>(y_byte / 6),
+                                static_cast<hal::u8>(btns.to_ulong()) };
+
       usb_enumerator.process_ctrl_transfer();
       if (usb_enumerator.is_enumerated()) {
         if (clock->uptime() >= dot_deadline) {
-          if (left) {
-            auto const size = hid_mouse->write(mouse_left_data);
-            if (size == 0) {
-              hal::print(*console, "❌  ");
-            } else {
-              hal::print(*console, "⬅️  ");
-            }
-            left = false;
+          hal::print<64>(*console, "\nX: %d  Y: %d  ", x, y);
+          auto const size = hid_mouse->write(
+            hal::make_scatter_array<hal::u8 const>(mouse_bytes));
+          if (size == 0) {
+            hal::print(*console, "❌ ");
           } else {
-            auto const size = hid_mouse->write(mouse_right_data);
-            if (size == 0) {
-              hal::print(*console, "❌  ");
-            } else {
-              hal::print(*console, "➡️  ");
-            }
-            left = true;
+            hal::print(*console, "✅ ");
           }
           dot_deadline = hal::future_deadline(*clock, activity_period);
         }

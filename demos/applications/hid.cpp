@@ -48,15 +48,31 @@ public:
 
   hal::usize write(hal::scatter_span<hal::byte const> p_buffer)
   {
-    if (m_enumerated) {
-      m_mouse_data->write(p_buffer);
-
+    if (m_connected) {
+      hal::v5::write_and_flush(*m_mouse_data, p_buffer);
       return p_buffer.size();
     }
     return 0;
   }
 
+  bool ready()
+  {
+    return m_connected;
+  }
+
 private:
+  static constexpr auto hid_descriptor = std::to_array<hal::u8>({
+    0x09,  // bLength: 9
+    0x21,  // bDescriptorType: 0x21 (HID)
+    0x11,  // bcdHID: 0x0111 (HID spec release number)
+    0x01,  // bcdHID: 0x0111
+    0x00,  // bCountryCode: Not Supported (0x00)
+    0x01,  // bNumDescriptors: (num of subordinate report and physical
+           // descriptors)
+    0x22,  // bDescriptorType: HID Report (0x22)
+    0x2C,  // wDescriptorLength: (num bytes in report descriptor) 44
+    0x00   // wDescriptorLength
+  });
   hal::usb::interface::descriptor_count driver_write_descriptors(
     descriptor_start p_start,
     hal::usb::endpoint_io& p_endpoint) override
@@ -81,23 +97,10 @@ private:
         .alternate_setting = 0x00,
         .num_endpoints = 1,
         .interface_class = hal::v5::usb::class_code::hid,
-        .interface_subclass = 0x01,      // boot interface
+        .interface_subclass = 0x00,      // boot interface
         .interface_protocol = 0x02,      // mouse
         .interface_string_index = 0x00,  // no strings
       });
-
-    auto const hid_descriptor = std::array<hal::u8, 9>{
-      0x09,  // bLength: 9
-      0x21,  // bDescriptorType: 0x21 (HID)
-      0x11,  // bcdHID: 0x0111 (HID spec release number)
-      0x01,  // bcdHID: 0x0111
-      0x00,  // bCountryCode: Not Supported (0x00)
-      0x01,  // bNumDescriptors: (num of subordinate report and physical
-             // descriptors)
-      0x22,  // bDescriptorType: HID Report (0x22)
-      0x2C,  // wDescriptorLength: (num bytes in report descriptor) 44
-      0x00   // wDescriptorLength
-    };
 
     // auto const endpoint_descriptor = std::array<hal::u8, 7>{
     //   0x07,                         // bLength: 7
@@ -131,87 +134,117 @@ private:
   void driver_handle_host_event(hal::v5::usb::host_event p_event) override
   {
     if (p_event == hal::v5::usb::host_event::enumerated) {
+      hal::print(*g_console, "{ENU}");
       m_enumerated = true;
+      m_mouse_data->reset();
     }
     if (p_event == hal::v5::usb::host_event::reset) {
+      hal::print(*g_console, "{RST}");
       m_enumerated = false;
+      m_mouse_data->reset();
     }
   }
 
   bool driver_handle_request(hal::usb::setup_packet const& p_setup,
                              hal::usb::endpoint_io& p_endpoint) override
   {
+    hal::print(*g_console, "[R]");
 
-    // To get a request from the host means that we can assume we are connected.
-    m_port_connected = true;
-    hal::print(*g_console, "request received...\n");
+    constexpr hal::u8 get_hid_report = 0x22;
+    [[maybe_unused]] constexpr hal::u8 set_idle = 0x21;
+    [[maybe_unused]] constexpr hal::u8 clear_feature = 0x01;
+    using namespace hal::v5::usb;
+    if (p_setup.request() == 0x06) {
+      hal::print(*g_console, "{R06}");
+      if (p_setup.bm_request_type() == 0x21) {
+        return true;
+      }
+      if (p_setup.bm_request_type() == 0x81) {
+        hal::print(*g_console, "{T81}");
+        if (p_setup.value_bytes()[0] == get_hid_report or
+            p_setup.value_bytes()[1] == get_hid_report) {
+          hal::print<32>(*g_console, "{0x%04X}", p_setup.value());
+          // To get a request from the host means that we can assume we are
+          // connected.
+          auto const report_descriptor = std::to_array<hal::u8>({
+            0x05,  // usage page
+            0x01,  // generic desktop
+            0x09,  // usage
+            0x02,  // mouse
+            0xA1,  // collection
+            0x01,  // application
+            // 0x85,  // report id (1 byte, global, report ID) might not need
+            // this? 0x02,  // 2
+            0x09,  // usage
+            0x01,  // pointer
+            0xA1,  // collection
+            0x00,  // physical
 
-    constexpr hal::u8 request_hid_report = 0x81;
-    if (p_setup.bm_request_type() == request_hid_report) {
+            0x05,  // usage page
+            0x01,  // generic desktop
+            0x09,  // usage
+            0x30,  // X
+            0x09,  // usage
+            0x31,  // Y
+            0x15,  // logical min
+            0x81,  // -127
+            0x25,  // logical max
+            0x7F,  // 127
+            0x75,  // report size
+            0x08,  // 8 bits
+            0x95,  // report count
+            0x02,  // 2
+            0x81,  // input
+            0x06,  // data, var, rel
 
-      auto const report_descriptor = std::array<hal::u8, 44>{
-        0x05,  // usage page
-        0x01,  // generic desktop
-        0x09,  // usage
-        0x02,  // mouse
-        0xA1,  // collection
-        0x01,  // application
-        // 0x85,  // report id (1 byte, global, report ID) might not need this?
-        // 0x02,  // 2
-        0x09,  // usage
-        0x01,  // pointer
-        0xA1,  // collection
-        0x00,  // physical
-        0x05,  // usage page
-        0x09,  // button
-        0x19,  // usage min
-        0x01,  // button 1
-        0x29,  // usage max
-        0x03,  //  button 3
-        0x15,  // logical min
-        0x00,  // 0
-        0x25,  // logical max
-        0x01,  // 1
-        0x95,  // report count
-        0x03,  // 3
-        0x75,  // report size
-        0x01,  // 1
-        0x81,  // input
-        0x02,  // data, var, abs
-        0x05,  // usage page
-        0x01,  // generic desktop
-        0x09,  // usage
-        0x30,  // X
-        0x09,  // usage
-        0x31,  // Y
-        0x15,  // logical min
-        0x81,  // -127
-        0x25,  // logical max
-        0x7F,  // 127
-        0x75,  // report size
-        0x08,  // 8 bits
-        0x95,  // report count
-        0x02,  // 2
-        0x81,  // input
-        0x06,  // data, var, rel
-        0xC0,  // end collection
-        0xC0   // end collection
-      };
-      hal::print(*g_console, "Sending report...\n");
+            0x05,  // usage page
+            0x09,  // button
+            0x19,  // usage min
+            0x01,  // button 1
+            0x29,  // usage max
+            0x03,  //  button 3
+            0x15,  // logical min
+            0x00,  // 0
+            0x25,  // logical max
+            0x01,  // 1
+            0x95,  // report count
+            0x03,  // 3
+            0x75,  // report size
+            0x01,  // 1
+            0x81,  // input
+            0x02,  // data, var, abs
 
-      auto bytes_written = p_endpoint.write(
-        hal::make_scatter_array<hal::u8 const>(report_descriptor));
-      hal::print<64>(
-        *g_console, "Report sent, %d bytes written...\n", bytes_written);
+            0xC0,  // end collection
+            0xC0   // end collection
+          });
 
+          hal::print(*g_console, "REP:");
+          auto const bytes_written = p_endpoint.write(
+            hal::make_scatter_array<hal::u8 const>(report_descriptor));
+          hal::print<64>(
+            *g_console, "(%d/%d)\n", bytes_written, p_setup.length());
+          m_connected = true;
+          return true;
+        }
+      }
+    }
+
+    if (p_setup.request() == 0x0A) {
       return true;
     }
+
+    hal::print<64>(*g_console,
+                   "SKIP:bm:0x%02X,r:0x%02X,v:0x%04X,i:0x%04X\n",
+                   p_setup.bm_request_type(),
+                   p_setup.request(),
+                   p_setup.value(),
+                   p_setup.index());
     return false;
   }
 
   hal::strong_ptr<hal::usb::interrupt_in_endpoint> m_mouse_data;
   descriptor_start m_start{};
-  bool m_port_connected{};
+  bool m_connected{};
   bool m_enumerated = false;
 };
 
@@ -280,17 +313,18 @@ void application()
     },
     hid_mouse);
 
-  auto const mouse_left = std::array<hal::u8, 3>{ 0x00, 0x81, 0x00 };
-  auto const mouse_right = std::array<hal::u8, 3>{ 0x00, 0x7F, 0x00 };
-  auto const mouse_left_data =
+  auto const mouse_left = std::array<hal::u8, 3>{ 0xC0, 0x00, 0x00 };
+  auto const mouse_right = std::array<hal::u8, 3>{ 0x40, 0x00, 0x00 };
+  [[maybe_unused]] auto const mouse_left_data =
     hal::make_scatter_array<hal::u8 const>(mouse_left);
-  auto const mouse_right_data =
+  [[maybe_unused]] auto const mouse_right_data =
     hal::make_scatter_array<hal::u8 const>(mouse_right);
 
   auto const activity_period = 250ms;
   auto dot_deadline = hal::future_deadline(*clock, activity_period);
+  auto wait_deadline = hal::future_deadline(*clock, activity_period);
 
-  bool left = true;
+  [[maybe_unused]] bool left = true;
   while (true) {
     try {
       usb_enumerator.process_ctrl_transfer();
@@ -298,22 +332,35 @@ void application()
         if (clock->uptime() >= dot_deadline) {
           hal::print(*console, "+");
           if (left) {
-            hid_mouse->write(mouse_left_data);
+            auto const size = hid_mouse->write(mouse_left_data);
+            if (size == 0) {
+              hal::print(*console, "❌");
+            } else {
+              hal::print(*console, "⬅️");
+            }
             left = false;
           } else {
-            {
-              hid_mouse->write(mouse_right_data);
-              left = true;
+            auto const size = hid_mouse->write(mouse_right_data);
+            if (size == 0) {
+              hal::print(*console, "❌");
+            } else {
+              hal::print(*console, "➡️");
             }
+            left = true;
           }
           dot_deadline = hal::future_deadline(*clock, activity_period);
         }
       } else {
-        hal::print(*console, "Waiting for enumeration...\n");
+        if (clock->uptime() >= wait_deadline) {
+          hal::print(*console, "-");
+          wait_deadline = hal::future_deadline(*clock, activity_period);
+        }
       }
     } catch (hal::exception const& p_error) {
       hal::print<64>(
         *console, "\nException Error Code '%d' caught\n", p_error.error_code());
+      dot_deadline = hal::future_deadline(*clock, activity_period);
+      wait_deadline = hal::future_deadline(*clock, activity_period);
     }
   }
 }

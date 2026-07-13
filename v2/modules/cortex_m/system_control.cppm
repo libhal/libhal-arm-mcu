@@ -12,13 +12,75 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+module;
+
+#include <array>
+#include <cstdint>
+
 export module hal.arm_mcu.cortex_m:system_control;
+
+import hal;
 
 /**
  * @brief libhal drivers for the ARM Cortex-M series of processors
  *
  */
 namespace hal::cortex_m {
+/// Structure type to access the System Control Block (SCB).
+struct scb_registers_t
+{
+  /// Offset: 0x000 (R/ )  CPUID Base Register
+  std::uint32_t const volatile cpuid;
+  /// Offset: 0x004 (R/W)  Interrupt Control and State Register
+  std::uint32_t volatile icsr;
+  /// Offset: 0x008 (R/W)  Vector Table Offset Register
+  std::intptr_t volatile vtor;
+  /// Offset: 0x00C (R/W)  Application Interrupt and Reset Control Register
+  std::uint32_t volatile aircr;
+  /// Offset: 0x010 (R/W)  System Control Register
+  std::uint32_t volatile scr;
+  /// Offset: 0x014 (R/W)  Configuration Control Register
+  std::uint32_t volatile ccr;
+  /// Offset: 0x018 (R/W)  System Handlers Priority Registers (4-7, 8-11, 5)
+  std::array<std::uint8_t volatile, 12U> shp;
+  /// Offset: 0x024 (R/W)  System Handler Control and State Register
+  std::uint32_t volatile shcsr;
+  /// Offset: 0x028 (R/W)  Configurable Fault Status Register
+  std::uint32_t volatile cfsr;
+  /// Offset: 0x02C (R/W)  HardFault Status Register
+  std::uint32_t volatile hfsr;
+  /// Offset: 0x030 (R/W)  Debug Fault Status Register
+  std::uint32_t volatile dfsr;
+  /// Offset: 0x034 (R/W)  MemManage Fault Address Register
+  std::uint32_t volatile mmfar;
+  /// Offset: 0x038 (R/W)  BusFault Address Register
+  std::uint32_t volatile bfar;
+  /// Offset: 0x03C (R/W)  Auxiliary Fault Status Register
+  std::uint32_t volatile afsr;
+  /// Offset: 0x040 (R/ )  Processor Feature Register
+  std::array<std::uint32_t volatile, 2U> const pfr;
+  /// Offset: 0x048 (R/ )  Debug Feature Register
+  std::uint32_t const volatile dfr;
+  /// Offset: 0x04C (R/ )  Auxiliary Feature Register
+  std::uint32_t const volatile adr;
+  /// Offset: 0x050 (R/ )  Memory Model Feature Register
+  std::array<std::uint32_t volatile, 4U> const mmfr;
+  /// Offset: 0x060 (R/ )  Instruction Set Attributes Register
+  std::array<std::uint32_t volatile, 5U> const isar;
+  /// Reserved 0
+  std::array<std::uint32_t, 5U> reserved0;
+  /// Offset: 0x088 (R/W)  Coprocessor Access Control Register
+  std::uint32_t volatile cpacr;
+};
+
+/// System control block address
+constexpr auto scb_address = static_cast<uptr>(0xE000'ED00UL);
+
+/// @return auto* - Address of the Cortex M system control block register
+auto* scb =
+  // NOLINTNEXTLINE(performance-no-int-to-ptr)
+  reinterpret_cast<scb_registers_t*>(scb_address);
+
 /**
  * @brief Enable the floating point unit coprocessor
  *
@@ -27,7 +89,11 @@ namespace hal::cortex_m {
  * above processors.
  *
  */
-void initialize_floating_point_unit();
+export void initialize_floating_point_unit()
+{
+  scb->cpacr = scb->cpacr | ((0b11 << 10 * 2) | /* set CP10 Full Access */
+                             (0b11 << 11 * 2)); /* set CP11 Full Access */
+}
 
 /**
  * @brief Set the address of the systems interrupt vector table
@@ -56,7 +122,12 @@ void initialize_floating_point_unit();
  *
  * @param p_table_location - address of the interrupt vector table.
  */
-void set_interrupt_vector_table_address(void* p_table_location);
+export void set_interrupt_vector_table_address(void* p_table_location)
+{
+  // Relocate the interrupt vector table the vector buffer. By default this
+  // will be set to the address of the start of flash memory for the MCU.
+  scb->vtor = reinterpret_cast<std::intptr_t>(p_table_location);
+}
 
 /**
  * @brief Get the address of the systems interrupt vector table.
@@ -66,21 +137,41 @@ void set_interrupt_vector_table_address(void* p_table_location);
  * @return void* - address within VTOR the interrupt vector table relocation
  * register.
  */
-void* get_interrupt_vector_table_address();
+export void* get_interrupt_vector_table_address()
+{
+  // Relocate the interrupt vector table the vector buffer. By default this
+  // will be set to the address of the start of flash memory for the MCU.
+  return reinterpret_cast<void*>(scb->vtor);  // NOLINT
+}
 
 /**
  * @brief Request reset from CPU
  *
  */
-void reset();
+export [[noreturn]] void reset()
+{
+  // Value "0x5FA" must be written to the VECTKEY field [31:16] to confirm
+  // that this action is valid, otherwise the processor ignores the write
+  // command.
+  // Bit 2 is the SYSRESETREQ bit.
+  scb->aircr = (0x5FA << 16) | (1 << 2);
+  // System reset is asynchronous, so the code needs to wait.
+  hal::halt();
+}
 
 /**
  * @brief Executes WFI instruction
  *
- * The WFI instruction stops the CPU, reducing power, and wakes up on interrupt.
+ * The WFI instruction stops the CPU, reducing power, and wakes up on
+ * interrupt.
  *
  */
-void wait_for_interrupt();
+export void wait_for_interrupt()
+{
+#if defined(__arm__)
+  asm volatile("wfi");
+#endif
+}
 
 /**
  * @brief Executes WFE instruction
@@ -88,7 +179,12 @@ void wait_for_interrupt();
  * The WFE instruction stops the CPU, reducing power, and wakes up on event.
  *
  */
-void wait_for_event();
+export void wait_for_event()
+{
+#if defined(__arm__)
+  asm volatile("wfe");
+#endif
+}
 
 /**
  * @brief Check if debugger is connected via CoreDebug->DHCSRd
@@ -96,5 +192,54 @@ void wait_for_event();
  * @return true - debugger connected
  * @return false - debugger is not connected
  */
-bool debugger_connected();
+export bool debugger_connected()
+{
+#if defined(__thumb2__)
+  // CoreDebug->DHCSR register (Cortex-M3/M4/M7/etc.)
+  std::uint32_t volatile* dhcsr =
+    reinterpret_cast<std::uint32_t volatile*>(0xE000EDF0);
+  // Bit 0 (C_DEBUGEN) indicates debugger is connected
+  return (*dhcsr & 0x00000001) != 0;
+#else
+  return false;
+#endif
+}
 }  // namespace hal::cortex_m
+
+extern "C"
+{
+  // The implementation of LLVM calls a calls the breakpoint instruction
+  // unconditionally, preventing the program from proceeding past this point
+  // without a debugger connected with semihosting enabled. In order to get
+  // around this, we replace sys_semihost and check if a debugger is
+  // connected. If it is connected we call the breakpoint instruction with the
+  // appropriate input value 0xAB. Otherwise, return an error code.
+  int sys_semihost([[maybe_unused]] int p_reason, [[maybe_unused]] void* p_arg)
+  {
+    if (hal::cortex_m::debugger_connected()) {
+#if defined(__thumb2__)
+      // Let the real semihost call happen (BKPT will work)
+      // Need to  the BKPT instruction here
+      register int r0 asm("r0") = p_reason;
+      register void* r1 asm("r1") = p_arg;
+      asm volatile("bkpt 0xAB" : "=r"(r0) : "r"(r0), "r"(r1) : "memory");
+      return r0;
+#endif
+    }
+    return -1;  // No debugger, return error
+  }
+
+  char* sys_semihost_get_cmdline()
+  {
+    if (hal::cortex_m::debugger_connected()) {
+      // SYS_GET_CMDLINE is semihost operation 0x15
+      static char cmdline[256];
+      int result = sys_semihost(0x15, cmdline);
+      if (result == 0) {
+        return cmdline;
+      }
+    }
+    static char empty[] = "";
+    return empty;
+  }
+}

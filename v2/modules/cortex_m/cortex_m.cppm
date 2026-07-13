@@ -2,7 +2,7 @@
 export module hal.arm_mcu.cortex_m;
 
 export import :dwt_counter;
-// export module :interrupt;
-// export module :startup;
-// export module :system_control;
-// export module :systick_timer;
+export import :interrupt;
+// export import :startup;
+export import :system_control;
+// export import :systick_timer;

@@ -29,9 +29,9 @@ libhal_add_library(arm-mcu
         modules/arm_mcu.cppm
         modules/cortex_m/cortex_m.cppm
         modules/cortex_m/dwt_counter.cppm
-        # modules/cortex_m/interrupt.cppm
+        modules/cortex_m/interrupt.cppm
         # modules/cortex_m/startup.cppm
-        # modules/cortex_m/system_control.cppm
+        modules/cortex_m/system_control.cppm
         # modules/cortex_m/systick_timer.cppm
 )
 

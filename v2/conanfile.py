@@ -26,14 +26,12 @@ from pathlib import Path
 required_conan_version = ">=2.2.0"
 
 
-class libhal_conan(ConanFile):
-    name = "libhal"
+class libhal_arm_mcu_conan(ConanFile):
+    name = "libhal-arm-mcu"
     license = "Apache-2.0"
-    url = "https://github.com/libhal/libhal"
-    homepage = "https://libhal.github.io/libhal"
-    description = ("A collection of interfaces and abstractions for embedded "
-                   "peripherals and devices using modern C++")
-    topics = ("peripherals", "hardware", "abstraction", "devices", "hal")
+    url = "https://github.com/libhal/libhal-arm-mcu"
+    description = ()
+    topics = ()
     settings = "compiler", "build_type", "os", "arch"
     exports_sources = "modules/*", "tests/*", "CMakeLists.txt", "LICENSE"
     package_type = "static-library"
@@ -105,17 +103,8 @@ class libhal_conan(ConanFile):
         self.tool_requires("libhal-cmake-util/[^5.0.5]")
 
     def requirements(self):
-        self.requires("strong_ptr/[^0.1.8]")
-        self.requires("async_context/[^0.0.10]")
-        self.requires("mp-units/2.5.1@libhal",
-                      options={
-                          "freestanding": True,
-                          "cxx_modules": True,
-                          "std_format": False,
-                          "import_std": False,
-                          "contracts": "none",
-                          "enable_rtti": False,
-                      })
+        self.requires("libhal/5.0.0")
+        self.requires("libhal-util/6.0.0")
 
     def layout(self):
         build_path = Path("build") / (

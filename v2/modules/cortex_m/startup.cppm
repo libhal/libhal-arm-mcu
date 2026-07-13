@@ -12,11 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#pragma once
+module;
 
 #include <cstring>
 
-#include <libhal/units.hpp>
+export module hal.arm_mcu.cortex_m:startup;
+
+import hal;
 
 // These need to be supplied by the linker script if the application developer
 // in order to call hal::cortex::initialize_data_section()
@@ -72,7 +74,7 @@ inline void initialize_data_section()
   // Initialize statically allocated data by coping the data section from ROM to
   // RAM. CRT0.o/.s does not perform .data section initialization so it must be
   // done by initialize_platform.
-  auto data_size = reinterpret_cast<intptr_t>(&__data_size);
+  auto data_size = reinterpret_cast<hal::iptr>(&__data_size);
   memcpy(&__data_start, &__data_source, data_size);
 }
 /**
@@ -85,7 +87,7 @@ inline void initialize_bss_section()
   // Initialize statically allocated data by coping the data section from ROM to
   // RAM. CRT0.o/.s does not perform .data section initialization so it must be
   // done by initialize_platform.
-  auto bss_size = reinterpret_cast<intptr_t>(&__bss_size);
+  auto bss_size = reinterpret_cast<hal::iptr>(&__bss_size);
   memset(&__bss_start, 0, bss_size);
 }
 }  // namespace hal::cortex_m

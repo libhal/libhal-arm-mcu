@@ -12,25 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-export module hal;
+export module hal.arm_mcu;
 
-export import :cortex_m;
-export import :cortex_m;
-export import :scatter_span;
-export import :error;
-
-export import :analog;
-export import :can;
-export import :pwm;
-export import :gpio;
-export import :sensors;
-export import :interrupts;
-export import :scatter_span;
-export import :i2c;
-export import :spi;
-export import :serial;
-export import :containers;
-export import :usb;
-
-export import strong_ptr;
-export import async_context;
+export import hal;
+export import hal.arm_mcu.cortex_m;

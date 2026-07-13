@@ -12,10 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#pragma once
+export module hal.arm_mcu.cortex_msystick_timer;
 
-#include <libhal/timer.hpp>
-#include <libhal/units.hpp>
+import hal;
 
 namespace hal::cortex_m {
 /**
@@ -86,6 +85,6 @@ private:
   void driver_schedule(hal::callback<void(void)> p_callback,
                        hal::time_duration p_delay) override;
 
-  hertz m_frequency = 1'000'000.0f;
+  hertz m_frequency = 1'000'000;
 };
 }  // namespace hal::cortex_m

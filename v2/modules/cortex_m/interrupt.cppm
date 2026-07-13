@@ -12,13 +12,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#pragma once
+module;
 
 #include <array>
 #include <span>
 #include <type_traits>
 
-#include <libhal/error.hpp>
+export module hal.arm_mcu.cortex_m:interrupt;
+
+import hal;
 
 /**
  * @defgroup Enum APIs involving enumerations
@@ -180,7 +182,7 @@ void initialize_interrupts()
                 "supply a number above 0.");
 
   // Statically allocate a buffer of vectors to be used as the new IVT.
-  constexpr size_t total_vector_count = max_possible_irq - core_interrupts;
+  constexpr hal::usize total_vector_count = max_possible_irq - core_interrupts;
 
   alignas(512) static std::array<interrupt_pointer, total_vector_count>
     vector_buffer{};

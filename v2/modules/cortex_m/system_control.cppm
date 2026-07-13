@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#pragma once
+export module hal.arm_mcu.cortex_m:system_control;
 
 /**
  * @brief libhal drivers for the ARM Cortex-M series of processors

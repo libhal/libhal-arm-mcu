@@ -1,4 +1,4 @@
-// Copyright 2024 - 2025 Khalil Estell and the libhal contributors
+// Copyright 2026 Khalil Estell and the libhal contributors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,12 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#pragma once
+export module hal.arm_mcu.cortex_m:dwt_counter;
 
-#include <libhal-util/overflow_counter.hpp>
-#include <libhal/steady_clock.hpp>
+// TODO(kammce): Add overflow counter
 
-namespace hal::cortex_m {
+import hal;
+import hal.util;
+
+namespace hal::cortex_m::inline v2 {
 /**
  * @brief A counter with a frequency fixed to the CPU clock rate.
  *
@@ -48,10 +50,11 @@ public:
   void register_cpu_frequency(hertz p_cpu_frequency);
 
 private:
-  std::uint64_t driver_uptime() override;
-  hal::hertz driver_frequency() override;
+  virtual async::future<hertz> driver_frequency(
+    async::context& p_context) override;
+  virtual async::future<u64> driver_uptime(async::context& p_context) override;
 
   overflow_counter<32> m_uptime{};
-  hertz m_cpu_frequency{ 1'000'000 };
+  hertz m_cpu_frequency{ 1 * mp_units::si::unit_symbols::MHz };
 };
-}  // namespace hal::cortex_m
+}  // namespace hal::cortex_m::inline v2

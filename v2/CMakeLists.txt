@@ -14,57 +14,44 @@
 
 cmake_minimum_required(VERSION 4.0)
 
-project(libhal LANGUAGES CXX)
+project(arm-mcu LANGUAGES CXX)
 
 # libhal cmake utilities from libhal-cmake-util
 # Source: https://github.com/libhal/libhal-cmake-util
 find_package(LibhalCMakeUtil REQUIRED)
 
-find_package(strong_ptr REQUIRED)
-find_package(mp-units REQUIRED)
-find_package(async_context REQUIRED)
+find_package(libhal REQUIRED)
+find_package(libhal-util REQUIRED)
 
 libhal_project_init()
-libhal_add_library(libhal
+libhal_add_library(arm-mcu
     MODULES
-        modules/hal.cppm
-        modules/analog.cppm
-        modules/can.cppm
-        modules/usb.cppm
-        modules/units.cppm
-        modules/gpio.cppm
-        modules/sensors.cppm
-        modules/motor.cppm
-        modules/error.cppm
-        modules/pwm.cppm
-        modules/servo.cppm
-        modules/steady_clock.cppm
-        modules/interrupts.cppm
-        modules/scatter_span.cppm
-        modules/i2c.cppm
-        modules/spi.cppm
-        modules/serial.cppm
-        modules/containers.cppm
+        modules/arm_mcu.cppm
+        modules/cortex_m/cortex_m.cppm
+        modules/cortex_m/dwt_counter.cppm
+        # modules/cortex_m/interrupt.cppm
+        # modules/cortex_m/startup.cppm
+        # modules/cortex_m/system_control.cppm
+        # modules/cortex_m/systick_timer.cppm
 )
 
-target_link_libraries(libhal
+target_link_libraries(arm-mcu
     PRIVATE
-        libhal::strong_ptr
-        libhal::async_context
-        mp-units::mp-units
+        libhal::libhal
+        libhal::util
 )
 
-libhal_apply_compile_options(libhal)
-libhal_install_library(libhal NAMESPACE libhal)
-libhal_add_tests(libhal
-    TEST_NAMES
-        adc
-        interrupts
-        scatter_span
-        i2c
-        spi
-        serial
-        containers
-        sensors
-        can
-)
+libhal_apply_compile_options(arm-mcu)
+libhal_install_library(arm-mcu NAMESPACE libhal)
+# libhal_add_tests(libhal
+#     TEST_NAMES
+#         adc
+#         interrupts
+#         scatter_span
+#         i2c
+#         spi
+#         serial
+#         containers
+#         sensors
+#         can
+# )

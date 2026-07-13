@@ -50,9 +50,8 @@ public:
   void register_cpu_frequency(hertz p_cpu_frequency);
 
 private:
-  virtual async::future<hertz> driver_frequency(
-    async::context& p_context) override;
-  virtual async::future<u64> driver_uptime(async::context& p_context) override;
+  async::future<hertz> driver_frequency(async::context& p_context) override;
+  async::future<u64> driver_uptime(async::context& p_context) override;
 
   overflow_counter<32> m_uptime{};
   hertz m_cpu_frequency{ 1 * mp_units::si::unit_symbols::MHz };

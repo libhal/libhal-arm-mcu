@@ -33,6 +33,13 @@ libhal_add_library(arm-mcu
         modules/cortex_m/startup.cppm
         modules/cortex_m/system_control.cppm
         modules/cortex_m/systick_timer.cppm
+        modules/stm32_generic/stm32_generic.cppm
+        modules/stm32_generic/i2c.cppm
+        modules/stm32_generic/pwm.cppm
+        modules/stm32_generic/quadrature_encoder.cppm
+        modules/stm32_generic/spi.cppm
+        modules/stm32_generic/timer.cppm
+        modules/stm32_generic/uart.cppm
 )
 
 target_link_libraries(arm-mcu

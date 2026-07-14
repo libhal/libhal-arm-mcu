@@ -408,7 +408,7 @@ can_peripheral_manager_v2::can_peripheral_manager_v2(
         using tag = hal::can_interrupt::on_receive_tag;
         (*m_receive_handler)(tag{}, message);
       }
-
+      m_message_count++;
       m_buffer.push(message);
     });
 
@@ -574,6 +574,11 @@ hal::v5::strong_ptr<hal::can_transceiver> acquire_can_transceiver(
     std::size_t driver_receive_cursor() override
     {
       return m_manager->receive_cursor();
+    }
+
+    std::optional<std::size_t> driver_receive_count() override
+    {
+      return m_manager->receive_count();
     }
 
     hal::v5::strong_ptr<can_peripheral_manager_v2> m_manager;

@@ -108,6 +108,7 @@ public:
     void driver_send(can_message const& p_message) override;
     std::span<can_message const> driver_receive_buffer() override;
     std::size_t driver_receive_cursor() override;
+    std::optional<std::size_t> driver_receive_count() override;
   };
 
   /**

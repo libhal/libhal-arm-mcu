@@ -169,6 +169,18 @@ public:
   }
 
   /**
+   * @brief Get the total count of received can messages
+   *
+   * This number increases monotonically until it overflows
+   *
+   * @return std::size_t - total number of received can messages
+   */
+  std::size_t receive_count() const
+  {
+    return m_message_count;
+  }
+
+  /**
    * @brief Scan through the acquired banks and return the index to an available
    * one.
    *
@@ -194,6 +206,7 @@ private:
   std::bitset<28> m_acquired_banks{};
   hal::v5::circular_buffer<hal::can_message> m_buffer;
   hal::u32 m_current_baud_rate = 0;
+  hal::usize m_message_count = 0;
   can_interrupt::optional_receive_handler m_receive_handler{};
 };
 

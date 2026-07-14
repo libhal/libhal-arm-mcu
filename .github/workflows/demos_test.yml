@@ -4,10 +4,10 @@ on:
   workflow_dispatch:
   pull_request:
     paths:
-      - "demos/**"
+      - "v1/demos/**"
   push:
     paths:
-      - "demos/**"
+      - "v1/demos/**"
     branches:
       - main
 

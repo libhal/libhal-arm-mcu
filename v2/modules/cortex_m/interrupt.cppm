@@ -34,7 +34,7 @@ import :system_control;
 namespace hal::cortex_m {
 /// Used specifically for defining an interrupt vector table of addresses.
 export using interrupt_pointer = void (*)();
-export using irq_t = std::int16_t;
+export using irq_t = i16;
 
 /**
  * @ingroup Enum
@@ -46,15 +46,15 @@ export template<typename T>
 concept irq_enum =
   std::is_enum_v<T> && std::is_same_v<std::underlying_type_t<T>, irq_t>;
 
+// NOLINTBEGIN(performance-enum-size): This enum represents a 16-bit IRQ number
+// in ARM Cortex-M.
 /**
  * @brief IRQ numbers for core processor interrupts
  *
  * All core IRQs are enabled by default.
  */
-export enum class irq
-  : irq_t  // NOLINT(performance-enum-size): must fit ARM
-           // Cortex 16-bit IRQ numbers
-{ top_of_stack = -16,
+export enum class irq : irq_t {
+  top_of_stack = -16,
   reset = -15,
   non_maskable_interrupt = -14,
   hard_fault = -13,
@@ -71,6 +71,7 @@ export enum class irq
   pend_sv = -2,
   systick = -1,
 };
+// NOLINTEND(performance-enum-size)
 
 export constexpr auto core_interrupts = static_cast<irq_t>(irq::top_of_stack);
 
@@ -78,31 +79,31 @@ export constexpr auto core_interrupts = static_cast<irq_t>(irq::top_of_stack);
 struct nvic_register_t
 {
   /// Offset: 0x000 (R/W)  Interrupt Set Enable Register
-  std::array<std::uint32_t volatile, 8U> iser;
+  std::array<u32 volatile, 8U> iser;
   /// Reserved 0
-  std::array<std::uint32_t, 24U> reserved0;
+  std::array<u32, 24U> reserved0;
   /// Offset: 0x080 (R/W)  Interrupt Clear Enable Register
-  std::array<std::uint32_t volatile, 8U> icer;
+  std::array<u32 volatile, 8U> icer;
   /// Reserved 1
-  std::array<std::uint32_t, 24U> reserved1;
+  std::array<u32, 24U> reserved1;
   /// Offset: 0x100 (R/W)  Interrupt Set Pending Register
-  std::array<std::uint32_t volatile, 8U> ispr;
+  std::array<u32 volatile, 8U> ispr;
   /// Reserved 2
-  std::array<std::uint32_t, 24U> reserved2;
+  std::array<u32, 24U> reserved2;
   /// Offset: 0x180 (R/W)  Interrupt Clear Pending Register
-  std::array<std::uint32_t volatile, 8U> icpr;
+  std::array<u32 volatile, 8U> icpr;
   /// Reserved 3
-  std::array<std::uint32_t, 24U> reserved3;
+  std::array<u32, 24U> reserved3;
   /// Offset: 0x200 (R/W)  Interrupt Active bit Register
-  std::array<std::uint32_t volatile, 8U> iabr;
+  std::array<u32 volatile, 8U> iabr;
   /// Reserved 4
-  std::array<std::uint32_t, 56U> reserved4;
+  std::array<u32, 56U> reserved4;
   /// Offset: 0x300 (R/W)  Interrupt Priority Register (8Bit wide)
-  std::array<std::uint8_t volatile, 240U> ip;
+  std::array<u8 volatile, 240U> ip;
   /// Reserved 5
-  std::array<std::uint32_t, 644U> reserved5;
+  std::array<u32, 644U> reserved5;
   /// Offset: 0xE00 ( /W)  Software Trigger Interrupt Register
-  std::uint32_t volatile stir;
+  u32 volatile stir;
 };
 
 /// NVIC address
@@ -367,7 +368,7 @@ export [[nodiscard]] bool is_interrupt_enabled(irq_t p_irq)
     return true;
   }
 
-  std::uint32_t enable_register = nvic->iser[register_index(p_irq)];
+  u32 enable_register = nvic->iser[register_index(p_irq)];
 
   return (enable_register & (1 << p_irq)) != 0U;
 }
@@ -419,7 +420,7 @@ export [[nodiscard]] bool verify_vector_enabled(irq_t p_irq,
     return true;
   }
 
-  std::uint32_t enable_register = nvic->iser[register_index(p_irq)];
+  u32 enable_register = nvic->iser[register_index(p_irq)];
 
   return (enable_register & (1 << p_irq)) != 0U;
 }

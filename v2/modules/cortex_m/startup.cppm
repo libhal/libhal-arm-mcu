@@ -69,7 +69,7 @@ namespace hal::cortex_m {
  * of the application.
  *
  */
-inline void initialize_data_section()
+export void initialize_data_section()
 {
   // Initialize statically allocated data by coping the data section from ROM to
   // RAM. CRT0.o/.s does not perform .data section initialization so it must be
@@ -82,7 +82,7 @@ inline void initialize_data_section()
  *
  * Not required if the C Runtime 0 (crt0.s/.a/.o) is used as a startup routine.
  */
-inline void initialize_bss_section()
+export void initialize_bss_section()
 {
   // Initialize statically allocated data by coping the data section from ROM to
   // RAM. CRT0.o/.s does not perform .data section initialization so it must be

@@ -22,7 +22,7 @@ jobs:
       compiler_profile: hal/tc/gcc
       platform_profile: hal/mcu/lpc4074
       conan_version: 2.23.0
-      dir: demos
+      dir: v1/demos
       library_dir: v1
     secrets: inherit
 
@@ -32,7 +32,7 @@ jobs:
       compiler_profile: hal/tc/gcc
       platform_profile: hal/mcu/lpc4078
       conan_version: 2.23.0
-      dir: demos
+      dir: v1/demos
       library_dir: v1
     secrets: inherit
 
@@ -42,7 +42,7 @@ jobs:
       compiler_profile: hal/tc/gcc
       platform_profile: hal/mcu/stm32f103c8
       conan_version: 2.23.0
-      dir: demos
+      dir: v1/demos
       library_dir: v1
     secrets: inherit
 
@@ -52,7 +52,7 @@ jobs:
       compiler_profile: hal/tc/llvm
       platform_profile: hal/mcu/lpc4078
       conan_version: 2.23.0
-      dir: demos
+      dir: v1/demos
       library_dir: v1
     secrets: inherit
 
@@ -62,7 +62,7 @@ jobs:
       compiler_profile: hal/tc/llvm
       platform_profile: hal/mcu/stm32f103c8
       conan_version: 2.23.0
-      dir: demos
+      dir: v1/demos
       library_dir: v1
     secrets: inherit
 
@@ -72,6 +72,6 @@ jobs:
       compiler_profile: hal/tc/gcc
       platform_profile: hal/mcu/stm32f411re
       conan_version: 2.23.0
-      dir: demos
+      dir: v1/demos
       library_dir: v1
     secrets: inherit

@@ -23,7 +23,7 @@ jobs:
       platform_profile: hal/mcu/lpc4074
       conan_version: 2.23.0
       dir: demos
-      library_dir: .
+      library_dir: v1
     secrets: inherit
 
   demo_check_lpc4078:
@@ -33,7 +33,7 @@ jobs:
       platform_profile: hal/mcu/lpc4078
       conan_version: 2.23.0
       dir: demos
-      library_dir: .
+      library_dir: v1
     secrets: inherit
 
   demo_check_stm32f103c8:
@@ -43,7 +43,7 @@ jobs:
       platform_profile: hal/mcu/stm32f103c8
       conan_version: 2.23.0
       dir: demos
-      library_dir: .
+      library_dir: v1
     secrets: inherit
 
   demo_check_lpc4078_llvm:
@@ -53,7 +53,7 @@ jobs:
       platform_profile: hal/mcu/lpc4078
       conan_version: 2.23.0
       dir: demos
-      library_dir: .
+      library_dir: v1
     secrets: inherit
 
   demo_check_stm32f103c8_llvm:
@@ -63,7 +63,7 @@ jobs:
       platform_profile: hal/mcu/stm32f103c8
       conan_version: 2.23.0
       dir: demos
-      library_dir: .
+      library_dir: v1
     secrets: inherit
 
   demo_check_stm32f411re:
@@ -73,5 +73,5 @@ jobs:
       platform_profile: hal/mcu/stm32f411re
       conan_version: 2.23.0
       dir: demos
-      library_dir: .
+      library_dir: v1
     secrets: inherit

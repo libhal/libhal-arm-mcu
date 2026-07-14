@@ -32,6 +32,9 @@ on:
       upload_suffix: # Path to conan package repo
         type: string
         required: true
+      library_dir: # Directory containing the conanfile.py to build
+        type: string
+        default: "."
 
 jobs:
   # First job: Build for cortex-m3 to cache the ARM compiler
@@ -61,6 +64,7 @@ jobs:
           conan hal setup
 
       - name: 🔨 Build for cortex-m3 to cache compiler
+        working-directory: ${{ inputs.library_dir }}
         run: conan create . -s:h build_type=Release -s:h os=baremetal -s:h arch=cortex-m3 --version=${{ inputs.version }} -pr:h ${{ inputs.compiler_profile }} --build=missing
 
       - name: 📦 Create tarball of conan packages
@@ -110,12 +114,15 @@ jobs:
         run: tar -xzf conan-packages.tar.gz -C ~/.conan2
 
       - name: 📦 Create `Debug` package for cortex-m3
+        working-directory: ${{ inputs.library_dir }}
         run: conan create . -s:h build_type=Debug -s:h os=baremetal -s:h arch=cortex-m3 --version=${{ inputs.version }} -pr:h ${{ inputs.compiler_profile }} --build=missing
 
       - name: 📦 Create `MinSizeRel` package for cortex-m3
+        working-directory: ${{ inputs.library_dir }}
         run: conan create . -s:h build_type=MinSizeRel -s:h os=baremetal -s:h arch=cortex-m3 --version=${{ inputs.version }} -pr:h ${{ inputs.compiler_profile }} --build=missing
 
       - name: 📦 Create `Release` package for cortex-m3
+        working-directory: ${{ inputs.library_dir }}
         run: conan create . -s:h build_type=Release -s:h os=baremetal -s:h arch=cortex-m3 --version=${{ inputs.version }} -pr:h ${{ inputs.compiler_profile }} --build=missing
 
       - name: 📡 Sign into JFrog Artifactory
@@ -165,12 +172,15 @@ jobs:
         run: tar -xzf conan-packages.tar.gz -C ~/.conan2
 
       - name: 📦 Create `Debug` package for cortex-m4
+        working-directory: ${{ inputs.library_dir }}
         run: conan create . -s:h build_type=Debug -s:h os=baremetal -s:h arch=cortex-m4 --version=${{ inputs.version }} -pr:h ${{ inputs.compiler_profile }} --build=missing
 
       - name: 📦 Create `MinSizeRel` package for cortex-m4
+        working-directory: ${{ inputs.library_dir }}
         run: conan create . -s:h build_type=MinSizeRel -s:h os=baremetal -s:h arch=cortex-m4 --version=${{ inputs.version }} -pr:h ${{ inputs.compiler_profile }} --build=missing
 
       - name: 📦 Create `Release` package for cortex-m4
+        working-directory: ${{ inputs.library_dir }}
         run: conan create . -s:h build_type=Release -s:h os=baremetal -s:h arch=cortex-m4 --version=${{ inputs.version }} -pr:h ${{ inputs.compiler_profile }} --build=missing
 
       - name: 📡 Sign into JFrog Artifactory
@@ -220,12 +230,15 @@ jobs:
         run: tar -xzf conan-packages.tar.gz -C ~/.conan2
 
       - name: 📦 Create `Debug` package for cortex-m4f
+        working-directory: ${{ inputs.library_dir }}
         run: conan create . -s:h build_type=Debug -s:h os=baremetal -s:h arch=cortex-m4f --version=${{ inputs.version }} -pr:h ${{ inputs.compiler_profile }} --build=missing
 
       - name: 📦 Create `MinSizeRel` package for cortex-m4f
+        working-directory: ${{ inputs.library_dir }}
         run: conan create . -s:h build_type=MinSizeRel -s:h os=baremetal -s:h arch=cortex-m4f --version=${{ inputs.version }} -pr:h ${{ inputs.compiler_profile }} --build=missing
 
       - name: 📦 Create `Release` package for cortex-m4f
+        working-directory: ${{ inputs.library_dir }}
         run: conan create . -s:h build_type=Release -s:h os=baremetal -s:h arch=cortex-m4f --version=${{ inputs.version }} -pr:h ${{ inputs.compiler_profile }} --build=missing
 
       - name: 📡 Sign into JFrog Artifactory

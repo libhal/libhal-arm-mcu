@@ -12,6 +12,7 @@ jobs:
       compiler_profile: hal/tc/arm-gcc
       version: ${{ github.ref_name }}
       upload_suffix: gcc
+      library_dir: v1
     secrets: inherit
 
   llvm:
@@ -20,4 +21,5 @@ jobs:
       compiler_profile: hal/tc/llvm
       version: ${{ github.ref_name }}
       upload_suffix: llvm
+      library_dir: v1
     secrets: inherit

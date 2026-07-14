@@ -34,6 +34,7 @@ jobs:
       compiler_profile: hal/tc/arm-gcc
       version: latest
       upload_suffix: gcc
+      library_dir: v1
     secrets: inherit
 
   deploy_llvm:
@@ -42,4 +43,5 @@ jobs:
       compiler_profile: hal/tc/llvm
       version: latest
       upload_suffix: llvm
+      library_dir: v1
     secrets: inherit

@@ -16,3 +16,4 @@ export module hal.arm_mcu;
 
 export import hal;
 export import hal.arm_mcu.cortex_m;
+export import hal.arm_mcu.stm32_generic;

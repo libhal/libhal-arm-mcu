@@ -230,7 +230,7 @@ private:
 
   inline static systick_timer* s_active = nullptr;
 
-  hertz m_frequency{ 1'000'000 * mp_units::si::unit_symbols::Hz };
+  hertz m_frequency{ 1 * mp_units::si::unit_symbols::MHz };
   mem::optional_ptr<hal::timed_callback> m_callback;
 };
 }  // namespace hal::cortex_m

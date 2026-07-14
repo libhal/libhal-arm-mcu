@@ -14,8 +14,6 @@
 
 export module hal.arm_mcu.cortex_m:dwt_counter;
 
-// TODO(kammce): Add overflow counter
-
 import hal;
 import hal.util;
 

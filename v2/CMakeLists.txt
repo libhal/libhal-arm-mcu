@@ -40,6 +40,9 @@ libhal_add_library(arm-mcu
         modules/stm32_generic/spi.cppm
         modules/stm32_generic/timer.cppm
         modules/stm32_generic/uart.cppm
+        modules/stm32f1/stm32f1.cppm
+        modules/stm32f1/constants.cppm
+        modules/stm32f1/pin.cppm
 )
 
 target_link_libraries(arm-mcu

@@ -24,13 +24,15 @@ import hal;
 import hal.util;
 
 import :constants;
+import :power;
+import :clock;
 
 namespace hal::stm32f1 {
 /**
  * @brief Structure to hold a port & pin selection
  *
  */
-export struct pin_select
+export struct pin
 {
   /// @brief Port letter: must be a capitol letter from 'A' to 'G'
   u8 port;
@@ -293,23 +295,23 @@ gpio_t& gpio_reg(u8 p_port)
 
 /// Returns the configuration control register for the specific pin.
 /// Pins 0 - 7 are in CRL and Pins 8 - 15 are in CRH.
-std::uint32_t volatile& config_register(pin_select const& p_pin_select)
+std::uint32_t volatile& config_register(pin const& p_pin)
 {
-  if (p_pin_select.pin <= 7) {
-    return gpio_reg(p_pin_select.port).crl;
+  if (p_pin.pin <= 7) {
+    return gpio_reg(p_pin.port).crl;
   }
-  return gpio_reg(p_pin_select.port).crh;
+  return gpio_reg(p_pin.port).crh;
 }
 
 /// Returns the output data register for the specific pin.
-std::uint32_t volatile& odr_register(pin_select const& p_pin_select)
+std::uint32_t volatile& odr_register(pin const& p_pin)
 {
-  return gpio_reg(p_pin_select.port).odr;
+  return gpio_reg(p_pin.port).odr;
 }
 
-bool is_pin_reset(pin_select p_pin_select)
+bool is_pin_reset(pin p_pin)
 {
-  auto& config_reg = config_register(p_pin_select);
+  auto& config_reg = config_register(p_pin);
   // NOTE: To check if a pin is in "reset" mode, we simply check to see if
   // the pin is in the input MODE (MODE=0b00). We ignore the pull up/down
   // resistor states since these can be different for the JTAG pins (see
@@ -320,19 +322,19 @@ bool is_pin_reset(pin_select p_pin_select)
   //    PA13: JTMS in PU
   //    PB4: NJTRST in PU
   auto const current_configuration =
-    bit_extract(config_mode_mask(p_pin_select.pin), config_reg);
+    bit_extract(config_mode_mask(p_pin.pin), config_reg);
 
   return reset_pin_mode == current_configuration;
 }
 
-void safely_power_on(pin_select const& p_pin_select)
+void safely_power_on(pin const& p_pin)
 {
   // Ensure that AFIO is powered on before attempting to access it
   if (not is_on(peripheral::afio)) {
     power_on(peripheral::afio);
   }
 
-  switch (p_pin_select.port) {
+  switch (p_pin.port) {
     case 'A':
       if (not is_on(peripheral::gpio_a)) {
         power_on(peripheral::gpio_a);
@@ -387,13 +389,13 @@ export void release_jtag_pins()
  *
  * Use this function to validate if a pin is available.
  *
- * @param p_pin_select - the pin to validate
+ * @param p_pin - the pin to validate
  * @throw hal::device_or_resource_busy - if the pin is not available, meaning
  * it was not in the reset state.
  */
-export void throw_if_pin_is_unavailable(pin_select p_pin_select)
+export void throw_if_pin_is_unavailable(pin p_pin)
 {
-  if (not is_pin_reset(p_pin_select)) {
+  if (not is_pin_reset(p_pin)) {
     throw hal::device_or_resource_busy(nullptr);
   }
 }
@@ -401,27 +403,27 @@ export void throw_if_pin_is_unavailable(pin_select p_pin_select)
 /**
  * @brief Construct pin manipulation object
  *
- * @param p_pin_select - the pin to configure
+ * @param p_pin - the pin to configure
  * @param p_config - Configuration to set the pin to
  * @throw hal::argument_out_of_domain - pin select is outside of the range of
  * available pins.
  * @throw hal::device_or_resource_busy - pin has already been configured once
  * from its reset state and thus is in use by something else in the code.
  */
-export void configure_pin(pin_select p_pin_select, pin_config_t p_config)
+export void configure_pin(pin p_pin, pin_config_t p_config)
 {
   // The GPIO pins PB3, PB4, and PA15 are default initalized to be used for
   // JTAG purposes. This releases them if they are being configured
-  if ((p_pin_select.port == 'B' && p_pin_select.pin == 3) ||
-      (p_pin_select.port == 'B' && p_pin_select.pin == 4) ||
-      (p_pin_select.port == 'A' && p_pin_select.pin == 15)) {
+  if ((p_pin.port == 'B' && p_pin.pin == 3) ||
+      (p_pin.port == 'B' && p_pin.pin == 4) ||
+      (p_pin.port == 'A' && p_pin.pin == 15)) {
     release_jtag_pins();
   }
 
-  auto& config_reg = config_register(p_pin_select);
-  auto& odr_reg = odr_register(p_pin_select);
-  safely_power_on(p_pin_select);
-  throw_if_pin_is_unavailable(p_pin_select);
+  auto& config_reg = config_register(p_pin);
+  auto& odr_reg = odr_register(p_pin);
+  safely_power_on(p_pin);
+  throw_if_pin_is_unavailable(p_pin);
 
   auto const config = bit_value<u32>(0)
                         .insert<cnf1>(p_config.CNF1)
@@ -429,8 +431,8 @@ export void configure_pin(pin_select p_pin_select, pin_config_t p_config)
                         .insert<mode>(p_config.MODE)
                         .get();
 
-  bit_modify(config_reg).insert(config_mask(p_pin_select.pin), config);
-  bit_modify(odr_reg).insert(odr_mask(p_pin_select.pin), p_config.PxODR);
+  bit_modify(config_reg).insert(config_mask(p_pin.pin), config);
+  bit_modify(odr_reg).insert(odr_mask(p_pin.pin), p_config.PxODR);
 }
 
 /**
@@ -439,13 +441,13 @@ export void configure_pin(pin_select p_pin_select, pin_config_t p_config)
  * This releases control over the pin and allows the pin to be reused by
  * other drivers.
  *
- * @param p_pin_select - the pin to configure
+ * @param p_pin - the pin to configure
  */
-export void reset_pin(pin_select p_pin_select)
+export void reset_pin(pin p_pin)
 {
-  auto& config_reg = config_register(p_pin_select);
+  auto& config_reg = config_register(p_pin);
   config_reg = bit_modify(config_reg)
-                 .insert(config_mask(p_pin_select.pin), reset_pin_config)
+                 .insert(config_mask(p_pin.pin), reset_pin_config)
                  .to<u32>();
 }
 
@@ -471,12 +473,12 @@ export void reset_mco_pa8()
 /**
  * @brief Remap can pins
  *
- * @param p_pin_select - pair of pins to select
+ * @param p_pin - pair of pins to select
  */
-export void remap_pins(can_pins p_pin_select)
+export void remap_pins(can_pins p_pin)
 {
   constexpr auto can_pin_remap = bit_mask::from<14, 13>();
   bit_modify(alternative_function_io->mapr)
-    .insert<can_pin_remap>(value(p_pin_select));
+    .insert<can_pin_remap>(value(p_pin));
 }
 }  // namespace hal::stm32f1

@@ -34,6 +34,7 @@ libhal_test_and_make_library(
   # lpc40
   src/lpc40/adc.cpp
   src/lpc40/can.cpp
+  src/lpc40/can2.cpp
   src/lpc40/clock.cpp
   src/lpc40/dac.cpp
   src/lpc40/dma.cpp
@@ -103,6 +104,7 @@ libhal_test_and_make_library(
   # lpc40
   tests/lpc40/adc.test.cpp
   tests/lpc40/can.test.cpp
+  tests/lpc40/can2.test.cpp
   tests/lpc40/i2c.test.cpp
   tests/lpc40/input_pin.test.cpp
   tests/lpc40/interrupt_pin.test.cpp

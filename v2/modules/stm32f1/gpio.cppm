@@ -12,10 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-module;
-
-#include <memory_resource>
-
 export module hal.arm_mcu.stm32f1:gpio;
 
 import hal;
@@ -29,20 +25,21 @@ namespace hal::stm32f1 {
 /**
  * @brief Implementation of the GPIO port manager class
  *
- * This class has a private constructor and can only be used via its derived
- * class `gpio<peripheral>` class.
+ * Manages a single gpio port (A through G). Use the `create()` factory
+ * functions to construct one, then use the acquire APIs to obtain input and
+ * output pins.
  *
  */
-export class gpio_manager
+export class gpio_manager : public hal::pimpl<gpio_manager>
 {
 public:
-  template<peripheral select>
-  friend class gpio;
+  /// Forward declaration only. Defined in gpio.cpp.
+  struct impl;
 
   gpio_manager(gpio_manager&) = delete;
   gpio_manager& operator=(gpio_manager&) = delete;
-  gpio_manager(gpio_manager&&) noexcept = default;
-  gpio_manager& operator=(gpio_manager&&) noexcept = default;
+  gpio_manager(gpio_manager&&) noexcept = delete;
+  gpio_manager& operator=(gpio_manager&&) noexcept = delete;
   /**
    * @brief Destroy the gpio port manager object
    *
@@ -51,100 +48,52 @@ public:
    */
   ~gpio_manager() = default;
 
-  class input;
-  class output;
-
-  input acquire_input_pin(u8 p_pin,
-                          hal::input_pin::settings const& p_settings = {});
-  output acquire_output_pin(u8 p_pin,
-                            hal::output_pin::settings const& p_settings = {});
-
-private:
-  gpio_manager(peripheral p_select);
-  peripheral m_port;
-};
-
-/**
- * @brief Gpio manager for the gpio ports A through to G.
- *
- * Use the acquire APIs in order to get input and output pins. If a pin is
- * already in use, the `hal::device_or_resource_busy` will be thrown.
- *
- * @tparam select - gpio peripheral port selection. Only peripheral::gpio_a to
- * peripheral::gpio_g.
- */
-export template<peripheral select>
-class gpio final : public gpio_manager
-{
-public:
-  static_assert(select == peripheral::gpio_a or /* line break */
-                  select == peripheral::gpio_b or
-                  select == peripheral::gpio_c or
-                  select == peripheral::gpio_d or
-                  select == peripheral::gpio_e or
-                  select == peripheral::gpio_f or /* line break */
-                  select == peripheral::gpio_g,
-                "Only peripheral gpio_(a to g) is allowed for this class");
-  gpio()
-    : gpio_manager(select)
+  /**
+   * @brief Create a gpio port manager with compile time peripheral
+   * validation
+   *
+   * @tparam select - gpio peripheral port selection. Only peripheral::gpio_a
+   * to peripheral::gpio_g.
+   * @param p_allocator - allocator used to allocate the memory for the
+   * object
+   * @return hal::ptr<gpio_manager> - manager for the selected gpio port.
+   */
+  template<peripheral select>
+  static hal::ptr<gpio_manager> create(hal::allocator p_allocator)
   {
-  }
-  ~gpio() = default;
-};
-
-class gpio_manager::input final : public hal::input_pin
-{
-public:
-  template<peripheral port>
-  input(gpio<port> const&, u8 p_pin, settings const& p_settings = {})
-    : input(port, p_pin, p_settings)
-  {
+    static_assert(
+      select == peripheral::gpio_a or /* line break */
+        select == peripheral::gpio_b or select == peripheral::gpio_c or
+        select == peripheral::gpio_d or select == peripheral::gpio_e or
+        select == peripheral::gpio_f or /* line break */
+        select == peripheral::gpio_g,
+      "Only peripheral gpio_(a to g) is allowed for this class");
+    return create(p_allocator, select);
   }
 
-private:
-  friend class gpio_manager;
-
-  friend mem::strong_ptr<hal::input_pin> acquire_input_pin(
-    std::pmr::polymorphic_allocator<> p_allocator,
-    mem::strong_ptr<gpio_manager> const& p_manager,
+  hal::ptr<hal::input_pin> acquire_input_pin(
+    hal::allocator p_allocator,
     u8 p_pin,
-    hal::input_pin::settings const& p_settings);
+    hal::input_pin::settings const& p_settings = {});
+  hal::ptr<hal::output_pin> acquire_output_pin(
+    hal::allocator p_allocator,
+    u8 p_pin,
+    hal::output_pin::settings const& p_settings = {});
 
-  input(peripheral p_port, u8 p_pin, settings const& p_settings);
-
-  async::future<void> driver_configure(async::context& p_context,
-                                       settings const& p_settings) override;
-  async::future<bool> driver_level(async::context& p_context) override;
-
-  pin m_pin;
-};
-
-class gpio_manager::output final : public hal::output_pin
-{
-public:
-  template<peripheral port>
-  output(gpio<port> const&, u8 p_pin, settings const& p_settings = {})
-    : output(port, p_pin, p_settings)
-  {
-  }
+  gpio_manager(private_key, hal::allocator p_allocator, peripheral p_select);
 
 private:
-  friend class gpio_manager;
-
-  friend mem::strong_ptr<hal::output_pin> acquire_output_pin(
-    std::pmr::polymorphic_allocator<> p_allocator,
-    mem::strong_ptr<gpio_manager> const& p_manager,
-    u8 p_pin,
-    hal::output_pin::settings const& p_settings);
-
-  output(peripheral p_port, u8 p_pin, settings const& p_settings);
-
-  async::future<void> driver_configure(async::context& p_context,
-                                       settings const& p_settings) override;
-  async::future<void> driver_level(async::context& p_context,
-                                   bool p_high) override;
-  async::future<bool> driver_level(async::context& p_context) override;
-
-  pin m_pin;
+  /**
+   * @brief Create a gpio port manager
+   *
+   * @param p_allocator - allocator used to allocate the memory for the
+   * object
+   * @param p_select - gpio peripheral port selection. Only peripheral::gpio_a
+   * to peripheral::gpio_g.
+   * @return hal::ptr<gpio_manager> - manager for the selected gpio port.
+   */
+  static hal::ptr<gpio_manager> create(hal::allocator p_allocator,
+                                       peripheral p_select);
+  peripheral m_peripheral;
 };
 }  // namespace hal::stm32f1

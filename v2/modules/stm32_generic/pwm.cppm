@@ -23,58 +23,9 @@ export module hal.arm_mcu.stm32_generic:pwm;
 import hal;
 import hal.util;
 
-namespace hal::stm32_generic {
-/// stm32 general purpose/advanced timer register map, shared by the pwm
-/// helper driver.
-struct timer_reg_t
-{
-  /// Offset: 0x00 Control Register (R/W)
-  hal::u32 volatile control_register;  // sets up timers
-  /// Offset: 0x04 Control Register 2 (R/W)
-  hal::u32 volatile control_register_2;
-  /// Offset: 0x08 Peripheral Mode Control Register (R/W)
-  hal::u32 volatile peripheral_control_register;
-  /// Offset: 0x0C DMA/Interrupt enable register (R/W)
-  hal::u32 volatile interrupt_enable_register;
-  /// Offset: 0x10 Status Register register (R/W)
-  hal::u32 volatile status_register;
-  /// Offset: 0x14 Event Generator Register register (R/W)
-  hal::u32 volatile event_generator_register;
-  /// Offset: 0x18 Capture/Compare mode register (R/W)
-  hal::u32 volatile capture_compare_mode_register;  // set up modes for
-                                                    // channel
-  /// Offset: 0x1C Capture/Compare mode register (R/W)
-  hal::u32 volatile capture_compare_mode_register_2;
-  /// Offset: 0x20 Capture/Compare Enable register (R/W)
-  hal::u32 volatile cc_enable_register;
-  /// Offset: 0x24 Counter (R/W)
-  hal::u32 volatile counter_register;
-  /// Offset: 0x28 Prescalar (R/W)
-  hal::u32 volatile prescale_register;
-  /// Offset: 0x2C Auto Reload Register (R/W)
-  hal::u32 volatile auto_reload_register;  // affects frequency
-  /// Offset: 0x30 Repetition Counter Register (R/W)
-  hal::u32 volatile repetition_counter_register;
-  /// Offset: 0x34 Capture Compare Register (R/W)
-  hal::u32 volatile capture_compare_register;  // affects duty cycles
-  /// Offset: 0x38 Capture Compare Register (R/W)
-  hal::u32 volatile capture_compare_register_2;
-  // Offset: 0x3C Capture Compare Register (R/W)
-  hal::u32 volatile capture_compare_register_3;
-  // Offset: 0x40 Capture Compare Register (R/W)
-  hal::u32 volatile capture_compare_register_4;
-  /// Offset: 0x44 Break and dead-time register
-  hal::u32 volatile break_and_deadtime_register;
-  /// Offset: 0x48 DMA control register
-  hal::u32 volatile dma_control_register;
-  /// Offset: 0x4C DMA address for full transfer
-  hal::u32 volatile dma_address_register;
-};
+import :registers;
 
-[[nodiscard]] timer_reg_t* get_timer_reg(void* p_reg)
-{
-  return reinterpret_cast<timer_reg_t*>(p_reg);
-}
+namespace hal::stm32_generic {
 
 /**
  * @brief Each Timer Peripheral has 2-4 channels/is advanced info
@@ -98,7 +49,7 @@ export struct pwm_timer_frequency
   u32 timer_clock_frequency;
 };
 
-void setup_channel(timer_reg_t* p_reg, pwm_channel_info p_settings)
+void setup_channel(timer_reg* p_reg, pwm_channel_info p_settings)
 {
   constexpr auto main_output_enable = bit_mask::from<15>();
   constexpr auto ossr = bit_mask::from<11>();
@@ -117,8 +68,7 @@ void setup_channel(timer_reg_t* p_reg, pwm_channel_info p_settings)
   }
 }
 
-u32 volatile* setup_timer_channel(timer_reg_t* p_reg,
-                                  pwm_channel_info p_settings)
+u32 volatile* setup_timer_channel(timer_reg* p_reg, pwm_channel_info p_settings)
 {
   constexpr auto clock_division = bit_mask::from<8, 9>();
   constexpr auto edge_aligned_mode = bit_mask::from<5, 6>();
@@ -204,7 +154,7 @@ u32 volatile* setup_timer_channel(timer_reg_t* p_reg,
   return compare_register;
 }
 
-u32 volatile* common_setup(pwm_channel_info p_settings, timer_reg_t* p_reg)
+u32 volatile* common_setup(pwm_channel_info p_settings, timer_reg* p_reg)
 {
   if (p_settings.channel > 4) {
     throw hal::operation_not_supported(nullptr);
@@ -237,7 +187,7 @@ public:
   pwm(void* p_reg, pwm_channel_info p_settings)
     : m_reg(p_reg)
   {
-    m_compare_register_addr = common_setup(p_settings, get_timer_reg(m_reg));
+    m_compare_register_addr = common_setup(p_settings, timer_reg::from(m_reg));
   }
 
   /**
@@ -272,7 +222,7 @@ public:
   void initialize(void* p_reg, pwm_channel_info p_settings)
   {
     m_reg = p_reg;
-    m_compare_register_addr = common_setup(p_settings, get_timer_reg(m_reg));
+    m_compare_register_addr = common_setup(p_settings, timer_reg::from(m_reg));
   }
 
   /**
@@ -284,7 +234,7 @@ public:
    */
   u32 frequency(u32 p_timer_clock_frequency)
   {
-    auto* reg = get_timer_reg(m_reg);
+    auto* reg = timer_reg::from(m_reg);
 
     // See page 419 in RM0008.pdf to find this equation:
     //
@@ -310,7 +260,7 @@ public:
     // the output changes from high to low when the counter > ccr, therefore,
     // we simply make the CCR equal to the required duty cycle fraction of
     // the ARR value.
-    auto* reg = get_timer_reg(m_reg);
+    auto* reg = timer_reg::from(m_reg);
 
     auto const reload_value = static_cast<u16>(reg->auto_reload_register);
     auto const upscaled_value = reload_value * p_duty_cycle;
@@ -378,7 +328,7 @@ public:
    */
   void set_group_frequency(pwm_timer_frequency p_timer_frequency)
   {
-    auto* reg = get_timer_reg(m_reg);
+    auto* reg = timer_reg::from(m_reg);
 
     // Calculate new frequency
     auto const [frequency, clock_frequency] = p_timer_frequency;

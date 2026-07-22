@@ -235,7 +235,7 @@ public:
    * cannot be achieved by the spi bus.
    */
   void configure(hal::spi_channel::settings const& p_settings,
-                hal::hertz p_peripheral_clock_speed)
+                 hal::hertz p_peripheral_clock_speed)
   {
     auto& regs = reg();
 
@@ -261,10 +261,12 @@ public:
     //
     //   m0: CPOL 0, CPHA 0        m2: CPOL 1, CPHA 0
     //   m1: CPOL 0, CPHA 1        m3: CPOL 1, CPHA 1
-    bool const clock_polarity = p_settings.bus_mode == hal::spi_channel::mode::m2 ||
-                                p_settings.bus_mode == hal::spi_channel::mode::m3;
-    bool const clock_phase = p_settings.bus_mode == hal::spi_channel::mode::m1 ||
-                             p_settings.bus_mode == hal::spi_channel::mode::m3;
+    bool const clock_polarity =
+      p_settings.bus_mode == hal::spi_channel::mode::m2 ||
+      p_settings.bus_mode == hal::spi_channel::mode::m3;
+    bool const clock_phase =
+      p_settings.bus_mode == hal::spi_channel::mode::m1 ||
+      p_settings.bus_mode == hal::spi_channel::mode::m3;
 
     bit_modify(regs.cr2)
       .clear<control_register2::rx_dma_enable>()
@@ -305,8 +307,8 @@ public:
    * before the incoming data.
    */
   void transfer(std::span<hal::byte const> p_data_out,
-               std::span<hal::byte> p_data_in,
-               hal::byte p_filler)
+                std::span<hal::byte> p_data_in,
+                hal::byte p_filler)
   {
     auto& regs = reg();
     std::size_t const max_length =

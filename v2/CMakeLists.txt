@@ -13,7 +13,7 @@
 # limitations under the License.
 
 cmake_minimum_required(VERSION 4.0)
-
+set(LIBHAL_ENABLE_CLANG_TIDY OFF)
 project(arm-mcu LANGUAGES CXX)
 
 # libhal cmake utilities from libhal-cmake-util
@@ -34,9 +34,9 @@ libhal_add_library(arm-mcu
         modules/cortex_m/system_control.cppm
         modules/cortex_m/systick_timer.cppm
         modules/stm32_generic/stm32_generic.cppm
+        modules/stm32_generic/registers.cppm
         modules/stm32_generic/i2c.cppm
         modules/stm32_generic/pwm.cppm
-        modules/stm32_generic/quadrature_encoder.cppm
         modules/stm32_generic/spi.cppm
         modules/stm32_generic/timer.cppm
         modules/stm32_generic/uart.cppm
@@ -59,15 +59,7 @@ target_link_libraries(arm-mcu
 
 libhal_apply_compile_options(arm-mcu)
 libhal_install_library(arm-mcu NAMESPACE libhal)
-# libhal_add_tests(libhal
-#     TEST_NAMES
-#         adc
-#         interrupts
-#         scatter_span
-#         i2c
-#         spi
-#         serial
-#         containers
-#         sensors
-#         can
-# )
+libhal_add_tests(arm-mcu
+    TEST_NAMES
+        gpio
+)

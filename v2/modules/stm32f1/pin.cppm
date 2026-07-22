@@ -478,7 +478,6 @@ export void reset_mco_pa8()
 export void remap_pins(can_pins p_pin)
 {
   constexpr auto can_pin_remap = bit_mask::from<14, 13>();
-  bit_modify(alternative_function_io->mapr)
-    .insert<can_pin_remap>(value(p_pin));
+  bit_modify(alternative_function_io->mapr).insert<can_pin_remap>(value(p_pin));
 }
 }  // namespace hal::stm32f1

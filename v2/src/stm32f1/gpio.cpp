@@ -1,4 +1,4 @@
-// Copyright 2024 - 2025 Khalil Estell and the libhal contributors
+// Copyright 2026 Khalil Estell and the libhal contributors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -14,15 +14,12 @@
 
 module hal.arm_mcu.stm32f1;
 
-#include
-
 import hal;
 import hal.util;
 
 import :constants;
 import :power;
 import :pin;
-import :gpio;
 
 namespace hal::stm32f1 {
 namespace {
@@ -36,123 +33,159 @@ u8 peripheral_to_letter(peripheral p_peripheral)
 }
 }  // namespace
 
-gpio_manager::gpio_manager(peripheral p_port)
-  : m_port(p_port)
+struct gpio_manager::impl
 {
-  if (not is_on(m_port)) {
-    power_on(m_port);
+  peripheral port;
+};
+
+gpio_manager::gpio_manager(private_key,
+                           hal::allocator p_allocator,
+                           peripheral p_select)
+  : pimpl(p_allocator, impl{ .port = p_select })
+{
+  if (not is_on(inner().port)) {
+    power_on(inner().port);
   }
 }
 
-gpio_manager::input gpio_manager::acquire_input_pin(
+#if 0
+void gpio_manager::configure_gpio_pin(bool p_input)
+{
+  if (p_input) {
+    reset_pin(m_pin);
+    if (p_settings.open_drain) {
+      configure_pin(m_pin, open_drain_gpio_output);
+    } else {
+      configure_pin(m_pin, push_pull_gpio_output);
+    }
+  } else {
+  }
+}
+#endif
+
+hal::ptr<gpio_manager> gpio_manager::create(hal::allocator p_allocator,
+                                            peripheral p_select)
+{
+  return hal::allocate<gpio_manager>(
+    p_allocator, private_key{}, p_allocator, p_select);
+}
+
+class input final : public hal::input_pin
+{
+public:
+  input(peripheral p_port, u8 p_pin, input_pin::settings const& p_settings)
+    : m_pin({ .port = peripheral_to_letter(p_port), .pin = p_pin })
+  {
+    reset_pin(m_pin);
+    async::context ctx{};
+    input::driver_configure(ctx, p_settings);
+  }
+
+  input(input const&) = delete;
+  input& operator=(input const&) = delete;
+  input(input&&) noexcept = default;
+  input& operator=(input&&) noexcept = default;
+  ~input() override = default;
+
+private:
+  async::future<void> driver_configure(async::context&,
+                                       settings const& p_settings) override
+  {
+    reset_pin(m_pin);
+
+    if (p_settings.resistor == pin_resistor::pull_up) {
+      configure_pin(m_pin, input_pull_up);
+    } else if (p_settings.resistor == pin_resistor::pull_down) {
+      configure_pin(m_pin, input_pull_down);
+    } else {
+      configure_pin(m_pin, input_float);
+    }
+
+    return {};
+  }
+
+  async::future<bool> driver_level(async::context&) override
+  {
+    auto const& reg = gpio_reg(m_pin.port);
+    auto const pin_value = bit_extract(bit_mask::from(m_pin.pin), reg.idr);
+    return static_cast<bool>(pin_value);
+  }
+
+  pin m_pin;
+};
+
+class output final : public hal::output_pin
+{
+public:
+  output(peripheral p_port, u8 p_pin, settings const& p_settings)
+    : m_pin({ .port = peripheral_to_letter(p_port), .pin = p_pin })
+  {
+    throw_if_pin_is_unavailable(m_pin);
+    async::context ctx{};
+    output::driver_configure(ctx, p_settings);
+  }
+
+  output(output const&) = delete;
+  output& operator=(output const&) = delete;
+  output(output&&) noexcept = default;
+  output& operator=(output&&) noexcept = default;
+  ~output() override = default;
+
+private:
+  friend class gpio_manager;
+
+  async::future<void> driver_configure(
+    async::context&,
+    [[maybe_unused]] settings const& p_settings) override
+  {
+#if 0
+    reset_pin(m_pin);
+    if (p_settings.resistor == pin_resistor::pull_up) {
+      configure_pin(m_pin, input_pull_up);
+    } else if (p_settings.resistor == pin_resistor::pull_down) {
+      configure_pin(m_pin, input_pull_down);
+    } else {
+      configure_pin(m_pin, input_float);
+    }
+#endif
+    return {};
+  }
+
+  async::future<void> driver_level(async::context&, bool p_high) override
+  {
+    if (p_high) {
+      // The first 16 bits of the register set the output state
+      gpio_reg(m_pin.port).bsrr = 1U << m_pin.pin;
+    } else {
+      // The last 16 bits of the register reset the output state
+      gpio_reg(m_pin.port).bsrr = 1U << (16 + m_pin.pin);
+    }
+    return {};
+  }
+
+  async::future<bool> driver_level(async::context&) override
+  {
+    auto const& reg = gpio_reg(m_pin.port);
+    auto const pin_value = bit_extract(bit_mask::from(m_pin.pin), reg.idr);
+    return static_cast<bool>(pin_value);
+  }
+
+  pin m_pin;
+};
+
+hal::ptr<hal::input_pin> gpio_manager::acquire_input_pin(
+  hal::allocator p_allocator,
   u8 p_pin,
   input_pin::settings const& p_settings)
 {
-  return { m_port, p_pin, p_settings };
+  return hal::allocate<input>(p_allocator, m_peripheral, p_pin, p_settings);
 }
 
-gpio_manager::output gpio_manager::acquire_output_pin(
+hal::ptr<hal::output_pin> gpio_manager::acquire_output_pin(
+  hal::allocator p_allocator,
   u8 p_pin,
   output_pin::settings const& p_settings)
 {
-  return { m_port, p_pin, p_settings };
-}
-
-gpio_manager::input::input(peripheral p_port,
-                           u8 p_pin,
-                           input_pin::settings const& p_settings)
-  : m_pin({ .port = peripheral_to_letter(p_port), .pin = p_pin })
-{
-  reset_pin(m_pin);
-  async::context context;
-  gpio_manager::input::driver_configure(context, p_settings);
-}
-
-async::future<void> gpio_manager::input::driver_configure(
-  async::context&,
-  settings const& p_settings)
-{
-  reset_pin(m_pin);
-
-  if (p_settings.resistor == pin_resistor::pull_up) {
-    configure_pin(m_pin, input_pull_up);
-  } else if (p_settings.resistor == pin_resistor::pull_down) {
-    configure_pin(m_pin, input_pull_down);
-  } else {
-    configure_pin(m_pin, input_float);
-  }
-
-  return {};
-}
-
-async::future<bool> gpio_manager::input::driver_level(async::context&)
-{
-  auto const& reg = gpio_reg(m_pin.port);
-  auto const pin_value = bit_extract(bit_mask::from(m_pin.pin), reg.idr);
-  return static_cast<bool>(pin_value);
-}
-
-gpio_manager::output::output(peripheral p_port,
-                             u8 p_pin,
-                             output_pin::settings const& p_settings)
-  : m_pin({ .port = peripheral_to_letter(p_port), .pin = p_pin })
-{
-  throw_if_pin_is_unavailable(m_pin);
-  async::context context;
-  gpio_manager::output::driver_configure(context, p_settings);
-}
-
-async::future<void> gpio_manager::output::driver_configure(
-  async::context&,
-  settings const& p_settings)
-{
-  reset_pin(m_pin);
-  if (p_settings.open_drain) {
-    configure_pin(m_pin, open_drain_gpio_output);
-  } else {
-    configure_pin(m_pin, push_pull_gpio_output);
-  }
-  // NOTE: The `resistor` field is ignored in this function
-  return {};
-}
-
-async::future<void> gpio_manager::output::driver_level(async::context&,
-                                                       bool p_high)
-{
-  if (p_high) {
-    // The first 16 bits of the register set the output state
-    gpio_reg(m_pin.port).bsrr = 1U << m_pin.pin;
-  } else {
-    // The last 16 bits of the register reset the output state
-    gpio_reg(m_pin.port).bsrr = 1U << (16 + m_pin.pin);
-  }
-  return {};
-}
-
-async::future<bool> gpio_manager::output::driver_level(async::context&)
-{
-  auto const& reg = gpio_reg(m_pin.port);
-  auto const pin_value = bit_extract(bit_mask::from(m_pin.pin), reg.idr);
-  return static_cast<bool>(pin_value);
-}
-
-mem::strong_ptr<hal::input_pin> gpio_manager::acquire_input_pin(
-  std::pmr::polymorphic_allocator<> p_allocator,
-  mem::strong_ptr<gpio_manager> const& p_manager,
-  u8 p_pin,
-  input_pin::settings const& p_settings)
-{
-  return mem::make_strong_ptr<gpio_manager::input>(
-    p_allocator, p_manager->acquire_input_pin(p_pin, p_settings));
-}
-
-mem::strong_ptr<hal::output_pin> gpio_manager::acquire_output_pin(
-  std::pmr::polymorphic_allocator<> p_allocator,
-  mem::strong_ptr<gpio_manager> const& p_manager,
-  u8 p_pin,
-  output_pin::settings const& p_settings)
-{
-  return mem::make_strong_ptr<gpio_manager::output>(
-    p_allocator, p_manager->acquire_output_pin(p_pin, p_settings));
+  return hal::allocate<output>(p_allocator, m_peripheral, p_pin, p_settings);
 }
 }  // namespace hal::stm32f1

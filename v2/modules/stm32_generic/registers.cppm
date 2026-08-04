@@ -54,5 +54,4 @@ struct timer_reg
     return reinterpret_cast<timer_reg*>(p_address);
   }
 };
-
 }  // namespace hal::stm32_generic

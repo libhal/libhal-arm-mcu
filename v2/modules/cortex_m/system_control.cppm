@@ -205,7 +205,7 @@ export bool debugger_connected()
 #endif
 }
 }  // namespace hal::cortex_m
-
+#if 0
 extern "C"
 {
   // The implementation of LLVM calls a calls the breakpoint instruction
@@ -243,3 +243,4 @@ extern "C"
     return empty;
   }
 }
+#endif

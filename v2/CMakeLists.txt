@@ -58,7 +58,7 @@ target_link_libraries(arm-mcu
 )
 
 libhal_apply_compile_options(arm-mcu)
-libhal_install_library(arm-mcu NAMESPACE libhal)
+libhal_install_library(arm-mcu NAMESPACE libhal PACKAGE_NAME libhal-arm-mcu)
 libhal_add_tests(arm-mcu
     TEST_NAMES
         gpio

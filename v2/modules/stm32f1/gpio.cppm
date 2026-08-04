@@ -1,4 +1,4 @@
-// Copyright 2024 - 2025 Khalil Estell and the libhal contributors
+// Copyright 2026 Khalil Estell and the libhal contributors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -17,83 +17,46 @@ export module hal.arm_mcu.stm32f1:gpio;
 import hal;
 import hal.util;
 
-import :constants;
-import :power;
 import :pin;
 
 namespace hal::stm32f1 {
 /**
- * @brief Implementation of the GPIO port manager class
+ * @brief Maximum output slew-rate for a push-pull/open-drain output pin
  *
- * Manages a single gpio port (A through G). Use the `create()` factory
- * functions to construct one, then use the acquire APIs to obtain input and
- * output pins.
- *
+ * Values match the MODE[1:0] bits for output pins (see "Table 21. Output
+ * MODE bits" in RM0008).
  */
-export class gpio_manager : public hal::pimpl<gpio_manager>
-{
-public:
-  /// Forward declaration only. Defined in gpio.cpp.
-  struct impl;
-
-  gpio_manager(gpio_manager&) = delete;
-  gpio_manager& operator=(gpio_manager&) = delete;
-  gpio_manager(gpio_manager&&) noexcept = delete;
-  gpio_manager& operator=(gpio_manager&&) noexcept = delete;
-  /**
-   * @brief Destroy the gpio port manager object
-   *
-   * This actually does nothing as this driver cannot disable the GPIO port
-   * peripherals if other pins are used within the application.
-   */
-  ~gpio_manager() = default;
-
-  /**
-   * @brief Create a gpio port manager with compile time peripheral
-   * validation
-   *
-   * @tparam select - gpio peripheral port selection. Only peripheral::gpio_a
-   * to peripheral::gpio_g.
-   * @param p_allocator - allocator used to allocate the memory for the
-   * object
-   * @return hal::ptr<gpio_manager> - manager for the selected gpio port.
-   */
-  template<peripheral select>
-  static hal::ptr<gpio_manager> create(hal::allocator p_allocator)
-  {
-    static_assert(
-      select == peripheral::gpio_a or /* line break */
-        select == peripheral::gpio_b or select == peripheral::gpio_c or
-        select == peripheral::gpio_d or select == peripheral::gpio_e or
-        select == peripheral::gpio_f or /* line break */
-        select == peripheral::gpio_g,
-      "Only peripheral gpio_(a to g) is allowed for this class");
-    return create(p_allocator, select);
-  }
-
-  hal::ptr<hal::input_pin> acquire_input_pin(
-    hal::allocator p_allocator,
-    u8 p_pin,
-    hal::input_pin::settings const& p_settings = {});
-  hal::ptr<hal::output_pin> acquire_output_pin(
-    hal::allocator p_allocator,
-    u8 p_pin,
-    hal::output_pin::settings const& p_settings = {});
-
-  gpio_manager(private_key, hal::allocator p_allocator, peripheral p_select);
-
-private:
-  /**
-   * @brief Create a gpio port manager
-   *
-   * @param p_allocator - allocator used to allocate the memory for the
-   * object
-   * @param p_select - gpio peripheral port selection. Only peripheral::gpio_a
-   * to peripheral::gpio_g.
-   * @return hal::ptr<gpio_manager> - manager for the selected gpio port.
-   */
-  static hal::ptr<gpio_manager> create(hal::allocator p_allocator,
-                                       peripheral p_select);
-  peripheral m_peripheral;
+export enum class output_speed : u8 {
+  max_10_mhz = 0b01,
+  max_2_mhz = 0b10,
+  max_50_mhz = 0b11,
 };
+
+/**
+ * @brief Acquire an input pin
+ *
+ * @param p_allocator - allocator used to allocate the memory for the object
+ * @param p_pin - port & pin selection
+ * @param p_settings - settings to apply to the input pin
+ * @return hal::ptr<hal::input_pin> - type erased input pin driver
+ */
+export hal::ptr<hal::input_pin> create_input_pin(
+  hal::allocator p_allocator,
+  pin p_pin,
+  hal::pin_settings const& p_settings = {});
+
+/**
+ * @brief Acquire an output pin
+ *
+ * @param p_allocator - allocator used to allocate the memory for the object
+ * @param p_pin - port & pin selection
+ * @param p_settings - settings to apply to the output pin
+ * @param p_speed - maximum output slew-rate for the pin
+ * @return hal::ptr<hal::output_pin> - type erased output pin driver
+ */
+export hal::ptr<hal::output_pin> create_output_pin(
+  hal::allocator p_allocator,
+  pin p_pin,
+  hal::pin_settings const& p_settings = {},
+  output_speed p_speed = output_speed::max_50_mhz);
 }  // namespace hal::stm32f1

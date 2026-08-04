@@ -33,9 +33,34 @@ class libhal_arm_mcu_conan(ConanFile):
     description = ()
     topics = ()
     settings = "compiler", "build_type", "os", "arch"
-    exports_sources = "modules/*", "src/*", "tests/*", "CMakeLists.txt", "LICENSE"
+    exports_sources = "modules/*", "src/*", "tests/*", "CMakeLists.txt", "LICENSE", "linker_scripts/*"
     package_type = "static-library"
     shared = False
+
+    options = {
+        "platform": ["ANY"],
+        "use_libhal_exceptions": [True, False],
+        "use_picolibc": [True, False],
+        "use_default_linker_script": [True, False],
+        "replace_std_terminate": [True, False],
+        "use_semihosting": [True, False],
+    }
+    default_options = {
+        "platform": "ANY",
+        "use_libhal_exceptions": True,
+        "use_picolibc": True,
+        "use_default_linker_script": True,
+        "replace_std_terminate": True,
+        "use_semihosting": True,
+    }
+    options_description = {
+        "platform": "Specifies which platform to provide binaries and build information for",
+        "use_libhal_exceptions": "Reserved for backwards compatibility. This option is currently unused and will become functional when libhal-exceptions is feature complete.",
+        "use_picolibc": "Use picolibc as the libc runtime for ARM GCC. Note: ARM's LLVM fork always uses picolibc and ignores this option.",
+        "use_default_linker_script": "Enable automatic linker script selection based on the specified platform",
+        "replace_std_terminate": "Replace the default std::terminate handler to reduce binary size by avoiding verbose text rendering",
+        "use_semihosting": "Enables semihosting support, allowing the MCU to perform host based I/O like writing to stdout or reading from files via the debug port. With LLVM from arm-toolchain, semihosting is enabled via the compiler and must be disabled via a build profile option and not this option.",
+    }
 
     @property
     def _min_cppstd(self):
@@ -131,7 +156,101 @@ class libhal_arm_mcu_conan(ConanFile):
              src=self.source_folder)
 
     def package_info(self):
+
+        PLATFORM = str(self.options.platform)
+        self.buildenv_info.define("LIBHAL_PLATFORM", PLATFORM)
+        self.buildenv_info.define("LIBHAL_PLATFORM_LIBRARY", "arm-mcu")
+
+        self.cpp_info.exelinkflags = []
+        # if self.settings.os == "baremetal":
+        self._setup_baremetal(PLATFORM)
+
         # DISABLE Conan's config file generation
         self.cpp_info.set_property("cmake_find_mode", "none")
         # Tell CMake to include this directory in its search path
         self.cpp_info.builddirs.append("lib/cmake")
+
+
+    def _setup_baremetal(self, platform: str):
+        if self.options.replace_std_terminate:
+            self.cpp_info.exelinkflags.extend([
+                # Override picolibc's default hard fault handler to gracefully
+                # handle semihosting BKPT instructions when no debugger is
+                # attached. Without this, binaries linked with semihosting
+                # libraries will hang in an infinite loop if executed without a
+                # debugger. This wrapper detects BKPT-induced faults, skips the
+                # instruction, and allows execution to continue, enabling test
+                # packages to link successfully while allowing applications to
+                # run standalone.
+                "-Wl,--wrap=arm_hardfault_isr",
+                # Override the default standard set and get terminate functions
+                # to prevent linking in the original default verbose terminate
+                # implementation.
+                "-Wl,--wrap=_ZSt13set_terminatePFvvE",
+                "-Wl,--wrap=_ZSt13get_terminatev",
+            ])
+
+        if self.options.replace_std_terminate:
+            if self.settings.compiler == "clang":
+                self.cpp_info.exelinkflags.extend([
+                    # Overrides the terminate handler from LLVM
+                    # This results in a large reduction in binary size since this
+                    # terminate handler renders text and that text rendering is
+                    # expensive.
+                    "-Wl,--wrap=__cxa_terminate_handler",
+                ])
+            if self.settings.compiler == "gcc":
+                self.cpp_info.exelinkflags.extend([
+                    # Override the terminate handler for GCC.
+                    # This results in a large reduction in binary size since this
+                    # terminate handler renders text and that text rendering is
+                    # expensive.
+                    "-Wl,--wrap=_ZN10__cxxabiv119__terminate_handlerE",
+                ])
+
+        if self.options.use_default_linker_script:
+            LINKER_SCRIPTS_PATH = Path(self.package_folder) / "linker_scripts"
+            # If the platform matches the linker script, just use that linker
+            # script
+            self.cpp_info.exelinkflags.append("-L" + str(LINKER_SCRIPTS_PATH))
+
+            FULL_LINKER_PATH: Path = LINKER_SCRIPTS_PATH / (platform + ".ld")
+            # if the file exists, then we should use it as the linker
+            if FULL_LINKER_PATH.exists():
+                self.output.info(f"linker file '{FULL_LINKER_PATH}' found!")
+                self.cpp_info.exelinkflags.append("-T" + platform + ".ld")
+            else:
+                # if there is no match, then the linker script could be a
+                # pattern based on the name of the platform
+                self._append_linker_using_platform(platform)
+
+            if self.settings.compiler == "gcc":
+                self.cpp_info.exelinkflags.append("-Tpicolibc_gcc.ld")
+            if self.settings.compiler == "clang":
+                self.cpp_info.exelinkflags.append("-Tpicolibc_llvm.ld")
+
+        package_folder = Path(self.package_folder)
+        LIB_PATH = package_folder / 'lib' / 'liblibhal-arm-mcu.a'
+        self.cpp_info.exelinkflags.extend([
+            # Ensure that all symbols are added to the linker's symbol table
+            # This is critical in order for the wrapped symbols to make it to
+            # the final link binary with --gc-sections enabled.
+            # NOTE: gc sections still works as expected, it just doesn't miss
+            # any symbols from this archive.
+            "-Wl,--whole-archive",
+            str(LIB_PATH),
+            "-Wl,--no-whole-archive",
+        ])
+
+    def _append_linker_using_platform(self, platform: str):
+        if platform.startswith("stm32f1"):
+            linker_script_name = list(str(self.options.platform))
+            # Replace the MCU number and pin count number with 'x' (don't care)
+            # to map to the linker script
+            linker_script_name[8] = 'x'
+            linker_script_name[9] = 'x'
+            linker_script_name = "".join(linker_script_name)
+            self.cpp_info.exelinkflags.append(
+                "-T" + linker_script_name + ".ld")
+            return
+        # Add additional script searching queries here

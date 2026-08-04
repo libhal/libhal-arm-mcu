@@ -30,7 +30,7 @@ if(NOT CMAKE_GENERATOR MATCHES "Ninja|Visual Studio")
     message(FATAL_ERROR "C++20 modules require Ninja or Visual Studio generator")
 endif()
 
-find_package(libhal REQUIRED CONFIG)
+find_package(libhal-arm-mcu REQUIRED)
 
 # Suppress clang's "argument unused during compilation: '-c'" warning that
 # fires during CMake's C++20 module dependency scanning phase. clang-scan-deps
@@ -46,19 +46,7 @@ add_executable(${PROJECT_NAME} main.cpp)
 target_include_directories(${PROJECT_NAME} PUBLIC .)
 target_compile_features(${PROJECT_NAME} PRIVATE cxx_std_23)
 target_compile_options(${PROJECT_NAME} PRIVATE -fno-rtti)
-target_link_libraries(${PROJECT_NAME} PRIVATE libhal::libhal)
-
-
-# ==============================================================================
-# NOTICE: Everything below this line is simply here for testing and CI
-#         purposes. If CI fails, having a detailed trace of what went wrong is
-#         very helpful.
-# ==============================================================================
-
-if (NOT CMAKE_CROSSCOMPILING)
-    target_compile_options(${PROJECT_NAME} PRIVATE -fsanitize=address)
-    target_link_options(${PROJECT_NAME} PRIVATE -g -fsanitize=address)
-endif(NOT CMAKE_CROSSCOMPILING)
+target_link_libraries(${PROJECT_NAME} PRIVATE libhal::arm-mcu)
 
 # Always run this custom target by making it depend on ALL
 add_custom_target(copy_compile_commands ALL

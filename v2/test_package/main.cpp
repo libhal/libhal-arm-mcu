@@ -19,8 +19,7 @@
 #include <span>
 #include <variant>
 
-import hal;
-import async_context;
+import hal.arm_mcu;
 
 using namespace std::literals;
 

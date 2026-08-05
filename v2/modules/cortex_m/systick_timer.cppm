@@ -63,8 +63,6 @@ constexpr auto count_flag = hal::bit_mask::from<16>();
 
 /// The address of the sys_tick register
 constexpr auto systick_address = static_cast<uptr>(0xE000'E010UL);
-/// The IRQ number for the SysTick interrupt vector
-constexpr u16 event_number = 15;
 
 /// @return auto* - Address of the ARM Cortex SysTick peripheral
 // NOLINTNEXTLINE(performance-no-int-to-ptr)
@@ -175,17 +173,49 @@ public:
   ~systick_timer() override
   {
     systick_stop();
-    disable_interrupt(event_number);
+    disable_interrupt(irq::systick);
     if (s_active == this) {
       s_active = nullptr;
     }
   }
 
 private:
+  static constexpr u32 maximum = 0x00FF'FFFF;
+
   static void isr()
   {
-    if (s_active != nullptr && s_active->m_callback.has_value()) {
-      s_active->m_callback.value()->callback();
+    if (s_active == nullptr) {
+      systick_stop();
+      return;
+    }
+
+    auto& active = *s_active;
+
+    if (active.m_remaining_counts > maximum) {
+      sys_tick->current_value = 0;
+      sys_tick->reload = maximum;
+      active.m_remaining_counts -= maximum;
+      systick_start();
+      return;
+    } else if (active.m_remaining_counts > 0) {
+      sys_tick->current_value = 0;
+      // NOTE: This value is safe to cast without narrowing due to the if
+      // statement before it that checks if the value is greater than maximum.
+      sys_tick->reload = static_cast<std::uint32_t>(active.m_remaining_counts);
+      active.m_remaining_counts = 0;
+      systick_start();
+      return;
+    }
+
+    // remaining counts is 0, time to execute callback
+
+    if (active.m_callback.has_value()) {
+      active.m_callback.value()->callback();
+    }
+
+    if (active.m_mode == timer_mode::one_shot) {
+      systick_stop();
+      active.m_callback.reset();
     }
   }
 
@@ -195,7 +225,8 @@ private:
   }
 
   void driver_schedule(mem::optional_ptr<hal::timed_callback> const& p_callback,
-                       hal::time_duration p_delay) override
+                       hal::time_duration p_delay,
+                       hal::timer_mode p_mode) override
   {
     systick_stop();
 
@@ -204,22 +235,22 @@ private:
       return;
     }
 
-    constexpr std::int64_t maximum = 0x00FF'FFFF;
-    auto cycle_count =
-      static_cast<std::int64_t>(hal::cycles_per(m_frequency, p_delay));
+    auto cycle_count = hal::cycles_per(m_frequency, p_delay);
 
     if (cycle_count <= 1) {
       cycle_count = 1;
     } else if (cycle_count > maximum) {
-      throw hal::argument_out_of_domain(this);
+      m_remaining_counts = cycle_count - maximum;
+      cycle_count = maximum;
     }
 
     m_callback = p_callback;
+    m_mode = p_mode;
     s_active = this;
 
     // Enable interrupt service routine for SysTick and use this callback as
     // the handler
-    enable_interrupt(event_number, &isr);
+    enable_interrupt(irq::systick, &isr);
 
     sys_tick->current_value = 0;
     sys_tick->reload = static_cast<std::uint32_t>(cycle_count);
@@ -232,5 +263,7 @@ private:
 
   hertz m_frequency{ 1 * mp_units::si::unit_symbols::MHz };
   mem::optional_ptr<hal::timed_callback> m_callback;
+  timer_mode m_mode = timer_mode::one_shot;
+  u64 m_remaining_counts = 0;
 };
 }  // namespace hal::cortex_m

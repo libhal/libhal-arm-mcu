@@ -45,7 +45,7 @@ constexpr uptr rcc_address = 0x40000000 + 0x20000 + 0x1000;
 
 /// Reset and Clock Control (RCC) peripheral register
 // NOLINTNEXTLINE(performance-no-int-to-ptr)
-inline auto* rcc = reinterpret_cast<reset_and_clock_control_t*>(rcc_address);
+auto* rcc = reinterpret_cast<reset_and_clock_control_t*>(rcc_address);
 
 /// Information about where a peripheral's enable/reset bit lives
 struct rcc_register_info

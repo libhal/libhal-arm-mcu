@@ -135,6 +135,13 @@ class libhal_arm_mcu_conan(ConanFile):
     def generate(self):
         tc = CMakeToolchain(self)
         tc.generator = "Ninja"
+        tc.variables["LIBHAL_REPLACE_STD_TERMINATE"] = bool(
+            self.options.replace_std_terminate)
+        tc.variables["LIBHAL_USE_DEFAULT_LINKER_SCRIPT"] = bool(
+            self.options.use_default_linker_script)
+        if self.options.use_default_linker_script:
+            tc.variables["LIBHAL_LINKER_SCRIPT"] = self._resolve_linker_script(
+                str(self.options.platform))
         tc.generate()
 
         deps = CMakeDeps(self)
@@ -161,96 +168,32 @@ class libhal_arm_mcu_conan(ConanFile):
         self.buildenv_info.define("LIBHAL_PLATFORM", PLATFORM)
         self.buildenv_info.define("LIBHAL_PLATFORM_LIBRARY", "arm-mcu")
 
-        self.cpp_info.exelinkflags = []
-        # if self.settings.os == "baremetal":
-        self._setup_baremetal(PLATFORM)
-
-        # DISABLE Conan's config file generation
+        # DISABLE Conan's config file generation. The real CMake config is
+        # exported by libhal_install_library() in CMakeLists.txt, which
+        # already carries the wrap/linker-script/whole-archive flags baked
+        # in as INTERFACE link options (set from the toolchain variables
+        # computed in generate()).
         self.cpp_info.set_property("cmake_find_mode", "none")
         # Tell CMake to include this directory in its search path
         self.cpp_info.builddirs.append("lib/cmake")
 
+    def _resolve_linker_script(self, platform: str) -> str:
+        """Resolve the platform name to a linker script base name (without
+        the .ld extension). If no script matches the platform name exactly,
+        falls back to pattern matching based on the platform name."""
+        scripts_dir = Path(self.source_folder) / "linker_scripts"
 
-    def _setup_baremetal(self, platform: str):
-        if self.options.replace_std_terminate:
-            self.cpp_info.exelinkflags.extend([
-                # Override picolibc's default hard fault handler to gracefully
-                # handle semihosting BKPT instructions when no debugger is
-                # attached. Without this, binaries linked with semihosting
-                # libraries will hang in an infinite loop if executed without a
-                # debugger. This wrapper detects BKPT-induced faults, skips the
-                # instruction, and allows execution to continue, enabling test
-                # packages to link successfully while allowing applications to
-                # run standalone.
-                "-Wl,--wrap=arm_hardfault_isr",
-                # Override the default standard set and get terminate functions
-                # to prevent linking in the original default verbose terminate
-                # implementation.
-                "-Wl,--wrap=_ZSt13set_terminatePFvvE",
-                "-Wl,--wrap=_ZSt13get_terminatev",
-            ])
+        if (scripts_dir / f"{platform}.ld").exists():
+            return platform
 
-        if self.options.replace_std_terminate:
-            if self.settings.compiler == "clang":
-                self.cpp_info.exelinkflags.extend([
-                    # Overrides the terminate handler from LLVM
-                    # This results in a large reduction in binary size since this
-                    # terminate handler renders text and that text rendering is
-                    # expensive.
-                    "-Wl,--wrap=__cxa_terminate_handler",
-                ])
-            if self.settings.compiler == "gcc":
-                self.cpp_info.exelinkflags.extend([
-                    # Override the terminate handler for GCC.
-                    # This results in a large reduction in binary size since this
-                    # terminate handler renders text and that text rendering is
-                    # expensive.
-                    "-Wl,--wrap=_ZN10__cxxabiv119__terminate_handlerE",
-                ])
-
-        if self.options.use_default_linker_script:
-            LINKER_SCRIPTS_PATH = Path(self.package_folder) / "linker_scripts"
-            # If the platform matches the linker script, just use that linker
-            # script
-            self.cpp_info.exelinkflags.append("-L" + str(LINKER_SCRIPTS_PATH))
-
-            FULL_LINKER_PATH: Path = LINKER_SCRIPTS_PATH / (platform + ".ld")
-            # if the file exists, then we should use it as the linker
-            if FULL_LINKER_PATH.exists():
-                self.output.info(f"linker file '{FULL_LINKER_PATH}' found!")
-                self.cpp_info.exelinkflags.append("-T" + platform + ".ld")
-            else:
-                # if there is no match, then the linker script could be a
-                # pattern based on the name of the platform
-                self._append_linker_using_platform(platform)
-
-            if self.settings.compiler == "gcc":
-                self.cpp_info.exelinkflags.append("-Tpicolibc_gcc.ld")
-            if self.settings.compiler == "clang":
-                self.cpp_info.exelinkflags.append("-Tpicolibc_llvm.ld")
-
-        package_folder = Path(self.package_folder)
-        LIB_PATH = package_folder / 'lib' / 'liblibhal-arm-mcu.a'
-        self.cpp_info.exelinkflags.extend([
-            # Ensure that all symbols are added to the linker's symbol table
-            # This is critical in order for the wrapped symbols to make it to
-            # the final link binary with --gc-sections enabled.
-            # NOTE: gc sections still works as expected, it just doesn't miss
-            # any symbols from this archive.
-            "-Wl,--whole-archive",
-            str(LIB_PATH),
-            "-Wl,--no-whole-archive",
-        ])
-
-    def _append_linker_using_platform(self, platform: str):
         if platform.startswith("stm32f1"):
-            linker_script_name = list(str(self.options.platform))
-            # Replace the MCU number and pin count number with 'x' (don't care)
-            # to map to the linker script
+            # Replace the MCU density code and pin count number with 'x'
+            # (don't care) to map to the linker script,
+            # e.g. stm32f103c8 -> stm32f10xx8
+            linker_script_name = list(platform)
             linker_script_name[8] = 'x'
             linker_script_name[9] = 'x'
-            linker_script_name = "".join(linker_script_name)
-            self.cpp_info.exelinkflags.append(
-                "-T" + linker_script_name + ".ld")
-            return
-        # Add additional script searching queries here
+            return "".join(linker_script_name)
+
+        # Add additional pattern matching here
+        return platform

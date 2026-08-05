@@ -134,17 +134,17 @@ private:
 };
 }  // namespace
 
-hal::ptr<hal::input_pin> create_input_pin(hal::allocator p_allocator,
-                                          pin p_pin,
-                                          pin_settings const& p_settings)
+hal::ptr<hal::input_pin> input_pin::create(hal::allocator p_allocator,
+                                           pin p_pin,
+                                           pin_settings const& p_settings)
 {
   return hal::allocate<input>(p_allocator, p_pin, p_settings);
 }
 
-hal::ptr<hal::output_pin> create_output_pin(hal::allocator p_allocator,
-                                            pin p_pin,
-                                            pin_settings const& p_settings,
-                                            output_speed p_speed)
+hal::ptr<hal::output_pin> output_pin::create(hal::allocator p_allocator,
+                                             pin p_pin,
+                                             pin_settings const& p_settings,
+                                             output_speed p_speed)
 {
   return hal::allocate<output>(p_allocator, p_pin, p_settings, p_speed);
 }

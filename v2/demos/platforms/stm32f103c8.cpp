@@ -25,7 +25,7 @@ namespace resources {
 // using namespace hal::literals;
 using st_peripheral = hal::stm32f1::peripheral;
 
-std::array<hal::byte, 1024> driver_memory{};
+std::array<hal::byte, 512> driver_memory{};
 std::pmr::monotonic_buffer_resource resource(driver_memory.data(),
                                              driver_memory.size(),
                                              std::pmr::null_memory_resource());
@@ -35,25 +35,23 @@ hal::allocator driver_allocator()
   return &resource;
 }
 
-#if 0
-hal::ptr<hal::steady_clock> clock()
+hal::ptr<hal::timed_interrupt> timer()
 {
   auto const cpu_frequency = hal::stm32f1::frequency(st_peripheral::cpu);
-  return hal::allocate<hal::cortex_m::dwt_counter>(driver_allocator(),
-                                                   cpu_frequency);
+  return hal::allocate<hal::cortex_m::systick_timer>(driver_allocator(),
+                                                     cpu_frequency);
 }
-#endif
 
 hal::ptr<hal::output_pin> status_led()
 {
-  return hal::stm32f1::create_output_pin(driver_allocator(),
-                                         { .port = 'C', .pin = 13 });
+  return hal::stm32f1::output_pin::create(driver_allocator(),
+                                          { .port = 'C', .pin = 13 });
 }
 
 hal::ptr<hal::input_pin> input_pin()
 {
-  return hal::stm32f1::create_input_pin(driver_allocator(),
-                                        { .port = 'B', .pin = 4 });
+  return hal::stm32f1::input_pin::create(driver_allocator(),
+                                         { .port = 'B', .pin = 4 });
 }
 }  // namespace resources
 
@@ -61,10 +59,12 @@ void initialize_platform()
 {
   // using namespace hal::literals;
   // std::set_terminate(resources::terminate_handler);
+  hal::cortex_m::initialize_interrupts<hal::stm32f1::irq::max>();
+
   // Set the MCU to the maximum clock speed
 #if 0
   hal::stm32f1::configure_clocks(hal::stm32f1::clock_tree{
-    .high_speed_external = 8'000'000,
+    .high_speed_external = 8 * MHz,
     .pll = {
       .enable = true,
       .source = hal::stm32f1::pll_source::high_speed_external,

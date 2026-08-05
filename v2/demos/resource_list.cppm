@@ -29,7 +29,7 @@ export namespace resources {
  * @return std::pmr::polymorphic_allocator<>
  */
 hal::allocator driver_allocator();
-// hal::ptr<hal::steady_clock> clock();
+hal::ptr<hal::timed_interrupt> timer();
 hal::ptr<hal::output_pin> status_led();
 hal::ptr<hal::input_pin> input_pin();
 

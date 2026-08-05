@@ -145,21 +145,6 @@ export void* get_interrupt_vector_table_address()
 }
 
 /**
- * @brief Request reset from CPU
- *
- */
-export [[noreturn]] void reset()
-{
-  // Value "0x5FA" must be written to the VECTKEY field [31:16] to confirm
-  // that this action is valid, otherwise the processor ignores the write
-  // command.
-  // Bit 2 is the SYSRESETREQ bit.
-  scb->aircr = (0x5FA << 16) | (1 << 2);
-  // System reset is asynchronous, so the code needs to wait.
-  hal::halt();
-}
-
-/**
  * @brief Executes WFI instruction
  *
  * The WFI instruction stops the CPU, reducing power, and wakes up on
@@ -204,8 +189,23 @@ export bool debugger_connected()
   return false;
 #endif
 }
+
+/**
+ * @brief Request reset from CPU
+ *
+ */
+export [[noreturn]] void reset()
+{
+  // Value "0x5FA" must be written to the VECTKEY field [31:16] to confirm
+  // that this action is valid, otherwise the processor ignores the write
+  // command.
+  // Bit 2 is the SYSRESETREQ bit.
+  scb->aircr = (0x5FA << 16) | (1 << 2);
+  // System reset is asynchronous, so the code needs to wait.
+  hal::halt();
+}
 }  // namespace hal::cortex_m
-#if 0
+
 extern "C"
 {
   // The implementation of LLVM calls a calls the breakpoint instruction
@@ -214,7 +214,8 @@ extern "C"
   // around this, we replace sys_semihost and check if a debugger is
   // connected. If it is connected we call the breakpoint instruction with the
   // appropriate input value 0xAB. Otherwise, return an error code.
-  int sys_semihost([[maybe_unused]] int p_reason, [[maybe_unused]] void* p_arg)
+  int __wrap_sys_semihost([[maybe_unused]] int p_reason,
+                          [[maybe_unused]] void* p_arg)
   {
     if (hal::cortex_m::debugger_connected()) {
 #if defined(__thumb2__)
@@ -229,12 +230,12 @@ extern "C"
     return -1;  // No debugger, return error
   }
 
-  char* sys_semihost_get_cmdline()
+  char* __wrap_sys_semihost_get_cmdline()
   {
     if (hal::cortex_m::debugger_connected()) {
       // SYS_GET_CMDLINE is semihost operation 0x15
       static char cmdline[256];
-      int result = sys_semihost(0x15, cmdline);
+      int result = __wrap_sys_semihost(0x15, cmdline);
       if (result == 0) {
         return cmdline;
       }
@@ -243,4 +244,3 @@ extern "C"
     return empty;
   }
 }
-#endif

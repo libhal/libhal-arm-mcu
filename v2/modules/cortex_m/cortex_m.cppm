@@ -6,3 +6,4 @@ export import :interrupt;
 export import :startup;
 export import :system_control;
 export import :systick_timer;
+import :terminate_handler;

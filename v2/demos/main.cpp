@@ -48,37 +48,24 @@ int main()
   coroutine_stack.sync_wait([&timer, &waker](hal::time_duration p_sleep_time) {
     s_resumer.fired = false;
 
-    // 2. Schedule the timer while interrupts are "masked"
     timer->schedule(waker, p_sleep_time, hal::timer_mode::one_shot);
 
-    // 3. The Sleep Loop
     while (!s_resumer.fired) {
-      // Check if the ISR already ran (it would have updated 'fired'
-      // while we were in the 'disabled' state)
+      if (not hal::cortex_m::debugger_connected()) {
+        continue;  // loop if the debugger is connected
+      }
+
+      // Disable interrupts to sleep safely without losing interrupts.
+      hal::cortex_m::disable_all_interrupts();
+
       if (s_resumer.fired) {
+        hal::cortex_m::enable_all_interrupts();
         break;
       }
 
-      // Enter low-power sleep.
-      // WFI will wake CPU even if interrupts are disabled.
-      if (hal::cortex_m::debugger_connected()) {
-        continue;
-      }
-
       hal::cortex_m::wait_for_interrupt();
-
-      // 4. Wake up! Re-enable interrupts so the ISRs can actually run.
       hal::cortex_m::enable_all_interrupts();
-
-      // 5. Check if the event that woke the CPU was actually the timer
-      if (!s_resumer.fired) {
-        // It was a "spurious" wakeup (e.g. SysTick).
-        // Go back to sleep by re-disabling interrupts.
-        hal::cortex_m::disable_all_interrupts();
-      }
     }
-
-    hal::cortex_m::enable_all_interrupts();
   });
 
   std::terminate();

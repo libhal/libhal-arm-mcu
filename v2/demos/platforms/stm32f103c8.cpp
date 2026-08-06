@@ -57,7 +57,6 @@ hal::ptr<hal::input_pin> input_pin()
 
 void initialize_platform()
 {
-  // using namespace hal::literals;
   // std::set_terminate(resources::terminate_handler);
   hal::cortex_m::initialize_interrupts<hal::stm32f1::irq::max>();
 
@@ -88,6 +87,7 @@ void initialize_platform()
     },
   });
 #endif
+
   hal::stm32f1::activate_mco_pa8(
     hal::stm32f1::mco_source::pll_clock_divided_by_2);
 

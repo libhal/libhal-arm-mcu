@@ -31,6 +31,6 @@ hal::task application(async::context& p_ctx)
     co_await 500ms;
 
     co_await led->level(p_ctx, true);
-    co_await 3s;
+    co_await 2s;
   }
 }

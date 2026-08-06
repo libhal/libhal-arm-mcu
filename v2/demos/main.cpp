@@ -42,8 +42,10 @@ resumer s_resumer{};
 int main()
 {
   initialize_platform();
+
   hal::ptr<resumer> waker(mem::unsafe_assume_static_tag{}, s_resumer);
   auto timer = resources::timer();
+
   auto future = application(coroutine_stack);
 
   coroutine_stack.sync_wait([&timer, &waker](hal::time_duration p_sleep_time) {

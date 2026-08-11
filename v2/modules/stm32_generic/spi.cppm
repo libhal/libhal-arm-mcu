@@ -161,6 +161,126 @@ bool rx_not_empty(spi_reg_t& p_reg)
 }
 
 /**
+ * @brief Select the CR1 baud rate control (prescaler) field that gets a spi
+ * bus running at `p_peripheral_clock_speed` as close as possible to, but not
+ * above, `p_requested_clock_rate`.
+ *
+ * @throws hal::operation_not_supported - if `p_requested_clock_rate` is
+ * higher than the bus can achieve even at the lowest available prescaler.
+ */
+std::uint16_t select_baud_rate_control(hal::hertz p_peripheral_clock_speed,
+                                       hal::hertz p_requested_clock_rate)
+{
+  auto const peripheral_clock_speed_value =
+    p_peripheral_clock_speed.numerical_value_in(hal::hertz::unit);
+  auto const clock_rate_value =
+    p_requested_clock_rate.numerical_value_in(hal::hertz::unit);
+  auto const clock_divider = peripheral_clock_speed_value / clock_rate_value;
+  auto prescaler = static_cast<std::uint16_t>(clock_divider);
+
+  if (prescaler <= 1) {
+    prescaler = 2;
+  } else if (prescaler > 256) {
+    throw hal::operation_not_supported(nullptr);
+  }
+
+  std::uint16_t baud_control = 15 - std::countl_zero(prescaler);
+  if (std::has_single_bit(prescaler)) {
+    baud_control--;
+  }
+
+  return baud_control;
+}
+
+/**
+ * @brief Compute the spi bus clock rate that `configure()` would achieve for
+ * a given peripheral clock and requested clock rate, without touching any
+ * hardware state.
+ *
+ * The achieved rate is always less than or equal to `p_requested_clock_rate`.
+ * This is meant for platform specific spi drivers that need to answer
+ * `hal::spi_channel::clock_rate()` for a channel that may not currently be
+ * the one selected on the bus, and therefore cannot be answered by simply
+ * reading back live hardware registers.
+ *
+ * @throws hal::operation_not_supported - if `p_requested_clock_rate` is
+ * higher than the bus can achieve even at the lowest available prescaler.
+ */
+export hal::hertz achievable_clock_rate(hal::hertz p_peripheral_clock_speed,
+                                        hal::hertz p_requested_clock_rate)
+{
+  auto const baud_control =
+    select_baud_rate_control(p_peripheral_clock_speed, p_requested_clock_rate);
+  auto const divider = 1U << (baud_control + 1U);
+  auto const peripheral_clock_speed_value = static_cast<std::uint32_t>(
+    p_peripheral_clock_speed.numerical_value_in(hal::hertz::unit));
+
+  return (peripheral_clock_speed_value / divider) * hal::hertz::unit;
+}
+
+/**
+ * @brief Sequential, one-element-at-a-time cursor over a `scatter_span`
+ *
+ * Walks the constituent chunks of a `scatter_span<T>` as if it were one
+ * contiguous range, skipping over empty chunks. Used to drive a byte-by-byte
+ * spi transfer across a caller-supplied set of discontiguous buffers without
+ * requiring random access into the `scatter_span` (which it does not
+ * support).
+ *
+ * @tparam T - element type of the underlying scatter_span. Use a `const`
+ * qualified type for a read-only cursor and an unqualified type for a
+ * cursor whose `current()` element can be written to.
+ */
+template<typename T>
+class scatter_cursor
+{
+public:
+  explicit scatter_cursor(mem::scatter_span<T> p_span)
+    : m_it(p_span.begin())
+    , m_end(p_span.end())
+  {
+    skip_empty_chunks();
+  }
+
+  /// @return true if every element of the scatter_span has been visited
+  [[nodiscard]] bool done() const
+  {
+    return m_it == m_end;
+  }
+
+  /// @return reference to the element at the cursor's current position.
+  /// Calling this when `done()` is true is undefined behavior.
+  [[nodiscard]] T& current()
+  {
+    return (*m_it)[m_offset];
+  }
+
+  /// Move the cursor to the next element, advancing past chunk boundaries
+  /// (including empty chunks) as needed.
+  void advance()
+  {
+    ++m_offset;
+    if (m_offset >= (*m_it).size()) {
+      ++m_it;
+      m_offset = 0;
+      skip_empty_chunks();
+    }
+  }
+
+private:
+  void skip_empty_chunks()
+  {
+    while (m_it != m_end and (*m_it).empty()) {
+      ++m_it;
+    }
+  }
+
+  mem::scatter_span_iterator<T> m_it;
+  mem::scatter_span_iterator<T> m_end;
+  std::size_t m_offset = 0;
+};
+
+/**
  * @brief A generic spi implementation for all stm32f series MCUs
  *
  * This class is meant to only be used by platform libraries or drivers
@@ -235,36 +355,23 @@ public:
    * cannot be achieved by the spi bus.
    */
   void configure(hal::spi_channel::settings const& p_settings,
-                hal::hertz p_peripheral_clock_speed)
+                 hal::hertz p_peripheral_clock_speed)
   {
     auto& regs = reg();
 
-    auto const peripheral_clock_speed_value =
-      p_peripheral_clock_speed.numerical_value_in(hal::hertz::unit);
-    auto const clock_rate_value =
-      p_settings.clock_rate.numerical_value_in(hal::hertz::unit);
-    auto const clock_divider = peripheral_clock_speed_value / clock_rate_value;
-    auto prescaler = static_cast<std::uint16_t>(clock_divider);
-
-    if (prescaler <= 1) {
-      prescaler = 2;
-    } else if (prescaler > 256) {
-      throw hal::operation_not_supported(this);
-    }
-
-    std::uint16_t baud_control = 15 - std::countl_zero(prescaler);
-    if (std::has_single_bit(prescaler)) {
-      baud_control--;
-    }
+    auto const baud_control =
+      select_baud_rate_control(p_peripheral_clock_speed, p_settings.clock_rate);
 
     // spi mode determines clock polarity (CPOL) and clock phase (CPHA):
     //
     //   m0: CPOL 0, CPHA 0        m2: CPOL 1, CPHA 0
     //   m1: CPOL 0, CPHA 1        m3: CPOL 1, CPHA 1
-    bool const clock_polarity = p_settings.bus_mode == hal::spi_channel::mode::m2 ||
-                                p_settings.bus_mode == hal::spi_channel::mode::m3;
-    bool const clock_phase = p_settings.bus_mode == hal::spi_channel::mode::m1 ||
-                             p_settings.bus_mode == hal::spi_channel::mode::m3;
+    bool const clock_polarity =
+      p_settings.bus_mode == hal::spi_channel::mode::m2 ||
+      p_settings.bus_mode == hal::spi_channel::mode::m3;
+    bool const clock_phase =
+      p_settings.bus_mode == hal::spi_channel::mode::m1 ||
+      p_settings.bus_mode == hal::spi_channel::mode::m3;
 
     bit_modify(regs.cr2)
       .clear<control_register2::rx_dma_enable>()
@@ -299,18 +406,20 @@ public:
    *
    * This call blocks until the transfer has completed.
    *
-   * @param p_data_out - outgoing data
-   * @param p_data_in - incoming data
+   * @param p_data_out - outgoing data, possibly spread across multiple
+   * discontiguous chunks
+   * @param p_data_in - incoming data, possibly spread across multiple
+   * discontiguous chunks
    * @param p_filler - output filler bytes if the outgoing data runs out
    * before the incoming data.
    */
-  void transfer(std::span<hal::byte const> p_data_out,
-               std::span<hal::byte> p_data_in,
-               hal::byte p_filler)
+  void transfer(mem::scatter_span<hal::byte const> p_data_out,
+                mem::scatter_span<hal::byte> p_data_in,
+                hal::byte p_filler)
   {
     auto& regs = reg();
     std::size_t const max_length =
-      std::max(p_data_in.size(), p_data_out.size());
+      std::max(p_data_in.length(), p_data_out.length());
 
     // NOTE: This is a paranoid check to determine that there is no bus
     // activity before proceeding
@@ -324,13 +433,15 @@ public:
     // internal enable signal.
     bit_modify(regs.cr1).clear<control_register1::internal_slave_select>();
 
-    for (std::size_t index = 0; index < max_length; index++) {
-      hal::byte byte = 0;
+    scatter_cursor<hal::byte const> out_cursor(p_data_out);
+    scatter_cursor<hal::byte> in_cursor(p_data_in);
 
-      if (index < p_data_out.size()) {
-        byte = p_data_out[index];
-      } else {
-        byte = p_filler;
+    for (std::size_t index = 0; index < max_length; index++) {
+      hal::byte byte = p_filler;
+
+      if (not out_cursor.done()) {
+        byte = out_cursor.current();
+        out_cursor.advance();
       }
 
       while (not tx_empty(regs)) {
@@ -344,8 +455,9 @@ public:
       }
 
       byte = static_cast<std::uint8_t>(regs.dr);
-      if (index < p_data_in.size()) {
-        p_data_in[index] = byte;
+      if (not in_cursor.done()) {
+        in_cursor.current() = byte;
+        in_cursor.advance();
       }
     }
 
@@ -355,6 +467,27 @@ public:
     while (busy(regs)) {
       continue;
     }
+  }
+
+  /**
+   * @brief Perform a transfer operation over contiguous buffers
+   *
+   * Convenience overload of `transfer(scatter_span<byte const>,
+   * scatter_span<byte>, byte)` for callers that already have contiguous
+   * `std::span` buffers.
+   *
+   * @param p_data_out - outgoing data
+   * @param p_data_in - incoming data
+   * @param p_filler - output filler bytes if the outgoing data runs out
+   * before the incoming data.
+   */
+  void transfer(std::span<hal::byte const> p_data_out,
+                std::span<hal::byte> p_data_in,
+                hal::byte p_filler)
+  {
+    transfer(mem::scatter_span<hal::byte const>({ p_data_out }),
+             mem::scatter_span<hal::byte>({ p_data_in }),
+             p_filler);
   }
 
 private:

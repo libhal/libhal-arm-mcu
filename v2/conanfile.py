@@ -33,9 +33,34 @@ class libhal_arm_mcu_conan(ConanFile):
     description = ()
     topics = ()
     settings = "compiler", "build_type", "os", "arch"
-    exports_sources = "modules/*", "src/*", "tests/*", "CMakeLists.txt", "LICENSE"
+    exports_sources = "modules/*", "src/*", "tests/*", "CMakeLists.txt", "LICENSE", "linker_scripts/*"
     package_type = "static-library"
     shared = False
+
+    options = {
+        "platform": ["ANY"],
+        "use_libhal_exceptions": [True, False],
+        "use_picolibc": [True, False],
+        "use_default_linker_script": [True, False],
+        "replace_std_terminate": [True, False],
+        "use_semihosting": [True, False],
+    }
+    default_options = {
+        "platform": "ANY",
+        "use_libhal_exceptions": True,
+        "use_picolibc": True,
+        "use_default_linker_script": True,
+        "replace_std_terminate": True,
+        "use_semihosting": True,
+    }
+    options_description = {
+        "platform": "Specifies which platform to provide binaries and build information for",
+        "use_libhal_exceptions": "Reserved for backwards compatibility. This option is currently unused and will become functional when libhal-exceptions is feature complete.",
+        "use_picolibc": "Use picolibc as the libc runtime for ARM GCC. Note: ARM's LLVM fork always uses picolibc and ignores this option.",
+        "use_default_linker_script": "Enable automatic linker script selection based on the specified platform",
+        "replace_std_terminate": "Replace the default std::terminate handler to reduce binary size by avoiding verbose text rendering",
+        "use_semihosting": "Enables semihosting support, allowing the MCU to perform host based I/O like writing to stdout or reading from files via the debug port. With LLVM from arm-toolchain, semihosting is enabled via the compiler and must be disabled via a build profile option and not this option.",
+    }
 
     @property
     def _min_cppstd(self):
@@ -110,6 +135,13 @@ class libhal_arm_mcu_conan(ConanFile):
     def generate(self):
         tc = CMakeToolchain(self)
         tc.generator = "Ninja"
+        tc.variables["LIBHAL_REPLACE_STD_TERMINATE"] = bool(
+            self.options.replace_std_terminate)
+        tc.variables["LIBHAL_USE_DEFAULT_LINKER_SCRIPT"] = bool(
+            self.options.use_default_linker_script)
+        if self.options.use_default_linker_script:
+            tc.variables["LIBHAL_LINKER_SCRIPT"] = self._resolve_linker_script(
+                str(self.options.platform))
         tc.generate()
 
         deps = CMakeDeps(self)
@@ -131,7 +163,37 @@ class libhal_arm_mcu_conan(ConanFile):
              src=self.source_folder)
 
     def package_info(self):
-        # DISABLE Conan's config file generation
+
+        PLATFORM = str(self.options.platform)
+        self.buildenv_info.define("LIBHAL_PLATFORM", PLATFORM)
+        self.buildenv_info.define("LIBHAL_PLATFORM_LIBRARY", "arm-mcu")
+
+        # DISABLE Conan's config file generation. The real CMake config is
+        # exported by libhal_install_library() in CMakeLists.txt, which
+        # already carries the wrap/linker-script/whole-archive flags baked
+        # in as INTERFACE link options (set from the toolchain variables
+        # computed in generate()).
         self.cpp_info.set_property("cmake_find_mode", "none")
         # Tell CMake to include this directory in its search path
         self.cpp_info.builddirs.append("lib/cmake")
+
+    def _resolve_linker_script(self, platform: str) -> str:
+        """Resolve the platform name to a linker script base name (without
+        the .ld extension). If no script matches the platform name exactly,
+        falls back to pattern matching based on the platform name."""
+        scripts_dir = Path(self.source_folder) / "linker_scripts"
+
+        if (scripts_dir / f"{platform}.ld").exists():
+            return platform
+
+        if platform.startswith("stm32f1"):
+            # Replace the MCU density code and pin count number with 'x'
+            # (don't care) to map to the linker script,
+            # e.g. stm32f103c8 -> stm32f10xx8
+            linker_script_name = list(platform)
+            linker_script_name[8] = 'x'
+            linker_script_name[9] = 'x'
+            return "".join(linker_script_name)
+
+        # Add additional pattern matching here
+        return platform

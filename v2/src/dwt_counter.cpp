@@ -12,9 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+module;
+
 #include <array>
 
-module hal.arm_mcu.cortex_m:dwt_counter;
+module hal.arm_mcu.cortex_m;
 
 import hal;
 
@@ -128,12 +130,12 @@ void dwt_counter::register_cpu_frequency(hertz p_cpu_frequency)
   m_cpu_frequency = p_cpu_frequency;
 }
 
-std::uint64_t dwt_counter::driver_uptime()
+async::future<u64> dwt_counter::driver_uptime(async::context&)
 {
   return m_uptime.update(dwt->cyccnt);
 }
 
-hal::hertz dwt_counter::driver_frequency()
+async::future<hertz> dwt_counter::driver_frequency(async::context&)
 {
   return m_cpu_frequency;
 }

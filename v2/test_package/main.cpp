@@ -15,12 +15,11 @@
 #include <chrono>
 #include <coroutine>
 #include <memory_resource>
-#include <print>
+// #include <print>
 #include <span>
 #include <variant>
 
-import hal;
-import async_context;
+import hal.arm_mcu;
 
 using namespace std::literals;
 
@@ -35,7 +34,7 @@ private:
   async::future<void> driver_duty_cycle(async::context&,
                                         hal::u16 p_duty_cycle) final
   {
-    std::println("duty cycle = {}/{}", p_duty_cycle, (1 << 16) - 1);
+    // std::println("duty cycle = {}/{}", p_duty_cycle, (1 << 16) - 1);
     return {};
   }
 };
@@ -46,16 +45,16 @@ async::future<int> app_main(async::context& p_ctx,
   try {
     auto pwm_frequency_int = (co_await p_pwm->frequency(p_ctx))
                                .numerical_value_in(mp_units::si::hertz);
-    std::println("PWM frequency = {}", pwm_frequency_int);
+    // std::println("PWM frequency = {}", pwm_frequency_int);
     co_await p_pwm->duty_cycle(p_ctx, 1 << 15);
     co_await p_pwm->duty_cycle(p_ctx, 1 << 14);
     co_await p_pwm->duty_cycle(p_ctx, 1 << 13);
     co_await p_pwm->duty_cycle(p_ctx, 1 << 12);
   } catch (hal::argument_out_of_domain const& p_errc) {
-    std::println("Caught argument_out_of_domain error successfully!");
-    std::println("    Object address: {}", p_errc.instance());
+    // std::println("Caught argument_out_of_domain error successfully!");
+    // std::println("    Object address: {}", p_errc.instance());
   } catch (...) {
-    std::println("Unknown error!");
+    // std::println("Unknown error!");
     co_return -1;
   }
   co_return 0;

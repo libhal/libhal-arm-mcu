@@ -306,8 +306,7 @@ export void enable_interrupt(irq_t p_irq, interrupt_pointer p_handler)
  * @param p_irq - enumeration typed irq number
  * @param p_handler - interrupt handler
  */
-export inline void enable_interrupt(irq_enum auto p_irq,
-                                    interrupt_pointer p_handler)
+export void enable_interrupt(irq_enum auto p_irq, interrupt_pointer p_handler)
 {
   enable_interrupt(static_cast<irq_t>(p_irq), p_handler);
 }
@@ -343,7 +342,7 @@ export void disable_interrupt(irq_t p_irq)
  *
  * @param p_irq - enumeration typed irq number
  */
-export inline void disable_interrupt(irq_enum auto p_irq)
+export void disable_interrupt(irq_enum auto p_irq)
 {
   disable_interrupt(static_cast<irq_t>(p_irq));
 }
@@ -383,7 +382,7 @@ export [[nodiscard]] bool is_interrupt_enabled(irq_t p_irq)
  * @return true - the interrupt has been enabled.
  * @return false - the interrupt is disabled or is invalid.
  */
-export [[nodiscard]] inline bool is_interrupt_enabled(irq_enum auto p_irq)
+export [[nodiscard]] bool is_interrupt_enabled(irq_enum auto p_irq)
 {
   return is_interrupt_enabled(static_cast<irq_t>(p_irq));
 }
@@ -437,9 +436,8 @@ export [[nodiscard]] bool verify_vector_enabled(irq_t p_irq,
  * @return false - the handler is not at this index in the table or p_irq is
  * not valid.
  */
-export [[nodiscard]] inline bool verify_vector_enabled(
-  irq_enum auto p_irq,
-  interrupt_pointer p_handler)
+export [[nodiscard]] bool verify_vector_enabled(irq_enum auto p_irq,
+                                                interrupt_pointer p_handler)
 {
   return verify_vector_enabled(static_cast<irq_t>(p_irq), p_handler);
 }
@@ -615,7 +613,7 @@ void initialize_interrupts()
  * `hal::platform::irq::max`.
  */
 export template<irq_enum auto max_possible_irq>
-inline void initialize_interrupts()
+void initialize_interrupts()
 {
   initialize_interrupts<static_cast<irq_t>(max_possible_irq)>();
 }
@@ -653,7 +651,7 @@ extern "C"
    * @note This handler is wrapped via linker flag -Wl,--wrap=arm_hardfault_isr
    *       to override picolibc's default implementation.
    */
-  __attribute__((naked)) inline void __wrap_arm_hardfault_isr(void)  // NOLINT
+  __attribute__((naked)) void __wrap_arm_hardfault_isr(void)  // NOLINT
   {
 #if defined(__CORTEX_M)
     __asm volatile("   movs   r0, #4           \n"

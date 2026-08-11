@@ -24,7 +24,7 @@ namespace hal::cortex_m::inline v2 {
  * This driver is supported for Cortex M3 devices and above.
  *
  */
-class dwt_counter : public hal::steady_clock
+export class dwt_counter : public hal::steady_clock
 {
 public:
   /**

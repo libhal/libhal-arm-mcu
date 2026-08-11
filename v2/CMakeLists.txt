@@ -27,6 +27,8 @@ libhal_project_init()
 libhal_add_library(arm-mcu
     MODULES
         modules/arm_mcu.cppm
+
+
         modules/cortex_m/cortex_m.cppm
         modules/cortex_m/dwt_counter.cppm
         modules/cortex_m/interrupt.cppm
@@ -34,6 +36,7 @@ libhal_add_library(arm-mcu
         modules/cortex_m/system_control.cppm
         modules/cortex_m/systick_timer.cppm
         modules/cortex_m/terminate_handler.cpp
+
         modules/stm32_generic/stm32_generic.cppm
         modules/stm32_generic/registers.cppm
         modules/stm32_generic/i2c.cppm
@@ -41,6 +44,7 @@ libhal_add_library(arm-mcu
         modules/stm32_generic/spi.cppm
         modules/stm32_generic/timer.cppm
         modules/stm32_generic/uart.cppm
+
         modules/stm32f1/stm32f1.cppm
         modules/stm32f1/constants.cppm
         modules/stm32f1/power.cppm
@@ -51,12 +55,16 @@ libhal_add_library(arm-mcu
         modules/stm32f1/usart.cppm
         modules/stm32f1/adc.cppm
         modules/stm32f1/spi.cppm
+        modules/stm32f1/independent_watchdog.cppm
     SOURCES
+        src/dwt_counter.cpp
+
         src/stm32f1/gpio.cpp
         src/stm32f1/clock.cpp
         src/stm32f1/usart.cpp
         src/stm32f1/adc.cpp
         src/stm32f1/spi.cpp
+        src/stm32f1/independent_watchdog.cpp
 )
 
 target_link_libraries(arm-mcu

@@ -52,6 +52,8 @@ libhal_apply_compile_options(startup_code)
 set(DEMOS
     blank
     blinker
+    adc
+    uart
 )
 
 foreach(demo IN LISTS DEMOS)

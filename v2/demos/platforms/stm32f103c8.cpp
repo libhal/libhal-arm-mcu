@@ -14,18 +14,20 @@
 
 module;
 
+#include <array>
 #include <memory_resource>
 
 module arm_mcu_demos;
 
 import hal;
 import hal.arm_mcu.stm32f1;
+import hal.arm_mcu.cortex_m;
 
 namespace resources {
 // using namespace hal::literals;
 using st_peripheral = hal::stm32f1::peripheral;
 
-std::array<hal::byte, 512> driver_memory{};
+std::array<hal::byte, 2048> driver_memory{};
 std::pmr::monotonic_buffer_resource resource(driver_memory.data(),
                                              driver_memory.size(),
                                              std::pmr::null_memory_resource());
@@ -42,6 +44,13 @@ hal::ptr<hal::timed_interrupt> timer()
                                                      cpu_frequency);
 }
 
+hal::ptr<hal::steady_clock> clock()
+{
+  auto const cpu_frequency = hal::stm32f1::frequency(st_peripheral::cpu);
+  return hal::allocate<hal::cortex_m::dwt_counter>(driver_allocator(),
+                                                   cpu_frequency);
+}
+
 hal::ptr<hal::output_pin> status_led()
 {
   return hal::stm32f1::output_pin::create(driver_allocator(),
@@ -53,6 +62,22 @@ hal::ptr<hal::input_pin> input_pin()
   return hal::stm32f1::input_pin::create(driver_allocator(),
                                          { .port = 'B', .pin = 4 });
 }
+
+std::array<hal::byte, 128> uart_receive_buffer{};
+
+hal::ptr<hal::serial> console()
+{
+  auto usart1 =
+    hal::stm32f1::usart::create(driver_allocator(), st_peripheral::usart1);
+  return usart1->acquire_serial(uart_receive_buffer, hal::serial::settings{});
+}
+
+hal::ptr<hal::adc16> adc()
+{
+  auto adc1 =
+    hal::stm32f1::adc::create(driver_allocator(), st_peripheral::adc1);
+  return adc1->acquire_channel(hal::stm32f1::adc_pins::pb0);
+}
 }  // namespace resources
 
 void initialize_platform()
@@ -63,7 +88,7 @@ void initialize_platform()
   // Set the MCU to the maximum clock speed
 #if 0
   hal::stm32f1::configure_clocks(hal::stm32f1::clock_tree{
-    .high_speed_external = 8 * MHz,
+    .high_speed_external = 8 * mp_units::si::unit_symbols::MHz,
     .pll = {
       .enable = true,
       .source = hal::stm32f1::pll_source::high_speed_external,

@@ -130,16 +130,6 @@ pin to_pin(adc_pins p_pin)
   return { .port = 'C', .pin = static_cast<u8>(value - 10) };
 }
 
-/// Upscale a 12-bit ADC sample to a full 16-bit value by shifting it to the
-/// most significant bits and duplicating its own most significant bits into
-/// the remaining least significant bits. This minimizes proportionality
-/// distortion versus a plain left-shift; see `hal::adc16::read()`.
-constexpr hal::u16 upscale_12_bit_to_16_bit(hal::u16 p_sample)
-{
-  // TODO(kammce): Remove when libhal-util has the upscale API
-  return static_cast<hal::u16>((p_sample << 4) | (p_sample >> 8));
-}
-
 class channel final : public hal::adc16
 {
 public:
@@ -221,10 +211,8 @@ hal::ptr<hal::adc16> adc::acquire_channel(adc_pins p_pin)
   return hal::allocate<channel>(memory_resource(), strong_from_this(), p_pin);
 }
 
-async::future<hal::u16> adc::read(async::context& p_context, adc_pins p_pin)
+async::future<hal::u16> adc::read(async::context&, adc_pins p_pin)
 {
-  auto const guard = co_await inner().conversion_lock.lock(p_context);
-
   auto& reg = *static_cast<adc_reg_t*>(inner().reg);
 
   bit_modify(reg.regular_sequence_3)
@@ -240,6 +228,6 @@ async::future<hal::u16> adc::read(async::context& p_context, adc_pins p_pin)
   auto const sample = static_cast<hal::u16>(
     bit_extract<adc_regular_data_register::regular_data>(reg.regular_data));
 
-  co_return upscale_12_bit_to_16_bit(sample);
+  return upscale<u16, 12>(sample);
 }
 }  // namespace hal::stm32f1

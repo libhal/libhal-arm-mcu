@@ -24,15 +24,15 @@ import hal.util;
 namespace hal::stm32f1 {
 using namespace mp_units::si::unit_symbols;
 namespace {
-hal::hertz rtc_clock_rate = 0 * Hz;  // defaults to "no clock"
-hal::hertz usb_clock_rate = 0 * Hz;  // pll is required thus undefined
-hal::hertz pll_clock_rate = 0 * Hz;  // undefined until pll is enabled
-hal::hertz ahb_clock_rate = internal_high_speed_oscillator;
-hal::hertz apb1_clock_rate = internal_high_speed_oscillator;
-hal::hertz apb2_clock_rate = internal_high_speed_oscillator;
-hal::hertz timer_apb1_clock_rate = internal_high_speed_oscillator;
-hal::hertz timer_apb2_clock_rate = internal_high_speed_oscillator;
-hal::hertz adc_clock_rate = internal_high_speed_oscillator / 2;
+// The external oscillator frequencies cannot be measured from hardware (the
+// silicon has no way to know what crystal, if any, is wired to it), so these
+// are the only two clock facts that must be supplied by configure_clocks()
+// rather than read back from the clock control registers. Everything else
+// frequency() reports is computed live from those registers on every call,
+// so it stays correct even if configure_clocks() is never invoked (e.g. a
+// previous firmware image already left the PLL running).
+hal::hertz high_speed_external_frequency = 0 * Hz;
+hal::hertz low_speed_external_frequency = 0 * Hz;
 }  // namespace
 
 struct flash_t
@@ -70,7 +70,7 @@ flash_t* flash = reinterpret_cast<flash_t*>(0x4002'2000);
 ///      https://www.st.com/resource/en/reference_manual/cd00171190-stm32f101xx-stm32f102xx-stm32f103xx-stm32f105xx-and-stm32f107xx-advanced-arm-based-32-bit-mcus-stmicroelectronics.pdf#page=126
 void configure_clocks(clock_tree p_clock_tree)
 {
-  hal::hertz system_clock = 0 * Hz;
+  hal::hertz pll_clock_rate = 0 * Hz;  // undefined until pll is enabled
 
   // =========================================================================
   // Step 1. Select internal clock source for everything.
@@ -210,18 +210,6 @@ void configure_clocks(clock_tree p_clock_tree)
     continue;
   }
 
-  switch (p_clock_tree.system_clock) {
-    case system_clock_select::high_speed_internal:
-      system_clock = internal_high_speed_oscillator;
-      break;
-    case system_clock_select::high_speed_external:
-      system_clock = p_clock_tree.high_speed_external;
-      break;
-    case system_clock_select::pll:
-      system_clock = pll_clock_rate;
-      break;
-  }
-
   rtc_register::reg()
     // Step 7.3 Set the RTC oscillator source
     .insert<rtc_register::rtc_source_select>(value(p_clock_tree.rtc.source))
@@ -229,140 +217,203 @@ void configure_clocks(clock_tree p_clock_tree)
     .insert<rtc_register::rtc_enable>(p_clock_tree.rtc.enable);
 
   // =========================================================================
-  // Step 8. Define the clock rates for the system
+  // Step 8. Remember the externally-supplied oscillator frequencies
   // =========================================================================
-  switch (p_clock_tree.ahb.divider) {
-    case ahb_divider::divide_by_1:
-      ahb_clock_rate = system_clock / 1;
-      break;
+  // These are the only clock facts frequency() cannot derive by reading the
+  // clock control registers, since no register reports what crystal (if any)
+  // is actually wired to the MCU.
+  high_speed_external_frequency = p_clock_tree.high_speed_external;
+  low_speed_external_frequency = p_clock_tree.low_speed_external;
+}
+
+namespace {
+/// Converts a divider selection into its numeric divisor. Raw register
+/// values that don't match a named enumerator (e.g. a prescaler's "enable"
+/// bit clear but its selector bits non-zero) are hardware-equivalent to "not
+/// divided", so they fall through to the divide-by-1 default below.
+u32 divisor_of(ahb_divider p_divider)
+{
+  switch (p_divider) {
     case ahb_divider::divide_by_2:
-      ahb_clock_rate = system_clock / 2;
-      break;
+      return 2;
     case ahb_divider::divide_by_4:
-      ahb_clock_rate = system_clock / 4;
-      break;
+      return 4;
     case ahb_divider::divide_by_8:
-      ahb_clock_rate = system_clock / 8;
-      break;
+      return 8;
     case ahb_divider::divide_by_16:
-      ahb_clock_rate = system_clock / 16;
-      break;
+      return 16;
     case ahb_divider::divide_by_64:
-      ahb_clock_rate = system_clock / 64;
-      break;
+      return 64;
     case ahb_divider::divide_by_128:
-      ahb_clock_rate = system_clock / 128;
-      break;
+      return 128;
     case ahb_divider::divide_by_256:
-      ahb_clock_rate = system_clock / 256;
-      break;
+      return 256;
     case ahb_divider::divide_by_512:
-      ahb_clock_rate = system_clock / 512;
-      break;
-  }
-
-  switch (p_clock_tree.ahb.apb1.divider) {
-    case apb_divider::divide_by_1:
-      apb1_clock_rate = ahb_clock_rate / 1;
-      break;
-    case apb_divider::divide_by_2:
-      apb1_clock_rate = ahb_clock_rate / 2;
-      break;
-    case apb_divider::divide_by_4:
-      apb1_clock_rate = ahb_clock_rate / 4;
-      break;
-    case apb_divider::divide_by_8:
-      apb1_clock_rate = ahb_clock_rate / 8;
-      break;
-    case apb_divider::divide_by_16:
-      apb1_clock_rate = ahb_clock_rate / 16;
-      break;
-  }
-
-  switch (p_clock_tree.ahb.apb2.divider) {
-    case apb_divider::divide_by_1:
-      apb2_clock_rate = ahb_clock_rate / 1;
-      break;
-    case apb_divider::divide_by_2:
-      apb2_clock_rate = ahb_clock_rate / 2;
-      break;
-    case apb_divider::divide_by_4:
-      apb2_clock_rate = ahb_clock_rate / 4;
-      break;
-    case apb_divider::divide_by_8:
-      apb2_clock_rate = ahb_clock_rate / 8;
-      break;
-    case apb_divider::divide_by_16:
-      apb2_clock_rate = ahb_clock_rate / 16;
-      break;
-  }
-
-  switch (p_clock_tree.rtc.source) {
-    case rtc_source::no_clock:
-      rtc_clock_rate = 0 * Hz;
-      break;
-    case rtc_source::low_speed_internal:
-      rtc_clock_rate = internal_low_speed_oscillator;
-      break;
-    case rtc_source::low_speed_external:
-      rtc_clock_rate = p_clock_tree.low_speed_external;
-      break;
-    case rtc_source::high_speed_external_divided_by_128:
-      rtc_clock_rate = p_clock_tree.high_speed_external / 128;
-      break;
-  }
-
-  switch (p_clock_tree.pll.usb.divider) {
-    case usb_divider::divide_by_1:
-      usb_clock_rate = pll_clock_rate;
-      break;
-    case usb_divider::divide_by_1_point_5:
-      usb_clock_rate = (pll_clock_rate * 2) / 3;
-      break;
-  }
-
-  switch (p_clock_tree.ahb.apb1.divider) {
-    case apb_divider::divide_by_1:
-      timer_apb1_clock_rate = apb1_clock_rate;
-      break;
+      return 512;
+    case ahb_divider::divide_by_1:
+      [[fallthrough]];
     default:
-      timer_apb1_clock_rate = apb1_clock_rate * 2;
-      break;
-  }
-
-  switch (p_clock_tree.ahb.apb2.divider) {
-    case apb_divider::divide_by_1:
-      timer_apb2_clock_rate = apb2_clock_rate;
-      break;
-    default:
-      timer_apb2_clock_rate = apb2_clock_rate * 2;
-      break;
-  }
-
-  switch (p_clock_tree.ahb.apb2.adc.divider) {
-    case adc_divider::divide_by_2:
-      adc_clock_rate = apb2_clock_rate / 2;
-      break;
-    case adc_divider::divide_by_4:
-      adc_clock_rate = apb2_clock_rate / 4;
-      break;
-    case adc_divider::divide_by_6:
-      adc_clock_rate = apb2_clock_rate / 6;
-      break;
-    case adc_divider::divide_by_8:
-      adc_clock_rate = apb2_clock_rate / 8;
-      break;
+      return 1;
   }
 }
+
+u32 divisor_of(apb_divider p_divider)
+{
+  switch (p_divider) {
+    case apb_divider::divide_by_2:
+      return 2;
+    case apb_divider::divide_by_4:
+      return 4;
+    case apb_divider::divide_by_8:
+      return 8;
+    case apb_divider::divide_by_16:
+      return 16;
+    case apb_divider::divide_by_1:
+      [[fallthrough]];
+    default:
+      return 1;
+  }
+}
+
+u32 divisor_of(adc_divider p_divider)
+{
+  switch (p_divider) {
+    case adc_divider::divide_by_4:
+      return 4;
+    case adc_divider::divide_by_6:
+      return 6;
+    case adc_divider::divide_by_8:
+      return 8;
+    case adc_divider::divide_by_2:
+      [[fallthrough]];
+    default:
+      return 2;
+  }
+}
+
+/// @return the PLL's output frequency, or 0 Hz if the PLL isn't locked.
+/// Reads its multiplier and source selection directly from the clock
+/// configuration register, so this is correct regardless of whether
+/// configure_clocks() was the one that turned the PLL on.
+hal::hertz pll_frequency()
+{
+  if (not bit_extract<clock_control::pll_ready>(clock_control::reg().get())) {
+    return 0 * Hz;
+  }
+
+  auto const clock_configuration_register = clock_configuration::reg().get();
+  bool const from_external = bit_extract<clock_configuration::pll_source>(
+    clock_configuration_register);
+  bool const external_divided =
+    bit_extract<clock_configuration::hse_pre_divider>(
+      clock_configuration_register);
+
+  hal::hertz pll_input = internal_high_speed_oscillator / 2;
+  if (from_external and external_divided) {
+    pll_input = high_speed_external_frequency / 2;
+  } else if (from_external) {
+    pll_input = high_speed_external_frequency;
+  }
+
+  auto const multiply = bit_extract<clock_configuration::pll_mul>(
+    clock_configuration_register);
+  return pll_input * (multiply + 2);
+}
+
+/// @return the currently active system clock frequency, read from the clock
+/// configuration register's status bits rather than whatever was last
+/// requested.
+hal::hertz system_clock_frequency()
+{
+  auto const status = bit_extract<clock_configuration::system_clock_status>(
+    clock_configuration::reg().get());
+
+  switch (static_cast<system_clock_select>(status)) {
+    case system_clock_select::high_speed_external:
+      return high_speed_external_frequency;
+    case system_clock_select::pll:
+      return pll_frequency();
+    case system_clock_select::high_speed_internal:
+      [[fallthrough]];
+    default:
+      return internal_high_speed_oscillator;
+  }
+}
+
+hal::hertz ahb_frequency()
+{
+  auto const raw = bit_extract<clock_configuration::ahb_divider>(
+    clock_configuration::reg().get());
+  return system_clock_frequency() / divisor_of(static_cast<ahb_divider>(raw));
+}
+
+hal::hertz apb1_frequency()
+{
+  auto const raw = bit_extract<clock_configuration::apb_1_divider>(
+    clock_configuration::reg().get());
+  return ahb_frequency() / divisor_of(static_cast<apb_divider>(raw));
+}
+
+hal::hertz apb2_frequency()
+{
+  auto const raw = bit_extract<clock_configuration::apb_2_divider>(
+    clock_configuration::reg().get());
+  return ahb_frequency() / divisor_of(static_cast<apb_divider>(raw));
+}
+
+hal::hertz adc_frequency()
+{
+  auto const raw = bit_extract<clock_configuration::adc_divider>(
+    clock_configuration::reg().get());
+  return apb2_frequency() / divisor_of(static_cast<adc_divider>(raw));
+}
+
+/// STM32F1 timers run at their APB domain's frequency when that domain's
+/// prescaler is divide-by-1, and at *twice* that frequency for any other
+/// prescaler setting (see RM0008's clock tree diagram).
+hal::hertz timer_apb1_frequency()
+{
+  auto const raw = bit_extract<clock_configuration::apb_1_divider>(
+    clock_configuration::reg().get());
+  auto const apb1 = apb1_frequency();
+  if (divisor_of(static_cast<apb_divider>(raw)) == 1) {
+    return apb1;
+  }
+  return apb1 * 2;
+}
+
+hal::hertz timer_apb2_frequency()
+{
+  auto const raw = bit_extract<clock_configuration::apb_2_divider>(
+    clock_configuration::reg().get());
+  auto const apb2 = apb2_frequency();
+  if (divisor_of(static_cast<apb_divider>(raw)) == 1) {
+    return apb2;
+  }
+  return apb2 * 2;
+}
+
+hal::hertz usb_frequency()
+{
+  bool const divide_by_1 = bit_extract<clock_configuration::usb_prescalar>(
+    clock_configuration::reg().get());
+  auto const pll = pll_frequency();
+  if (divide_by_1) {
+    return pll;
+  }
+  return (pll * 2) / 3;
+}
+
+}  // namespace
 
 /// @return the clock rate frequency of a peripheral
 hal::hertz frequency(peripheral p_id)
 {
   switch (p_id) {
     case peripheral::i2s:
-      return pll_clock_rate;
+      return pll_frequency();
     case peripheral::usb:
-      return usb_clock_rate;
+      return usb_frequency();
     case peripheral::flitf:
       return internal_high_speed_oscillator;
 
@@ -372,7 +423,7 @@ hal::hertz frequency(peripheral p_id)
     case peripheral::system_timer:
       [[fallthrough]];
     case peripheral::cpu:
-      return ahb_clock_rate;
+      return ahb_frequency();
 
     // APB1 Timers
     case peripheral::timer2:
@@ -392,7 +443,7 @@ hal::hertz frequency(peripheral p_id)
     case peripheral::timer13:
       [[fallthrough]];
     case peripheral::timer14:
-      return timer_apb1_clock_rate;
+      return timer_apb1_frequency();
 
     // APB2 Timers
     case peripheral::timer1:
@@ -404,27 +455,27 @@ hal::hertz frequency(peripheral p_id)
     case peripheral::timer10:
       [[fallthrough]];
     case peripheral::timer11:
-      return timer_apb2_clock_rate;
+      return timer_apb2_frequency();
 
     case peripheral::adc1:
       [[fallthrough]];
     case peripheral::adc2:
       [[fallthrough]];
     case peripheral::adc3:
-      return adc_clock_rate;
+      return adc_frequency();
     default: {
       auto id = value(p_id);
 
       if (id < apb1_bus) {
-        return ahb_clock_rate;
+        return ahb_frequency();
       }
 
       if (apb1_bus <= id && id < apb2_bus) {
-        return apb1_clock_rate;
+        return apb1_frequency();
       }
 
       if (apb2_bus <= id && id < beyond_bus) {
-        return apb2_clock_rate;
+        return apb2_frequency();
       }
 
       return 0 * Hz;

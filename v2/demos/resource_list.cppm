@@ -30,8 +30,11 @@ export namespace resources {
  */
 hal::allocator driver_allocator();
 hal::ptr<hal::timed_interrupt> timer();
+hal::ptr<hal::steady_clock> clock();
 hal::ptr<hal::output_pin> status_led();
 hal::ptr<hal::input_pin> input_pin();
+hal::ptr<hal::serial> console();
+hal::ptr<hal::adc16> adc();
 
 inline void reset()
 {

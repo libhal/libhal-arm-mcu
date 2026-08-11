@@ -9,3 +9,4 @@ export import :gpio;
 export import :usart;
 export import :adc;
 export import :spi;
+export import :independent_watchdog;

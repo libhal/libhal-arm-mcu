@@ -100,11 +100,11 @@ class serial_driver final : public hal::serial
 {
 public:
   serial_driver(hal::ptr<usart> p_manager,
-               peripheral p_id,
-               usart_resources const& p_resources,
-               void* p_register,
-               std::span<hal::byte> p_buffer,
-               hal::serial::settings const& p_settings)
+                peripheral p_id,
+                usart_resources const& p_resources,
+                void* p_register,
+                std::span<hal::byte> p_buffer,
+                hal::serial::settings const& p_settings)
     : m_manager(p_manager)
     , m_id(p_id)
     , m_tx(p_resources.tx)
@@ -199,9 +199,9 @@ hal::ptr<usart> usart::create(hal::allocator p_allocator, peripheral p_id)
 
 usart::usart(private_key, hal::allocator p_allocator, peripheral p_id)
   : pimpl(p_allocator,
-         impl{ .id = p_id,
-               // NOLINTNEXTLINE(performance-no-int-to-ptr)
-               .reg = reinterpret_cast<void*>(peripheral_to_register(p_id)) })
+          impl{ .id = p_id,
+                // NOLINTNEXTLINE(performance-no-int-to-ptr)
+                .reg = reinterpret_cast<void*>(peripheral_to_register(p_id)) })
 {
   power_on(p_id);
 }

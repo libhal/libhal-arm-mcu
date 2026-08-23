@@ -10,3 +10,5 @@ export import :usart;
 export import :adc;
 export import :spi;
 export import :independent_watchdog;
+export import :can;
+export import :usb;

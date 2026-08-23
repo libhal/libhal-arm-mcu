@@ -152,16 +152,18 @@ public:
    *
    * @param p_data - data to be written to the uart's transmit line
    */
-  void write(std::span<hal::byte const> p_data)
+  void write(mem::scatter_span<hal::byte const> p_data)
   {
     auto& uart_reg = reg();
 
-    for (auto const& byte : p_data) {
-      while (not bit_extract<status_reg::transit_empty>(uart_reg.status)) {
-        continue;
+    for (auto const& chunk : p_data) {
+      for (auto const& byte : chunk) {
+        while (not bit_extract<status_reg::transit_empty>(uart_reg.status)) {
+          continue;
+        }
+        // Load the next byte into the data register
+        uart_reg.data = byte;
       }
-      // Load the next byte into the data register
-      uart_reg.data = byte;
     }
   }
 

@@ -56,6 +56,8 @@ libhal_add_library(arm-mcu
         modules/stm32f1/adc.cppm
         modules/stm32f1/spi.cppm
         modules/stm32f1/independent_watchdog.cppm
+        modules/stm32f1/can.cppm
+        modules/stm32f1/usb.cppm
     SOURCES
         src/dwt_counter.cpp
 
@@ -65,6 +67,8 @@ libhal_add_library(arm-mcu
         src/stm32f1/adc.cpp
         src/stm32f1/spi.cpp
         src/stm32f1/independent_watchdog.cpp
+        src/stm32f1/can.cpp
+        src/stm32f1/usb.cpp
 )
 
 target_link_libraries(arm-mcu

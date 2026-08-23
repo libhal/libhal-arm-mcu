@@ -46,7 +46,7 @@ public:
   input& operator=(input const&) = delete;
   input(input&&) noexcept = default;
   input& operator=(input&&) noexcept = default;
-  ~input() override = default;
+  ~input() = default;
 
 private:
   void configure(pin_settings const& p_settings)
@@ -94,7 +94,7 @@ public:
   output& operator=(output const&) = delete;
   output(output&&) noexcept = default;
   output& operator=(output&&) noexcept = default;
-  ~output() override = default;
+  ~output() = default;
 
 private:
   void configure(pin_settings const& p_settings)

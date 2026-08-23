@@ -27,11 +27,11 @@ import arm_mcu_demos;
 async::inplace_context<64> application_context{};
 async::inplace_context<64> task1_context{};
 
+
 struct resumer : public hal::timed_callback
 {
   void callback() override
   {
-    application_context.unblock();
     fired = true;
   }
 
@@ -130,6 +130,9 @@ int main()
   auto app_future = application(application_context);
   auto task1_future = task1(task1_context);
 
+  // TODO(#218): This will not work and doesn't do what we want. We want this.
+  // to exit the sleep function if an interrupt has fired off as there might
+  // be work to be done.
   auto sleep_function =
     [&timer, &waker](steady_clock_adapter::time_point p_future_time) {
       s_resumer.fired = false;

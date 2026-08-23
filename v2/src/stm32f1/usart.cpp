@@ -111,13 +111,14 @@ public:
     , m_rx(p_resources.rx)
     , m_dma_channel(p_resources.dma_channel)
     , m_uart(p_register, p_buffer)
-  {
-    // TODO(kammce):
+  { 
     // NOTE: DMA1 is shared across multiple peripherals
     if (not is_on(peripheral::dma1)) {
       power_on(peripheral::dma1);
     }
 
+    // TODO(#219): The stm32f1 platform needs APIs to determine if a DMA channel
+    // is already taken and to hold that resource until destruction.
     auto const data_register_address =
       reinterpret_cast<uptr>(m_uart.data_register());
     auto const buffer_address = reinterpret_cast<uptr>(p_buffer.data());

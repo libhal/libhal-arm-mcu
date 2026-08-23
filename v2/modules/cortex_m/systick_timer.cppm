@@ -170,7 +170,7 @@ public:
    *
    * Stop the timer and disable the interrupt service routine.
    */
-  ~systick_timer() override
+  ~systick_timer()
   {
     systick_stop();
     disable_interrupt(irq::systick);

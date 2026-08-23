@@ -35,6 +35,23 @@ hal::ptr<hal::output_pin> status_led();
 hal::ptr<hal::input_pin> input_pin();
 hal::ptr<hal::serial> console();
 hal::ptr<hal::adc16> adc();
+hal::ptr<hal::can_transceiver> can_transceiver();
+hal::ptr<hal::can_bus_manager> can_bus_manager();
+hal::ptr<hal::can_id_filter> can_identifier_filter();
+
+// USB resources are coroutines: acquiring the manager for the first time
+// requires `co_await`-ing its power-up sequence (see hal::stm32f1::usb::
+// create()).
+async::future<hal::ptr<hal::usb::control_endpoint>> usb_control_endpoint(
+  async::context&);
+async::future<hal::ptr<hal::usb::bulk_out_endpoint>> usb_bulk_out_endpoint1(
+  async::context&);
+async::future<hal::ptr<hal::usb::bulk_in_endpoint>> usb_bulk_in_endpoint1(
+  async::context&);
+async::future<hal::ptr<hal::usb::interrupt_out_endpoint>>
+usb_interrupt_out_endpoint1(async::context&);
+async::future<hal::ptr<hal::usb::interrupt_in_endpoint>>
+usb_interrupt_in_endpoint1(async::context&);
 
 inline void reset()
 {
@@ -45,3 +62,7 @@ inline void reset()
 // Application function is implemented by one of the .cpp files.
 export void initialize_platform();
 export hal::task application(async::context&);
+extern "C++"
+{
+  export extern hal::task task1(async::context&);
+}

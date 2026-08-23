@@ -39,6 +39,7 @@ class demos(ConanFile):
 
     def requirements(self):
         self.requires("libhal-arm-mcu/[^2.0.0]")
+        self.requires("libhal-usb/latest")
         self.requires("libhal/[^5.0.0]")
         self.requires("libhal-util/[^6.0.0]")
 

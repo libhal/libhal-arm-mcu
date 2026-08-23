@@ -145,7 +145,7 @@ public:
   channel(channel&&) = delete;
   channel& operator=(channel&&) = delete;
 
-  ~channel() override
+  ~channel()
   {
     reset_pin(to_pin(m_pin));
   }

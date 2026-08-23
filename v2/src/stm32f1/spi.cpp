@@ -99,7 +99,7 @@ public:
   channel(channel&&) = delete;
   channel& operator=(channel&&) = delete;
 
-  ~channel() override = default;
+  ~channel() = default;
 
 private:
   async::future<void> driver_configure(
@@ -211,7 +211,7 @@ async::future<void> spi::transfer(async::context&,
                                   mem::scatter_span<hal::byte> p_data_in,
                                   hal::byte p_filler)
 {
-  // TODO(kammce): Convert generic stm32 spi into a coroutine
+  // TODO(#211): Convert generic stm32 spi into a coroutine
   inner().driver.transfer(p_data_out, p_data_in, p_filler);
   return {};
 }

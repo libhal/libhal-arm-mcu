@@ -20,6 +20,7 @@ find_package(LibhalCMakeUtil REQUIRED)
 find_package(libhal REQUIRED)
 find_package(libhal-util REQUIRED)
 find_package(libhal-arm-mcu REQUIRED)
+find_package(libhal-usb REQUIRED)
 
 libhal_project_init()
 
@@ -44,6 +45,7 @@ target_sources(startup_code PRIVATE
 target_link_libraries(startup_code PUBLIC
     libhal::libhal
     libhal::util
+    libhal::usb
     libhal::arm-mcu
 )
 target_compile_features(startup_code PUBLIC cxx_std_23)
@@ -54,12 +56,22 @@ set(DEMOS
     blinker
     adc
     uart
+    can
+    usb_cdc_raw
+    usb
 )
 
 foreach(demo IN LISTS DEMOS)
     libhal_add_executable(${demo}
         SOURCES applications/${demo}.cpp
         LINK_LIBRARIES startup_code
+    )
+
+    target_link_libraries(${demo} PUBLIC
+        libhal::libhal
+        libhal::util
+        libhal::usb
+        libhal::arm-mcu
     )
 
     if(CMAKE_CROSSCOMPILING)

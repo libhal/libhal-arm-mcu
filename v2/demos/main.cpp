@@ -27,7 +27,6 @@ import arm_mcu_demos;
 async::inplace_context<64> application_context{};
 async::inplace_context<64> task1_context{};
 
-
 struct resumer : public hal::timed_callback
 {
   void callback() override
@@ -98,7 +97,7 @@ public:
     auto frequency_future = m_clock->frequency(scratch);
     auto const frequency_hz =
       frequency_future.value().numerical_value_in(hal::hertz::unit);
-    m_nanoseconds_per_tick = 1'000'000'000.0 / frequency_hz;
+    m_nanoseconds_per_tick = 1'000'000'000.0f / frequency_hz;
   }
 
   [[nodiscard]] time_point now() const
@@ -107,13 +106,13 @@ public:
     auto ticks_future = m_clock->uptime(scratch);
     auto const ticks = ticks_future.value();
     auto const nanoseconds = static_cast<std::int64_t>(
-      static_cast<double>(ticks) * m_nanoseconds_per_tick);
+      static_cast<float>(ticks) * m_nanoseconds_per_tick);
     return time_point(duration(nanoseconds));
   }
 
 private:
   hal::ptr<hal::steady_clock> m_clock;
-  double m_nanoseconds_per_tick;
+  float m_nanoseconds_per_tick;
 };
 
 static_assert(async::clock<steady_clock_adapter>);

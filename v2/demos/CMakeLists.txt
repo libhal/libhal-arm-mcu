@@ -67,6 +67,8 @@ foreach(demo IN LISTS DEMOS)
         LINK_LIBRARIES startup_code
     )
 
+    libhal_apply_icf(${demo})
+
     target_link_libraries(${demo} PUBLIC
         libhal::libhal
         libhal::util

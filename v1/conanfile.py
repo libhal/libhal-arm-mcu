@@ -92,22 +92,12 @@ class libhal_arm_mcu_conan(ConanFile):
             self.requires("prebuilt-picolibc/" + CV,
                           options={"crt0": CRT0, "oslib": OSLIB})
 
-    def handle_stm32f1_linker_scripts(self):
-        linker_script_name = list(str(self.options.platform))
-        # Replace the MCU number and pin count number with 'x' (don't care)
-        # to map to the linker script
-        linker_script_name[8] = 'x'
-        linker_script_name[9] = 'x'
-        linker_script_name = "".join(linker_script_name)
-
-        self.cpp_info.exelinkflags.extend([
-            "-L" + str(Path(self.package_folder) / "linker_scripts"),
-            "-T" + str(Path("libhal-stm32f1") / linker_script_name + ".ld"),
-        ])
-
     def package_info(self):
         self.cpp_info.libs = ["libhal-arm-mcu"]
         self.cpp_info.set_property("cmake_target_name", "libhal::arm-mcu")
+        # NOTE: these aliases are for backward compat with libhal-lpc40
+        # libhal-stm32f1 and libhal-stm32f4 which are all obsolete now. Do NOT
+        # Add more aliases to this
         self.cpp_info.set_property("cmake_target_aliases", [
             "libhal::lpc40",
             "libhal::stm32f1",

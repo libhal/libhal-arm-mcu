@@ -15,7 +15,6 @@
 module;
 
 #include <array>
-#include <coroutine>
 
 module hal.arm_mcu.stm32f1;
 
@@ -151,9 +150,9 @@ public:
   }
 
 private:
-  async::future<hal::u16> driver_read(async::context& p_context) override
+  hal::u16 driver_read() override
   {
-    return m_manager->read(p_context, m_pin);
+    return m_manager->read(m_pin);
   }
 
   hal::ptr<adc> m_manager;
@@ -165,7 +164,6 @@ struct adc::impl
 {
   peripheral id;
   void* reg;
-  async::mutex conversion_lock;
 };
 
 hal::ptr<adc> adc::create(hal::allocator p_allocator, peripheral p_id)
@@ -181,8 +179,7 @@ adc::adc(private_key, hal::allocator p_allocator, peripheral p_id)
   : pimpl(p_allocator,
           impl{ .id = p_id,
                 // NOLINTNEXTLINE(performance-no-int-to-ptr)
-                .reg = reinterpret_cast<void*>(peripheral_to_register(p_id)),
-                .conversion_lock = {} })
+                .reg = reinterpret_cast<void*>(peripheral_to_register(p_id)) })
 {
   power_on(p_id);
 
@@ -211,7 +208,7 @@ hal::ptr<hal::adc16> adc::acquire_channel(adc_pins p_pin)
   return hal::allocate<channel>(memory_resource(), strong_from_this(), p_pin);
 }
 
-async::future<hal::u16> adc::read(async::context&, adc_pins p_pin)
+hal::u16 adc::read(adc_pins p_pin)
 {
   auto& reg = *static_cast<adc_reg_t*>(inner().reg);
 

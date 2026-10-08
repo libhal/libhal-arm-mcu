@@ -18,7 +18,6 @@ module;
 #include <array>
 #include <bit>
 #include <chrono>
-#include <coroutine>
 #include <span>
 
 module hal.arm_mcu.stm32f1;
@@ -306,6 +305,14 @@ void clear_correct_transfer_for(u8 p_endpoint)
   return bit_extract<endpoint::status_rx>(reg().ep[p_endpoint].epr) <= 0b01;
 }
 
+/// The hardware sets STAT_TX from VALID to NAK once the host has taken the
+/// packet, so a VALID status means the transmission is still pending.
+[[nodiscard]] bool transmission_pending(u8 p_endpoint)
+{
+  return bit_extract<endpoint::status_tx>(reg().ep[p_endpoint].epr) ==
+         value(stat::valid);
+}
+
 void handle_bus_reset()
 {
   reg().istr = 0;
@@ -379,18 +386,13 @@ usize read_endpoint_bytes(u8 p_endpoint,
 /// for the ISR, matching the pattern used by `can::impl`.
 struct usb::impl
 {
-  // Each mutex doubles as the "someone is waiting on this endpoint" signal:
-  // `lock()` is granted immediately when the endpoint is idle, the guard is
-  // held across the `co_await block_by_signal()` suspension, and the ISR
-  // releases it via `unblock_and_release()` once the hardware transfer
-  // completes. A second caller waiting on the same endpoint queues behind
-  // the first via the mutex instead of overwriting a raw waiter pointer, and
-  // if the awaiting coroutine is instead cancelled, the guard's destructor
-  // (run by the language as part of destroying the suspended coroutine
-  // frame) releases the mutex on its own.
-  std::array<async::mutex, usb::endpoint_count> tx_mutex{};
-  std::array<async::mutex, usb::endpoint_count> rx_mutex{};
-  std::optional<hal::usb::bus_event> pending_bus_event{};
+  /// Notified by the ISR when an endpoint's IN transfer completes.
+  std::array<hal::notifier, usb::endpoint_count> tx_notifier{};
+  /// Invoked by the ISR when an OUT endpoint receives data. Endpoint 0 reports
+  /// its packets through `bus_event_callback` instead.
+  std::array<mem::optional_ptr<hal::usb::receive_callback>, usb::endpoint_count>
+    receive_callback{};
+  mem::optional_ptr<hal::usb::bus_event_callback> bus_event_callback{};
   bool setup_packet_pending = false;
   bool wake_enable = false;
   // Starts at 1: endpoint 0 is always reserved for the control endpoint.
@@ -402,6 +404,42 @@ namespace {
 // so its interrupt handlers reach the active manager through a plain static
 // pointer, matching `can::impl`'s `s_active_can`.
 usb::impl* s_active_usb = nullptr;
+
+void usb_interrupt_handler() noexcept;
+
+extern "C" void usb_lp_can1_rx0_isr()
+{
+  usb_interrupt_handler();
+}
+
+extern "C" void usb_hp_can1_tx_isr()
+{
+  usb_interrupt_handler();
+}
+
+// Callbacks are swapped with the USB interrupts masked so the ISR never
+// observes a partially written callback. Interrupts that arrive meanwhile stay
+// pending in the NVIC and are serviced on unmasking.
+void mask_interrupts()
+{
+  hal::cortex_m::disable_interrupt(irq::usb_lp_can1_rx0);
+  hal::cortex_m::disable_interrupt(irq::usb_hp_can1_tx);
+}
+
+void unmask_interrupts()
+{
+  // Only low priority is serviced; high priority is for isochronous
+  // endpoints, which this driver does not yet support.
+  hal::cortex_m::enable_interrupt(irq::usb_lp_can1_rx0, usb_lp_can1_rx0_isr);
+  hal::cortex_m::enable_interrupt(irq::usb_hp_can1_tx, usb_hp_can1_tx_isr);
+}
+
+void notify_bus_event(usb::impl& p_state, hal::usb::bus_event p_event) noexcept
+{
+  if (p_state.bus_event_callback.has_value()) {
+    p_state.bus_event_callback.value()->callback(p_event);
+  }
+}
 
 void usb_interrupt_handler() noexcept
 {
@@ -428,36 +466,35 @@ void usb_interrupt_handler() noexcept
     if (direction == 0) {
       // TX (IN) transfer complete
       clear_correct_transfer_for<endpoint::correct_transfer_tx>(endpoint_id);
-      state->tx_mutex[endpoint_id].unblock_and_release();
+      state->tx_notifier[endpoint_id].notify();
     } else {
       // RX (OUT/SETUP) transfer complete
       clear_correct_transfer_for<endpoint::correct_transfer_rx>(endpoint_id);
       if (endpoint_id == 0) {
-        state->pending_bus_event = state->setup_packet_pending
-                                     ? hal::usb::bus_event::setup_packet
-                                     : hal::usb::bus_event::data_packet;
+        notify_bus_event(*state,
+                         state->setup_packet_pending
+                           ? hal::usb::bus_event::setup_packet
+                           : hal::usb::bus_event::data_packet);
+      } else if (state->receive_callback[endpoint_id].has_value()) {
+        state->receive_callback[endpoint_id].value()->callback();
       }
-      state->rx_mutex[endpoint_id].unblock_and_release();
     }
   }
 
   if (bit_extract<interrupt_status::reset_request>(interrupt_value)) {
     handle_bus_reset();
-    state->pending_bus_event = hal::usb::bus_event::reset;
-    state->rx_mutex[0].unblock_and_release();
+    notify_bus_event(*state, hal::usb::bus_event::reset);
   }
 
   if (bit_extract<interrupt_status::suspend_mode_request>(interrupt_value)) {
     bit_modify(reg().cntr).set<control::force_suspend>();
-    state->pending_bus_event = hal::usb::bus_event::suspend;
-    state->rx_mutex[0].unblock_and_release();
+    notify_bus_event(*state, hal::usb::bus_event::suspend);
     interrupt_reg = ~(1U << interrupt_status::suspend_mode_request.position);
   }
 
   if (bit_extract<interrupt_status::wake_up>(interrupt_value)) {
     bit_modify(reg().cntr).clear<control::force_suspend>();
-    state->pending_bus_event = hal::usb::bus_event::resume;
-    state->rx_mutex[0].unblock_and_release();
+    notify_bus_event(*state, hal::usb::bus_event::resume);
     interrupt_reg = ~(1U << interrupt_status::wake_up.position);
   }
 
@@ -471,16 +508,6 @@ void usb_interrupt_handler() noexcept
   if (bit_extract<interrupt_status::error>(interrupt_value)) {
     interrupt_reg = ~(1U << interrupt_status::error.position);
   }
-}
-
-extern "C" void usb_lp_can1_rx0_isr()
-{
-  usb_interrupt_handler();
-}
-
-extern "C" void usb_hp_can1_tx_isr()
-{
-  usb_interrupt_handler();
 }
 
 class control_endpoint final : public hal::usb::control_endpoint
@@ -509,8 +536,7 @@ private:
     };
   }
 
-  async::future<void> driver_stall(async::context&,
-                                   bool p_should_stall) override
+  void driver_stall(bool p_should_stall) override
   {
     if (p_should_stall) {
       set_rx_stat(0, stat::stall);
@@ -519,43 +545,35 @@ private:
       set_rx_stat(0, stat::valid);
       set_tx_stat(0, stat::nak);
     }
-    return {};
   }
 
-  async::future<void> driver_reset(async::context&) override
+  void driver_reset() override
   {
     set_rx_stat(0, stat::valid);
     endpoint_descriptor_block(0).tx_count = 0;
-    return {};
   }
 
-  async::future<void> driver_connect(async::context&,
-                                     bool p_should_connect) override
+  void driver_connect(bool p_should_connect) override
   {
     bit_modify(reg().daddr)
       .insert<device_address::enable_function>(p_should_connect);
-    return {};
   }
 
-  async::future<void> driver_set_address(async::context&, u8 p_address) override
+  void driver_set_address(u8 p_address) override
   {
     bit_modify(reg().daddr)
       .set(device_address::enable_function)
       .insert<device_address::address>(p_address);
-    return {};
   }
 
-  async::future<void> driver_write(
-    async::context& p_context,
-    mem::scatter_span<byte const> p_data) override
+  void driver_write(mem::scatter_span<byte const> p_data) override
   {
     set_rx_stat(0, stat::stall);
     set_tx_stat(0, stat::nak);
-    return m_manager->write(p_context, 0, p_data);
+    m_manager->write(0, p_data);
   }
 
-  async::future<usize> driver_read(async::context&,
-                                   mem::scatter_span<byte> p_data_list) override
+  usize driver_read(mem::scatter_span<byte> p_data_list) override
   {
     usize total = 0;
     for (auto const& data : p_data_list) {
@@ -571,27 +589,24 @@ private:
     return total;
   }
 
-  async::future<hal::usb::bus_event> driver_on_bus_event(
-    async::context& p_context) override
+  void driver_on_bus_event(
+    mem::optional_ptr<hal::usb::bus_event_callback> const& p_callback) override
   {
-    return m_manager->wait_for_bus_event(p_context);
+    m_manager->on_bus_event(p_callback);
   }
 
-  async::future<void> driver_remote_wakeup_enable(async::context&,
-                                                  bool p_enabled) override
+  void driver_remote_wakeup_enable(bool p_enabled) override
   {
     m_manager->remote_wakeup_enable(p_enabled);
-    return {};
   }
 
-  async::future<bool> driver_remote_wakeup_granted(async::context&) override
+  bool driver_remote_wakeup_granted() override
   {
     return m_manager->remote_wakeup_granted();
   }
 
-  async::future<void> driver_acknowledge_sleep(async::context&, bool) override
+  void driver_acknowledge_sleep(bool) override
   {
-    return {};
   }
 
   hal::usb::lpm_support driver_supports_lpm() override
@@ -634,11 +649,9 @@ private:
     set_rx_stat(m_endpoint_number, stat::nak);
   }
 
-  async::future<void> driver_write(
-    async::context& p_context,
-    mem::scatter_span<byte const> p_data) override
+  void driver_write(mem::scatter_span<byte const> p_data) override
   {
-    return m_manager->write(p_context, m_endpoint_number, p_data);
+    m_manager->write(m_endpoint_number, p_data);
   }
 
   [[nodiscard]] hal::usb::endpoint_info driver_info() const override
@@ -650,17 +663,14 @@ private:
     };
   }
 
-  async::future<void> driver_stall(async::context&,
-                                   bool p_should_stall) override
+  void driver_stall(bool p_should_stall) override
   {
     set_tx_stat(m_endpoint_number, p_should_stall ? stat::stall : stat::nak);
-    return {};
   }
 
-  async::future<void> driver_reset(async::context&) override
+  void driver_reset() override
   {
     configure();
-    return {};
   }
 
   hal::ptr<usb> m_manager;
@@ -698,9 +708,10 @@ private:
     set_rx_stat(m_endpoint_number, stat::valid);
   }
 
-  async::future<void> driver_on_receive(async::context& p_context) override
+  void driver_on_receive(
+    mem::optional_ptr<hal::usb::receive_callback> const& p_callback) override
   {
-    return m_manager->wait_for_receive(p_context, m_endpoint_number);
+    m_manager->on_receive(m_endpoint_number, p_callback);
   }
 
   [[nodiscard]] hal::usb::endpoint_info driver_info() const override
@@ -712,15 +723,12 @@ private:
     };
   }
 
-  async::future<void> driver_stall(async::context&,
-                                   bool p_should_stall) override
+  void driver_stall(bool p_should_stall) override
   {
     set_rx_stat(m_endpoint_number, p_should_stall ? stat::stall : stat::valid);
-    return {};
   }
 
-  async::future<usize> driver_read(async::context&,
-                                   mem::scatter_span<byte> p_data_list) override
+  usize driver_read(mem::scatter_span<byte> p_data_list) override
   {
     usize total = 0;
     for (auto const& data : p_data_list) {
@@ -734,10 +742,9 @@ private:
     return total;
   }
 
-  async::future<void> driver_reset(async::context&) override
+  void driver_reset() override
   {
     configure();
-    return {};
   }
 
   hal::ptr<usb> m_manager;
@@ -746,8 +753,7 @@ private:
 };
 }  // namespace
 
-hal::future_ptr<usb> usb::create(async::context& p_context,
-                                 hal::allocator p_allocator)
+hal::ptr<usb> usb::create(hal::allocator p_allocator)
 {
   using namespace std::chrono_literals;
   using namespace mp_units::si::unit_symbols;
@@ -770,17 +776,17 @@ hal::future_ptr<usb> usb::create(async::context& p_context,
 
   std::ranges::fill(usb_packet_buffer_sram(), 0);
 
-  co_await 1ms;
+  hal::sleep_for(1ms);
 
   // Perform reset
   bit_modify(reg().cntr).set(control::power_down).set(control::force_reset);
-  co_await 1ms;
+  hal::sleep_for(1ms);
 
   // The USB peripheral sets this bit on system reset; clear it to allow the
   // device to power on. RM0008 requires a short settle time before
   // proceeding.
   bit_modify(reg().cntr).clear(control::power_down);
-  co_await 1ms;
+  hal::sleep_for(1ms);
 
   // Clears everything including force_reset, enabling the USB device.
   reg().cntr = 0;
@@ -792,16 +798,13 @@ hal::future_ptr<usb> usb::create(async::context& p_context,
   s_active_usb = &manager->inner();
 
   hal::cortex_m::initialize_interrupts<irq::max>();
-  // Only low priority is serviced; high priority is for isochronous
-  // endpoints, which this driver does not yet support.
-  hal::cortex_m::enable_interrupt(irq::usb_lp_can1_rx0, usb_lp_can1_rx0_isr);
-  hal::cortex_m::enable_interrupt(irq::usb_hp_can1_tx, usb_hp_can1_tx_isr);
+  unmask_interrupts();
 
-  co_return manager;
+  return manager;
 }
 
 usb::usb(private_key, hal::allocator p_allocator)
-  : pimpl(p_allocator, impl{})
+  : pimpl(p_allocator)
 {
 }
 
@@ -815,9 +818,23 @@ usb::~usb()
   power_off(peripheral::usb);
 }
 
-async::future<void> usb::write(async::context& p_context,
-                               u8 p_endpoint,
-                               mem::scatter_span<byte const> p_data)
+namespace {
+/// Hand the buffered packet to the host and block until it has been taken.
+void transmit(usb::impl& p_state, u8 p_endpoint)
+{
+  // The transfer complete interrupt stays enabled for the life of the
+  // peripheral, so there is nothing to disarm when the operation ends.
+  hal::notifier::scope operation(p_state.tx_notifier[p_endpoint],
+                                 []() noexcept {});
+  set_tx_stat(p_endpoint, stat::valid);
+  while (transmission_pending(p_endpoint)) {
+    operation.block();
+  }
+  endpoint_descriptor_block(p_endpoint).tx_count = 0;
+}
+}  // namespace
+
+void usb::write(u8 p_endpoint, mem::scatter_span<byte const> p_data)
 {
   auto& descriptor = endpoint_descriptor_block(p_endpoint);
   auto const tx_span = descriptor.tx_span();
@@ -826,10 +843,7 @@ async::future<void> usb::write(async::context& p_context,
     auto remaining = chunk;
     while (not remaining.empty()) {
       if (descriptor.tx_count >= fixed_endpoint_size) {
-        auto guard = co_await inner().tx_mutex[p_endpoint].lock(p_context);
-        set_tx_stat(p_endpoint, stat::valid);
-        co_await p_context.block_by_signal();
-        descriptor.tx_count = 0;
+        transmit(inner(), p_endpoint);
       }
 
       if (descriptor.tx_count & 0b1) {
@@ -847,35 +861,25 @@ async::future<void> usb::write(async::context& p_context,
   // An explicit empty write (or a call to flush()) sends whatever is
   // currently buffered, i.e. the terminating short packet / ZLP.
   if (p_data.length() == 0) {
-    auto guard = co_await inner().tx_mutex[p_endpoint].lock(p_context);
-    set_tx_stat(p_endpoint, stat::valid);
-    co_await p_context.block_by_signal();
-    descriptor.tx_count = 0;
+    transmit(inner(), p_endpoint);
   }
-
-  co_return;
 }
 
-async::future<void> usb::wait_for_receive(async::context& p_context,
-                                          u8 p_endpoint)
+void usb::on_receive(
+  u8 p_endpoint,
+  mem::optional_ptr<hal::usb::receive_callback> const& p_callback)
 {
-  // TODO(#215): consider a form of a polling check to see if the endpoint
-  // already contains information, in which case, this should return
-  // immediately.
-  auto guard = co_await inner().rx_mutex[p_endpoint].lock(p_context);
-  co_await p_context.block_by_signal();
-  co_return;
+  mask_interrupts();
+  inner().receive_callback[p_endpoint] = p_callback;
+  unmask_interrupts();
 }
 
-async::future<hal::usb::bus_event> usb::wait_for_bus_event(
-  async::context& p_context)
+void usb::on_bus_event(
+  mem::optional_ptr<hal::usb::bus_event_callback> const& p_callback)
 {
-  // TODO(#216): consider a form of a polling check to see if the endpoint
-  // already contains information, in which case, this should return
-  // immediately.
-  auto guard = co_await inner().rx_mutex[0].lock(p_context);
-  co_await p_context.block_by_signal();
-  co_return *std::exchange(inner().pending_bus_event, std::nullopt);
+  mask_interrupts();
+  inner().bus_event_callback = p_callback;
+  unmask_interrupts();
 }
 
 u8 usb::allocate_endpoint_number()

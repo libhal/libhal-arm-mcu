@@ -111,7 +111,7 @@ public:
     , m_rx(p_resources.rx)
     , m_dma_channel(p_resources.dma_channel)
     , m_uart(p_register, p_buffer)
-  { 
+  {
     // NOTE: DMA1 is shared across multiple peripherals
     if (not is_on(peripheral::dma1)) {
       power_on(peripheral::dma1);
@@ -147,20 +147,14 @@ public:
   }
 
 private:
-  async::future<void> driver_configure(
-    async::context&,
-    hal::serial::settings const& p_settings) override
+  void driver_configure(hal::serial::settings const& p_settings) override
   {
     m_uart.configure(p_settings, frequency(m_id));
-    return {};
   }
 
-  async::future<void> driver_write(
-    async::context&,
-    mem::scatter_span<hal::byte const> p_data) override
+  void driver_write(mem::scatter_span<hal::byte const> p_data) override
   {
     m_uart.write(p_data);
-    return {};
   }
 
   hal::circular_span<hal::byte const> driver_receive_buffer() override

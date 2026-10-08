@@ -15,22 +15,21 @@
 module;
 
 #include <chrono>
-#include <coroutine>
 
 module arm_mcu_demos;
 
 import hal;
 
-hal::task application(async::context& p_ctx)
+void application()
 {
   auto led = resources::status_led();
 
   while (true) {
     using namespace std::chrono_literals;
-    co_await led->level(p_ctx, false);
-    co_await 500ms;
+    led->level(false);
+    hal::sleep_for(500ms);
 
-    co_await led->level(p_ctx, true);
-    co_await 2s;
+    led->level(true);
+    hal::sleep_for(2s);
   }
 }

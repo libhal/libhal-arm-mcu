@@ -17,7 +17,6 @@ module;
 #include <algorithm>
 #include <array>
 #include <chrono>
-#include <coroutine>
 #include <span>
 #include <string_view>
 
@@ -33,20 +32,16 @@ namespace {
 // write()`. hal.util has no v6 USB module yet, so this stands in for v1's
 // `hal::v5::write_and_flush()`.
 template<typename Endpoint>
-async::future<void> write_and_flush(async::context& p_ctx,
-                                    Endpoint& p_endpoint,
-                                    std::span<hal::byte const> p_data)
+void write_and_flush(Endpoint& p_endpoint, std::span<hal::byte const> p_data)
 {
-  co_await p_endpoint.write(p_ctx, { p_data });
-  co_await p_endpoint.write(p_ctx, {});
+  p_endpoint.write({ p_data });
+  p_endpoint.write({});
 }
 
-async::future<void> write_string_descriptor(
-  async::context& p_ctx,
-  hal::usb::control_endpoint& p_control_endpoint,
-  hal::u8 p_descriptor_index,
-  hal::usize p_length,
-  std::span<std::u16string_view const> p_strings)
+void write_string_descriptor(hal::usb::control_endpoint& p_control_endpoint,
+                             hal::u8 p_descriptor_index,
+                             hal::usize p_length,
+                             std::span<std::u16string_view const> p_strings)
 {
   // Our span of strings is zero indexed; p_descriptor_index is 1-indexed.
   p_descriptor_index -= 1;
@@ -63,37 +58,34 @@ async::future<void> write_string_descriptor(
   };
 
   auto const header_write_length = std::min(header.size(), p_length);
-  co_await p_control_endpoint.write(
-    p_ctx, { std::span(header).first(header_write_length) });
+  p_control_endpoint.write({ std::span(header).first(header_write_length) });
   p_length -= header_write_length;
 
   auto const string_write_length = std::min(str_span.size(), p_length);
   if (string_write_length > 0) {
-    co_await p_control_endpoint.write(
-      p_ctx,
-      { std::span<hal::byte const>(
-        reinterpret_cast<hal::byte const*>(str_span.data()),
-        string_write_length) });
+    p_control_endpoint.write({ std::span<hal::byte const>(
+      reinterpret_cast<hal::byte const*>(str_span.data()),
+      string_write_length) });
   }
 
-  co_await p_control_endpoint.write(p_ctx, {});
+  p_control_endpoint.write({});
 }
 }  // namespace
 
-hal::task application(async::context& p_ctx)
+void application()
 {
   using namespace std::chrono_literals;
   using namespace std::string_view_literals;
 
   auto console = resources::console();
 
-  co_await hal::write(p_ctx, *console, "Starting USB CDC (raw) demo...\n");
+  hal::write(*console, "Starting USB CDC (raw) demo...\n");
 
-  auto control_endpoint = co_await resources::usb_control_endpoint(p_ctx);
-  auto serial_data_ep_out = co_await resources::usb_bulk_out_endpoint1(p_ctx);
-  auto serial_data_ep_in = co_await resources::usb_bulk_in_endpoint1(p_ctx);
-  auto status_ep_out = co_await resources::usb_interrupt_out_endpoint1(p_ctx);
-  auto status_ep_in = co_await resources::usb_interrupt_in_endpoint1(p_ctx);
+  auto control_endpoint = resources::usb_control_endpoint();
+  auto serial_data_ep_out = resources::usb_bulk_out_endpoint1();
+  auto serial_data_ep_in = resources::usb_bulk_in_endpoint1();
+  auto status_ep_out = resources::usb_interrupt_out_endpoint1();
+  auto status_ep_in = resources::usb_interrupt_in_endpoint1();
 
   // Device Descriptor (18 bytes)
   std::array<hal::byte, 18> const device_descriptor = {
@@ -115,59 +107,83 @@ hal::task application(async::context& p_ctx)
 
   std::array<hal::byte, 75> config_descriptor = {
     // Configuration Descriptor
-    0x09,        // bLength
-    0x02,        // bDescriptorType (Configuration)
-    75, 0x00,    // wTotalLength (75 bytes)
-    0x02,        // bNumInterfaces
-    0x01,        // bConfigurationValue
-    0x00,        // iConfiguration (String Index)
-    0x80,        // bmAttributes (Bus Powered)
-    0x32,        // bMaxPower (100mA)
+    0x09,  // bLength
+    0x02,  // bDescriptorType (Configuration)
+    75,
+    0x00,  // wTotalLength (75 bytes)
+    0x02,  // bNumInterfaces
+    0x01,  // bConfigurationValue
+    0x00,  // iConfiguration (String Index)
+    0x80,  // bmAttributes (Bus Powered)
+    0x32,  // bMaxPower (100mA)
 
     // Interface Association Descriptor
-    0x08,        // bLength
-    0x0B,        // bDescriptorType (Interface Association)
-    0x00,        // bFirstInterface
-    0x02,        // bInterfaceCount
-    0x02,        // bFunctionClass (CDC)
-    0x02,        // bFunctionSubClass (Abstract Control Model)
-    0x01,        // bFunctionProtocol
-    0x00,        // iFunction (String Index)
+    0x08,  // bLength
+    0x0B,  // bDescriptorType (Interface Association)
+    0x00,  // bFirstInterface
+    0x02,  // bInterfaceCount
+    0x02,  // bFunctionClass (CDC)
+    0x02,  // bFunctionSubClass (Abstract Control Model)
+    0x01,  // bFunctionProtocol
+    0x00,  // iFunction (String Index)
 
     // Interface Descriptor (Control)
-    0x09,        // bLength
-    0x04,        // bDescriptorType (Interface)
-    0x00,        // bInterfaceNumber
-    0x00,        // bAlternateSetting
-    0x01,        // bNumEndpoints
-    0x02,        // bInterfaceClass (CDC)
-    0x02,        // bInterfaceSubClass (Abstract Control Model)
-    0x01,        // bInterfaceProtocol (AT Commands V.250)
-    0x00,        // iInterface (String Index)
+    0x09,  // bLength
+    0x04,  // bDescriptorType (Interface)
+    0x00,  // bInterfaceNumber
+    0x00,  // bAlternateSetting
+    0x01,  // bNumEndpoints
+    0x02,  // bInterfaceClass (CDC)
+    0x02,  // bInterfaceSubClass (Abstract Control Model)
+    0x01,  // bInterfaceProtocol (AT Commands V.250)
+    0x00,  // iInterface (String Index)
 
     // CDC Header Functional Descriptor
-    0x05, 0x24, 0x00, 0x10, 0x01,  // bcdCDC (1.10)
+    0x05,
+    0x24,
+    0x00,
+    0x10,
+    0x01,  // bcdCDC (1.10)
 
     // CDC ACM Functional Descriptor
-    0x04, 0x24, 0x02, 0x02,  // bmCapabilities
+    0x04,
+    0x24,
+    0x02,
+    0x02,  // bmCapabilities
 
     // CDC Union Functional Descriptor
-    0x05, 0x24, 0x06, 0x00, 0x01,
+    0x05,
+    0x24,
+    0x06,
+    0x00,
+    0x01,
 
     // CDC Call Management Functional Descriptor
-    0x05, 0x24, 0x01, 0x00, 0x01,
+    0x05,
+    0x24,
+    0x01,
+    0x00,
+    0x01,
 
     // Endpoint Descriptor (Control IN)
-    0x07,                                             // bLength
-    0x05,                                             // bDescriptorType
+    0x07,  // bLength
+    0x05,  // bDescriptorType
     static_cast<hal::byte>(status_ep_in->info().number),
-    0x03,                                             // bmAttributes (Interrupt)
+    0x03,  // bmAttributes (Interrupt)
     static_cast<hal::byte>(status_ep_in->info().size),
     0x00,
     0x10,  // bInterval (16 ms)
 
     // Interface Descriptor (Data)
-    0x09, 0x04, 0x01, 0x00, 0x02, 0x0A, 0x00, 0x00, 0x00,
+    0x09,
+    0x04,
+    0x01,
+    0x00,
+    0x02,
+    0x0A,
+    0x00,
+    0x00,
+    0x00,
 
     // Endpoint Descriptor (Data OUT)
     0x07,
@@ -220,28 +236,25 @@ hal::task application(async::context& p_ctx)
   hal::u8 configuration = 0;
   hal::usize command_count = 0;
 
-  co_await control_endpoint->connect(p_ctx, true);
-  co_await hal::write(p_ctx, *console, "USB connected, awaiting host...\n");
+  control_endpoint->connect(true);
+  hal::write(*console, "USB connected, awaiting host...\n");
 
   while (true) {
     // Echo any bulk OUT data received from the host straight to the console.
     std::array<hal::byte, 16> bulk_buffer{};
-    auto bulk_bytes = co_await serial_data_ep_out->read(p_ctx, { bulk_buffer });
+    auto bulk_bytes = serial_data_ep_out->read({ bulk_buffer });
     while (bulk_bytes != 0) {
-      co_await hal::write(
-        p_ctx, *console, { std::span(bulk_buffer).first(bulk_bytes) });
-      bulk_bytes = co_await serial_data_ep_out->read(p_ctx, { bulk_buffer });
+      hal::write(*console, { std::span(bulk_buffer).first(bulk_bytes) });
+      bulk_bytes = serial_data_ep_out->read({ bulk_buffer });
     }
 
     // Poll the control endpoint for a new SETUP or DATA packet. This driver
     // supports real setup-packet detection via `on_bus_event()`, but this
     // demo intentionally uses the documented fallback of treating every
     // non-empty read as a command, to keep the loop's structure simple and
-    // avoid blocking on a single-waiter await that would starve the bulk
-    // endpoint above.
+    // keep servicing the bulk endpoint above on every pass.
     std::array<hal::byte, 8> rx_buffer{};
-    auto const bytes_read =
-      co_await control_endpoint->read(p_ctx, { rx_buffer });
+    auto const bytes_read = control_endpoint->read({ rx_buffer });
     if (bytes_read == 0) {
       continue;
     }
@@ -258,45 +271,38 @@ hal::task application(async::context& p_ctx)
 
     if (bm_request_type == 0x00 && b_request == 0x05) {
       // SET_ADDRESS
-      co_await control_endpoint->write(p_ctx, {});
-      co_await control_endpoint->set_address(p_ctx, buffer[2]);
-      co_await hal::print<32>(
-        p_ctx, *console, "ZLP+SET_ADDR[%d]\n", buffer[2]);
+      control_endpoint->write({});
+      control_endpoint->set_address(buffer[2]);
+      hal::print<32>(*console, "ZLP+SET_ADDR[%d]\n", buffer[2]);
     } else if (bm_request_type == 0x00 && b_request == 0x09) {
       // SET_CONFIGURATION
       configuration = buffer[2];
-      co_await serial_data_ep_out->reset(p_ctx);
-      co_await status_ep_out->reset(p_ctx);
-      co_await control_endpoint->write(p_ctx, {});
-      co_await hal::print<16>(p_ctx, *console, "SET_CONFIG[%u]\n", configuration);
+      serial_data_ep_out->reset();
+      status_ep_out->reset();
+      control_endpoint->write({});
+      hal::print<16>(*console, "SET_CONFIG[%u]\n", configuration);
     } else if (bm_request_type == 0x80) {  // Device-to-host
       if (b_request == 0x06) {             // GET_DESCRIPTOR
         hal::u8 const descriptor_index = buffer[2];
         hal::u8 const descriptor_type = buffer[3];
         switch (descriptor_type) {
           case 0x01:  // Device Descriptor
-            co_await write_and_flush(
-              p_ctx,
-              *control_endpoint,
-              std::span(device_descriptor).first(w_length));
+            write_and_flush(*control_endpoint,
+                            std::span(device_descriptor).first(w_length));
             break;
           case 0x02:  // Configuration Descriptor
-            co_await write_and_flush(
-              p_ctx,
-              *control_endpoint,
-              std::span(config_descriptor).first(w_length));
+            write_and_flush(*control_endpoint,
+                            std::span(config_descriptor).first(w_length));
             break;
           case 0x03:  // String Descriptor
             if (descriptor_index == 0) {
               auto const length =
                 std::min<hal::usize>(lang_descriptor.size(), w_length);
-              co_await write_and_flush(
-                p_ctx,
-                *control_endpoint,
-                std::span(lang_descriptor).first(length));
+              write_and_flush(*control_endpoint,
+                              std::span(lang_descriptor).first(length));
             } else {
-              co_await write_string_descriptor(
-                p_ctx, *control_endpoint, descriptor_index, w_length, strings);
+              write_string_descriptor(
+                *control_endpoint, descriptor_index, w_length, strings);
             }
             break;
           default:
@@ -304,40 +310,38 @@ hal::task application(async::context& p_ctx)
         }
       }
     } else if (hal::bit_extract<hal::bit_mask::from(5, 6)>(bm_request_type) ==
-              0x1) {
+               0x1) {
       // Class-specific (CDC) request
       switch (b_request) {
         case cdc_get_line_coding:
           if (bm_request_type == 0xA1) {
-            co_await write_and_flush(p_ctx, *control_endpoint, line_coding);
+            write_and_flush(*control_endpoint, line_coding);
           }
           break;
         case cdc_set_line_coding:
           if (bm_request_type == 0x21) {
             std::array<hal::byte, 8> host_rx{};
-            auto const host_bytes =
-              co_await control_endpoint->read(p_ctx, { host_rx });
+            auto const host_bytes = control_endpoint->read({ host_rx });
             if (host_bytes > 0) {
-              std::copy_n(host_rx.begin(), line_coding.size(),
-                         line_coding.begin());
+              std::copy_n(
+                host_rx.begin(), line_coding.size(), line_coding.begin());
             }
-            co_await control_endpoint->write(p_ctx, {});
-            co_await hal::write(p_ctx, *console, "cdc_set_line_coding\n");
+            control_endpoint->write({});
+            hal::write(*console, "cdc_set_line_coding\n");
           }
           break;
         case cdc_set_control_line_state:
           if (bm_request_type == 0x21) {
             bool const dtr = (w_value & 0x01) != 0;
             bool const rts = (w_value & 0x02) != 0;
-            co_await control_endpoint->write(p_ctx, {});
-            co_await hal::print<32>(
-              p_ctx, *console, "DTR = %d, RTS = %d\n", dtr, rts);
+            control_endpoint->write({});
+            hal::print<32>(*console, "DTR = %d, RTS = %d\n", dtr, rts);
           }
           break;
         case cdc_send_break:
           if (bm_request_type == 0x21) {
-            co_await control_endpoint->write(p_ctx, {});
-            co_await hal::write(p_ctx, *console, "SEND_BREAK\n");
+            control_endpoint->write({});
+            hal::write(*console, "SEND_BREAK\n");
           }
           break;
         default:
@@ -357,7 +361,8 @@ hal::task application(async::context& p_ctx)
 
       hal::usb::endpoint_info const selected_info =
         ep_select == 1
-          ? (in_direction ? serial_data_ep_in->info() : serial_data_ep_out->info())
+          ? (in_direction ? serial_data_ep_in->info()
+                          : serial_data_ep_out->info())
           : (in_direction ? status_ep_in->info() : status_ep_out->info());
 
       switch (b_request) {
@@ -365,30 +370,30 @@ hal::task application(async::context& p_ctx)
           std::array<hal::byte, 2> const status{
             static_cast<hal::byte>(selected_info.stalled), 0
           };
-          co_await write_and_flush(p_ctx, *control_endpoint, status);
+          write_and_flush(*control_endpoint, status);
           break;
         }
         case clear_feature:
           if (ep_select == 1) {
             if (in_direction) {
-              co_await serial_data_ep_in->stall(p_ctx, false);
+              serial_data_ep_in->stall(false);
             } else {
-              co_await serial_data_ep_out->stall(p_ctx, false);
+              serial_data_ep_out->stall(false);
             }
           } else {
             if (in_direction) {
-              co_await status_ep_in->stall(p_ctx, false);
+              status_ep_in->stall(false);
             } else {
-              co_await status_ep_out->stall(p_ctx, false);
+              status_ep_out->stall(false);
             }
           }
-          co_await control_endpoint->write(p_ctx, {});
+          control_endpoint->write({});
           break;
         default:
           break;
       }
     }
 
-    co_await hal::print<16>(p_ctx, *console, "COMMAND[%zu]\n", command_count++);
+    hal::print<16>(*console, "COMMAND[%zu]\n", command_count++);
   }
 }

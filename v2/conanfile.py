@@ -117,11 +117,13 @@ class libhal_arm_mcu_conan(ConanFile):
         self.tool_requires("cmake/[^4.0.0]")
         self.tool_requires("ninja/[^1.3.0]")
         self.test_requires("boost-ext-ut/2.3.1")
-        self.tool_requires("libhal-cmake-util/[^5.0.5]")
+        self.tool_requires("libhal-cmake-util/[^5.0.15]")
 
     def requirements(self):
-        self.requires("libhal/5.0.0")
-        self.requires("libhal-util/6.0.0")
+        # TODO: drop include_prerelease once libhal 5.0.0 and libhal-util 6.0.0
+        # are released.
+        self.requires("libhal/[>=5.0.0-alpha.1 <6, include_prerelease]")
+        self.requires("libhal-util/[>=6.0.0-alpha.1 <7, include_prerelease]")
 
     def layout(self):
         build_path = Path("build") / (

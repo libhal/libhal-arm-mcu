@@ -16,7 +16,6 @@ module arm_mcu_demos;
 
 import hal;
 
-hal::task application(async::context&)
+void application()
 {
-  return {};
 }

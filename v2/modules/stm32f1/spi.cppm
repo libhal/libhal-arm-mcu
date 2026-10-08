@@ -71,38 +71,36 @@ public:
 
   /**
    * @private
-   * @brief Acquire or release exclusive access over the bus on behalf of a
-   * channel, driving its chip select pin to match.
+   * @brief Select or deselect a channel, driving its chip select pin to
+   * match.
    *
-   * @param p_context - async context for coroutine suspension and resumption
+   * The bus is not locked between selecting and deselecting a channel.
+   * Channels on this bus that are used from more than one context must be
+   * serialized by the caller.
+   *
    * @param p_chip_select - the calling channel's chip select pin
    * @param p_settings - the calling channel's settings, applied to the bus
    * when `p_select` is true
-   * @param p_select - true to acquire the bus and assert chip select, false
-   * to de-assert chip select and release the bus
+   * @param p_select - true to apply the settings and assert chip select,
+   * false to de-assert chip select
    */
-  [[nodiscard]] async::future<void> chip_select(
-    async::context& p_context,
-    hal::ptr<hal::output_pin> const& p_chip_select,
-    hal::spi_channel::settings const& p_settings,
-    bool p_select);
+  void chip_select(hal::ptr<hal::output_pin> const& p_chip_select,
+                   hal::spi_channel::settings const& p_settings,
+                   bool p_select);
 
   /**
    * @private
    * @brief Perform a transfer on behalf of a channel that currently holds
    * the bus
    *
-   * @param p_context - async context for coroutine suspension and resumption
    * @param p_data_out - outgoing data
    * @param p_data_in - incoming data
    * @param p_filler - output filler bytes if the outgoing data runs out
    * before the incoming data
    */
-  [[nodiscard]] async::future<void> transfer(
-    async::context& p_context,
-    mem::scatter_span<hal::byte const> p_data_out,
-    mem::scatter_span<hal::byte> p_data_in,
-    hal::byte p_filler);
+  void transfer(mem::scatter_span<hal::byte const> p_data_out,
+                mem::scatter_span<hal::byte> p_data_in,
+                hal::byte p_filler);
 
   /**
    * @private

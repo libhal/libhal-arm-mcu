@@ -14,37 +14,35 @@
 
 module;
 
-#include <cinttypes>
 #include <chrono>
-#include <coroutine>
+#include <cinttypes>
 
 module arm_mcu_demos;
 
 import hal;
 import hal.util;
 
-hal::task application(async::context& p_ctx)
+void application()
 {
   auto clock = resources::clock();
   auto console = resources::console();
   auto adc = resources::adc();
 
-  co_await hal::write(p_ctx, *console, "ADC Application Starting...\n");
+  hal::write(*console, "ADC Application Starting...\n");
 
   while (true) {
     using namespace std::chrono_literals;
 
-    auto const sample = co_await adc->read(p_ctx);
+    auto const sample = adc->read();
     auto const percent =
       static_cast<float>(sample) / static_cast<float>(0xFFFF) * 100.0f;
-    auto const uptime = co_await clock->uptime(p_ctx);
+    auto const uptime = clock->uptime();
 
-    co_await hal::print<128>(p_ctx,
-                             *console,
-                             "%" PRId32 "%%: %" PRIu64 " ticks\n",
-                             static_cast<std::int32_t>(percent),
-                             uptime);
+    hal::print<128>(*console,
+                    "%" PRId32 "%%: %" PRIu64 " ticks\n",
+                    static_cast<std::int32_t>(percent),
+                    uptime);
 
-    co_await 100ms;
+    hal::sleep_for(100ms);
   }
 }

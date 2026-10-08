@@ -16,7 +16,6 @@ module;
 
 #include <array>
 #include <bitset>
-#include <coroutine>
 #include <memory>
 #include <optional>
 
@@ -110,6 +109,8 @@ struct master_control
 struct master_status
 {
   static constexpr auto initialization_acknowledge = bit_mask::from<0>();
+  /// Set when an enabled error condition occurs. Cleared by writing 1.
+  static constexpr auto error_interrupt = bit_mask::from<2>();
 };
 
 /// Bit masks for the TSR register
@@ -126,6 +127,9 @@ struct interrupt_enable_register
   static constexpr auto fifo0_message_pending = bit_mask::from<1>();
   static constexpr auto fifo1_message_pending = bit_mask::from<4>();
   static constexpr auto bus_off = bit_mask::from<10>();
+  /// ERRIE: lets the enabled error flags (here only BOFF) raise the error and
+  /// status change interrupt.
+  static constexpr auto error = bit_mask::from<15>();
 };
 
 /// Bit mask for the ESR register
@@ -442,8 +446,7 @@ struct can::impl
   std::span<can_message> receive_buffer;
   hal::usize receive_cursor = 0;
   std::bitset<28> acquired_banks{};
-  async::mutex tx_owner{};
-  async::context* bus_off_waiter = nullptr;
+  mem::optional_ptr<hal::can_bus_off_callback> bus_off_callback{};
 };
 
 namespace {
@@ -476,14 +479,17 @@ extern "C" void can1_rx_isr()
 
 extern "C" void can1_sce_isr()
 {
+  // ERRI stays set until cleared, and would re-enter this handler
+  // immediately. The other write-1-to-clear bits in MSR ignore a 0 write.
+  can1_reg->msr = bit_value<u32>(0).set<master_status::error_interrupt>().get();
+
   auto* state = s_active_can;
   if (state == nullptr) {
     return;
   }
 
-  if (is_bus_off() and state->bus_off_waiter != nullptr) {
-    state->bus_off_waiter->unblock();
-    state->bus_off_waiter = nullptr;
+  if (is_bus_off() and state->bus_off_callback.has_value()) {
+    state->bus_off_callback.value()->callback();
   }
 }
 
@@ -502,15 +508,14 @@ public:
   ~transceiver() = default;
 
 private:
-  async::future<hertz> driver_baud_rate(async::context&) override
+  hertz driver_baud_rate() override
   {
     return frequency(peripheral::can1);
   }
 
-  async::future<void> driver_send(async::context& p_context,
-                                  can_message const& p_message) override
+  void driver_send(can_message const& p_message) override
   {
-    return m_manager->send(p_context, p_message);
+    m_manager->send(p_message);
   }
 
   circular_span<can_message const> driver_receive_buffer() override
@@ -541,14 +546,12 @@ public:
   ~bus_manager() = default;
 
 private:
-  async::future<void> driver_baud_rate(async::context& p_context,
-                                       u32 p_hertz) override
+  void driver_baud_rate(u32 p_hertz) override
   {
-    return m_manager->set_baud_rate(p_context, p_hertz);
+    m_manager->set_baud_rate(p_hertz);
   }
 
-  async::future<void> driver_filter_mode(async::context&,
-                                         can_message_acceptance) override
+  void driver_filter_mode(can_message_acceptance) override
   {
     // bxCAN has no single register to bypass every filter bank at once; the
     // only accurate way to implement `all`/`none` would be to reserve one of
@@ -557,17 +560,17 @@ private:
     // driver needs that trade-off, this is a deliberate no-op: messages are
     // always filtered per whatever filter banks the caller has acquired,
     // matching this driver's documented default behavior.
-    return {};
   }
 
-  async::future<void> driver_on_bus_off(async::context& p_context) override
+  void driver_on_bus_off(
+    mem::optional_ptr<hal::can_bus_off_callback> const& p_callback) override
   {
-    return m_manager->wait_for_bus_off(p_context);
+    m_manager->on_bus_off(p_callback);
   }
 
-  async::future<void> driver_bus_on(async::context& p_context) override
+  void driver_bus_on() override
   {
-    return m_manager->bus_on(p_context);
+    m_manager->bus_on();
   }
 
   hal::ptr<can> m_manager;
@@ -615,8 +618,7 @@ public:
   }
 
 private:
-  async::future<void> driver_allow(async::context&,
-                                   std::optional<u16> p_id) override
+  void driver_allow(std::optional<u16> p_id) override
   {
     auto const id = p_id.value_or(0);
     auto& filter = can1_reg->filter_registers[m_filter_index];
@@ -638,7 +640,6 @@ private:
         break;
     }
     set_filter_activation_state(m_filter_index, filter_activation::active);
-    return {};
   }
 
   hal::ptr<can> m_manager;
@@ -694,8 +695,7 @@ public:
   }
 
 private:
-  async::future<void> driver_allow(async::context&,
-                                   std::optional<u32> p_id) override
+  void driver_allow(std::optional<u32> p_id) override
   {
     auto const id = p_id.value_or(0);
     auto const reg = extended_id_to_stm_filter(id);
@@ -708,7 +708,6 @@ private:
       filter.fr1 = reg;
     }
     set_filter_activation_state(m_filter_index, filter_activation::active);
-    return {};
   }
 
   hal::ptr<can> m_manager;
@@ -759,8 +758,7 @@ public:
   }
 
 private:
-  async::future<void> driver_allow(async::context&,
-                                   std::optional<can_mask> p_mask) override
+  void driver_allow(std::optional<can_mask> p_mask) override
   {
     auto const selected = p_mask.value_or(can_mask{ .id = 0, .mask = 0x1FF });
     auto const id_reg = standard_id_to_stm_filter(selected.id);
@@ -778,7 +776,6 @@ private:
         .insert<standard_filter_bank::sub_bank2>(mask_reg);
     }
     set_filter_activation_state(m_filter_index, filter_activation::active);
-    return {};
   }
 
   hal::ptr<can> m_manager;
@@ -852,8 +849,7 @@ public:
   }
 
 private:
-  async::future<void> driver_allow(async::context&,
-                                   std::optional<can_mask_ext> p_mask) override
+  void driver_allow(std::optional<can_mask_ext> p_mask) override
   {
     auto const selected =
       p_mask.value_or(can_mask_ext{ .id = 0, .mask = 0x1FFF'FFFF });
@@ -865,7 +861,6 @@ private:
     filter.fr1 = id_reg;
     filter.fr2 = mask_reg;
     set_filter_activation_state(m_filter_index, filter_activation::active);
-    return {};
   }
 
   hal::ptr<can> m_manager;
@@ -936,7 +931,8 @@ can::can(private_key,
   bit_modify(can1_reg->ier)
     .set<interrupt_enable_register::fifo0_message_pending>()
     .set<interrupt_enable_register::fifo1_message_pending>()
-    .set<interrupt_enable_register::bus_off>();
+    .set<interrupt_enable_register::bus_off>()
+    .set<interrupt_enable_register::error>();
 }
 
 can::~can()
@@ -949,11 +945,10 @@ can::~can()
 }
 
 // TODO(#212): TX mailbox availability is polled with a bounded retry loop
-// rather than suspending on the transmit-mailbox-empty interrupt. Convert to
-// the completion-interrupt async pattern (mirroring #211 for SPI) before
-// relying on this under sustained bus load.
-async::future<void> can::send(async::context&,
-                              hal::can_message const& p_message)
+// rather than blocking on the transmit-mailbox-empty interrupt through a
+// hal::notifier. Convert it (mirroring #211 for SPI) before relying on this
+// under sustained bus load.
+void can::send(hal::can_message const& p_message)
 {
   if (is_bus_off()) {
     throw hal::operation_not_permitted(this);
@@ -986,8 +981,6 @@ async::future<void> can::send(async::context&,
   mailbox.tdlr = registers.data_a;
   mailbox.tdhr = registers.data_b;
   mailbox.tir = registers.id;
-
-  return {};
 }
 
 hal::circular_span<hal::can_message const> can::receive_buffer()
@@ -1000,31 +993,28 @@ hal::usize can::receive_cursor()
   return inner().receive_cursor;
 }
 
-async::future<void> can::set_baud_rate(async::context&, hal::u32 p_hertz)
+void can::set_baud_rate(hal::u32 p_hertz)
 {
   enter_initialization();
   configure_baud_rate(p_hertz);
   exit_initialization();
-  return {};
 }
 
-async::future<void> can::wait_for_bus_off(async::context& p_context)
+void can::on_bus_off(
+  mem::optional_ptr<hal::can_bus_off_callback> const& p_callback)
 {
-  if (is_bus_off()) {
-    co_return;
-  }
-
-  inner().bus_off_waiter = &p_context;
-  co_await p_context.block_by_signal();
-  co_return;
+  // Mask the interrupt so it never observes a partially written callback. A
+  // bus-off that occurs meanwhile stays pending and is handled on unmasking.
+  hal::cortex_m::disable_interrupt(irq::can1_sce);
+  inner().bus_off_callback = p_callback;
+  hal::cortex_m::enable_interrupt(irq::can1_sce, can1_sce_isr);
 }
 
-async::future<void> can::bus_on(async::context&)
+void can::bus_on()
 {
   if (is_bus_off()) {
     recover_from_bus_off();
   }
-  return {};
 }
 
 hal::u8 can::acquire_filter_bank()

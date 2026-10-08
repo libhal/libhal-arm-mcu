@@ -16,7 +16,6 @@ module;
 
 #include <array>
 #include <chrono>
-#include <coroutine>
 #include <span>
 #include <string_view>
 #include <utility>
@@ -106,18 +105,14 @@ struct control_line_state
 /**
  * @brief USB CDC-ACM virtual serial port interface.
  *
- * Ported from v1's usb_cdc.cpp `usb_cdc_serial`. The main structural
- * difference from v1 is that there is no `on_receive(callback)` registration
- * API on `out_endpoint` anymore (v5 core replaced callback registration with
- * single-waiter awaitables), so "the host has sent us data, therefore the
- * port must be connected" is now detected directly inside `read()` instead of
- * a callback set up in the constructor.
+ * Ported from v1's usb_cdc.cpp `usb_cdc_serial`. Instead of registering an
+ * `on_receive()` callback, "the host has sent us data, therefore the port
+ * must be connected" is detected directly inside `read()`, which the
+ * application polls.
  *
- * `is_enumerated()` similarly replaces v1's `usb_enumerator.is_enumerated()`
- * check: the enumerator itself lives inside `application()`'s coroutine frame
- * and isn't reachable from `task1()`, but the enumerator already reports
- * `host_event::enumerated`/`host_event::reset` to every interface via
- * `handle_host_event()`, so this interface tracks that state itself.
+ * `is_enumerated()` tracks the `host_event::enumerated`/`host_event::reset`
+ * events that the enumerator reports to every interface through
+ * `handle_host_event()`.
  */
 class usb_cdc_serial : public hal::usb::interface
 {
@@ -133,14 +128,13 @@ public:
   {
   }
 
-  async::future<void> write(async::context& p_context,
-                            mem::scatter_span<hal::byte const> p_data)
+  void write(mem::scatter_span<hal::byte const> p_data)
   {
     if (not m_port_connected) {
-      co_return;
+      return;
     }
     try {
-      co_await hal::usb::write_and_flush(p_context, *m_serial_tx, p_data);
+      hal::usb::write_and_flush(*m_serial_tx, p_data);
     } catch (hal::operation_not_permitted const&) {
       // Thrown by an IN endpoint when the bus is suspended without wakeup
       // permission: the endpoint cannot wake the host and cannot fulfil the
@@ -150,14 +144,13 @@ public:
     }
   }
 
-  async::future<hal::usize> read(async::context& p_context,
-                                 mem::scatter_span<hal::byte> p_buffer)
+  hal::usize read(mem::scatter_span<hal::byte> p_buffer)
   {
-    auto const length = co_await m_serial_rx->read(p_context, p_buffer);
+    auto const length = m_serial_rx->read(p_buffer);
     if (length != 0) {
       m_port_connected = true;
     }
-    co_return length;
+    return length;
   }
 
   [[nodiscard]] bool port_connected() const
@@ -181,8 +174,7 @@ public:
   }
 
 private:
-  async::future<hal::usb::interface::descriptor_count> driver_write_descriptors(
-    async::context& p_context,
+  hal::usb::interface::descriptor_count driver_write_descriptors(
     hal::usb::interface::descriptor_start p_start,
     hal::usb::endpoint_io& p_endpoint) override
   {
@@ -282,27 +274,21 @@ private:
       data_rx_descriptor,
       data_tx_descriptor);
 
-    std::ignore = co_await p_endpoint.write(p_context, descriptor);
+    std::ignore = p_endpoint.write(descriptor);
 
     // Report back to the enumerator that we have 2 interfaces available.
-    co_return hal::usb::interface::descriptor_count{ .interface = 2,
-                                                     .string = 0 };
+    return hal::usb::interface::descriptor_count{ .interface = 2, .string = 0 };
   }
 
-  async::future<bool> driver_write_string_descriptor(
-    async::context&,
-    hal::u8,
-    hal::usb::endpoint_io&) override
+  bool driver_write_string_descriptor(hal::u8, hal::usb::endpoint_io&) override
   {
     // This interface has NO string descriptors so this API always returns
     // false.
-    co_return false;
+    return false;
   }
 
-  async::future<bool> driver_handle_request(
-    async::context& p_context,
-    hal::usb::setup_packet const& p_setup,
-    hal::usb::endpoint_io& p_endpoint) override
+  bool driver_handle_request(hal::usb::setup_packet const& p_setup,
+                             hal::usb::endpoint_io& p_endpoint) override
   {
     // CDC Class-Specific Request Codes
     constexpr hal::u8 cdc_set_line_coding = 0x20;
@@ -319,23 +305,21 @@ private:
       case clear_feature: {
         auto const ep_addr = static_cast<hal::u8>(p_setup.index());
         if (ep_addr == m_serial_rx->info().number) {
-          co_await m_serial_rx->reset(p_context);
+          m_serial_rx->reset();
         } else if (ep_addr == m_serial_tx->info().number) {
-          co_await m_serial_tx->reset(p_context);
+          m_serial_tx->reset();
         } else if (ep_addr == m_status_in->info().number) {
-          co_await m_status_in->reset(p_context);
+          m_status_in->reset();
         } else {
-          co_return false;  // Unknown endpoint
+          return false;  // Unknown endpoint
         }
-        co_return true;
+        return true;
       }
 
       case cdc_get_line_coding: {
-        std::ignore =
-          co_await p_endpoint.write(p_context,
-                                    mem::scatter_span<hal::byte const>{
-                                      std::span(m_line_coding.raw_bytes) });
-        co_return true;
+        std::ignore = p_endpoint.write(mem::scatter_span<hal::byte const>{
+          std::span(m_line_coding.raw_bytes) });
+        return true;
       }
 
       case cdc_set_line_coding: {
@@ -344,56 +328,53 @@ private:
         // bytes needed for the line coding.
         using namespace std::chrono_literals;
 
-        auto const deadline =
-          co_await hal::future_deadline(p_context, *m_clock, 1ms);
+        auto const deadline = hal::future_deadline(*m_clock, 1ms);
         auto bytes_read = 0uz;
-        while (deadline > co_await m_clock->uptime(p_context)) {
+        while (deadline > m_clock->uptime()) {
           auto const sub_buffer =
             std::span(m_line_coding.raw_bytes).subspan(bytes_read);
 
-          bytes_read += co_await p_endpoint.read(
-            p_context, mem::scatter_span<hal::byte>{ sub_buffer });
+          bytes_read +=
+            p_endpoint.read(mem::scatter_span<hal::byte>{ sub_buffer });
 
           if (bytes_read >= m_line_coding.raw_bytes.size()) {
-            co_return true;
+            return true;
           }
         }
-        co_return false;
+        return false;
       }
 
       case cdc_set_control_line_state: {
         m_control_line_state.raw = p_setup.value();
-        co_return true;
+        return true;
       }
 
       case cdc_send_break: {
         // SEND BREAK (do nothing currently)
-        co_return true;
+        return true;
       }
 
       default:
-        co_return false;
+        return false;
     }
   }
 
-  async::future<void> driver_handle_host_event(
-    async::context& p_context,
-    hal::usb::host_event p_event) override
+  void driver_handle_host_event(hal::usb::host_event p_event) override
   {
     switch (p_event) {
       case hal::usb::host_event::reset:
         m_port_connected = false;
         m_enumerated = false;
-        co_await m_serial_rx->reset(p_context);
-        co_await m_serial_tx->reset(p_context);
-        co_await m_status_in->reset(p_context);
+        m_serial_rx->reset();
+        m_serial_tx->reset();
+        m_status_in->reset();
         break;
       case hal::usb::host_event::enumerated:
         m_port_connected = true;
         m_enumerated = true;
-        co_await m_serial_rx->reset(p_context);
-        co_await m_serial_tx->reset(p_context);
-        co_await m_status_in->reset(p_context);
+        m_serial_rx->reset();
+        m_serial_tx->reset();
+        m_status_in->reset();
         break;
       case hal::usb::host_event::suspend_with_wakeup:
         break;
@@ -418,33 +399,24 @@ private:
   bool m_port_connected = false;
   bool m_enumerated = false;
 };
-
-// Published by application() once the interface has been constructed;
-// task1() polls this to know when it is safe to start using it. See
-// resource_list.cppm / main.cpp for why application() and task1() cannot
-// share this state through a function parameter: they are two independent
-// coroutines driven concurrently off of separate contexts by
-// async::run_until_done(), which is required here because a single
-// coroutine cannot simultaneously await both the control endpoint's bus
-// events (what the enumerator needs) and the bulk endpoint's data (what the
-// echo logic needs).
-hal::opt_ptr<usb_cdc_serial> g_serial_interface;
 }  // namespace
 
-hal::task application(async::context& p_context)
+void application()
 {
+  using namespace std::literals;
+  using namespace std::chrono_literals;
+
   auto allocator = resources::driver_allocator();
   auto clock = resources::clock();
+  auto console = resources::console();
 
-  auto control_endpoint = co_await resources::usb_control_endpoint(p_context);
-  auto serial_rx = co_await resources::usb_bulk_out_endpoint1(p_context);
-  auto serial_tx = co_await resources::usb_bulk_in_endpoint1(p_context);
-  auto status_in = co_await resources::usb_interrupt_in_endpoint1(p_context);
+  auto control_endpoint = resources::usb_control_endpoint();
+  auto serial_rx = resources::usb_bulk_out_endpoint1();
+  auto serial_tx = resources::usb_bulk_in_endpoint1();
+  auto status_in = resources::usb_interrupt_in_endpoint1();
 
   auto serial_interface = hal::allocate<usb_cdc_serial>(
     allocator, clock, serial_rx, serial_tx, status_in);
-
-  g_serial_interface = serial_interface;
 
   hal::usb::inplace_enumerator usb_enumerator(
     control_endpoint,
@@ -458,27 +430,7 @@ hal::task application(async::context& p_context)
     },
     serial_interface);
 
-  co_await usb_enumerator.run(p_context);
-}
-
-extern "C++"
-{
-  hal::task task1(async::context& p_context)
-  {
-    using namespace std::literals;
-    using namespace std::chrono_literals;
-
-    // Wait for application() to finish constructing the shared USB
-    // interface. See the comment on g_serial_interface above.
-    while (not g_serial_interface) {
-      co_await 1ms;
-    }
-
-    auto serial_interface = g_serial_interface;
-    auto clock = resources::clock();
-    auto console = resources::console();
-
-    co_await hal::write(p_context, *console, R"(
+  hal::write(*console, R"(
 Starting USB CDC virtual serial port application...
 
 This demo does the following:
@@ -491,116 +443,101 @@ This demo does the following:
 
 )");
 
-    auto const send_period = 4s;
-    auto send_deadline =
-      co_await hal::future_deadline(p_context, *clock, send_period);
+  auto const send_period = 4s;
+  auto send_deadline = hal::future_deadline(*clock, send_period);
 
-    auto const activity_period = 250ms;
-    auto dot_deadline =
-      co_await hal::future_deadline(p_context, *clock, activity_period);
+  auto const activity_period = 250ms;
+  auto dot_deadline = hal::future_deadline(*clock, activity_period);
 
-    auto last_control_line_state = serial_interface->get_control_line_state();
-    auto last_line_coding = serial_interface->get_line_coding();
-    bool previously_enumerated = false;
+  auto last_control_line_state = serial_interface->get_control_line_state();
+  auto last_line_coding = serial_interface->get_line_coding();
+  bool previously_enumerated = false;
 
-    while (true) {
-      bool exception_caught = false;
-      int error_code_to_print = 0;
-      try {
-        std::array<char, 16> buffer{};
-        auto const length = co_await serial_interface->read(
-          p_context,
-          mem::scatter_span<hal::byte>{ hal::as_writable_bytes(buffer) });
+  while (true) {
+    usb_enumerator.poll();
 
-        if (length != 0) {
-          co_await hal::print<128>(p_context,
-                                   *console,
-                                   "\n[Received]:(%.*s)\n",
-                                   length,
-                                   buffer.data());
-        }
+    bool exception_caught = false;
+    int error_code_to_print = 0;
+    try {
+      std::array<char, 16> buffer{};
+      auto const length = serial_interface->read(
+        mem::scatter_span<hal::byte>{ hal::as_writable_bytes(buffer) });
 
-        // Control-line state and line coding are reported through one
-        // shared print<> instantiation instead of three separate ones (was:
-        // print<32, bool> for DTR, print<32, bool> for RTS, print<128, u32,
-        // int, int, int> for line coding) -- each distinct print<N, ...>
-        // signature compiles to its own coroutine, so collapsing them onto
-        // one signature removes duplicate generated code. A full fix (an
-        // inlined-buffer print that takes a span instead of a template
-        // buffer_size) is future work.
-        bool line_state_changed = false;
-
-        if (auto const current_control_line_state =
-              serial_interface->get_control_line_state();
-            current_control_line_state != last_control_line_state) {
-          last_control_line_state = current_control_line_state;
-          line_state_changed = true;
-        }
-
-        if (auto const current_line_coding =
-              serial_interface->get_line_coding();
-            current_line_coding != last_line_coding) {
-          last_line_coding = current_line_coding;
-          line_state_changed = true;
-        }
-
-        if (line_state_changed) {
-          co_await hal::print<128>(
-            p_context,
-            *console,
-            "\n[LINE STATE]:(dtr=%d, rts=%d, baud=%lu, stop=%d, parity=%d, "
-            "data_bits=%d)\n",
-            static_cast<int>(last_control_line_state.dtr()),
-            static_cast<int>(last_control_line_state.rts()),
-            last_line_coding.baud_rate(),
-            static_cast<int>(last_line_coding.stop_bits()),
-            static_cast<int>(last_line_coding.parity()),
-            static_cast<int>(last_line_coding.data_bits()));
-        }
-
-        auto const now = co_await clock->uptime(p_context);
-
-        if (serial_interface->is_enumerated()) {
-          if (not previously_enumerated) {
-            co_await hal::write(p_context, *console, "\n[ENUMERATED]\n");
-            previously_enumerated = true;
-          }
-          if (now >= dot_deadline) {
-            co_await hal::write(p_context, *console, "+");
-            dot_deadline =
-              co_await hal::future_deadline(p_context, *clock, activity_period);
-          }
-          if (now >= send_deadline) {
-            co_await serial_interface->write(
-              p_context,
-              mem::scatter_span<hal::byte const>{
-                hal::as_bytes("Hello, World\n"sv) });
-            co_await hal::write(
-              p_context, *console, "\n[SENT]:(Hello, World\\n)\n");
-            send_deadline =
-              co_await hal::future_deadline(p_context, *clock, send_period);
-          }
-        } else {
-          if (previously_enumerated) {
-            co_await hal::write(p_context, *console, "\n[ENUMERATION LOST]\n");
-            previously_enumerated = false;
-          }
-          if (now >= dot_deadline) {
-            co_await hal::write(p_context, *console, "-");
-            dot_deadline =
-              co_await hal::future_deadline(p_context, *clock, activity_period);
-          }
-        }
-      } catch (hal::exception const& p_error) {
-        exception_caught = true;
-        error_code_to_print = static_cast<int>(p_error.error_code());
+      if (length != 0) {
+        hal::print<128>(
+          *console, "\n[Received]:(%.*s)\n", length, buffer.data());
       }
-      if (exception_caught) {
-        co_await hal::print<64>(p_context,
-                                *console,
-                                "\nException Error Code '%d' caught\n",
-                                error_code_to_print);
+
+      // Control-line state and line coding are reported through one
+      // shared print<> instantiation instead of three separate ones (was:
+      // print<32, bool> for DTR, print<32, bool> for RTS, print<128, u32,
+      // int, int, int> for line coding) -- each distinct print<N, ...>
+      // signature compiles to its own function, so collapsing them onto
+      // one signature removes duplicate generated code. A full fix (an
+      // inlined-buffer print that takes a span instead of a template
+      // buffer_size) is future work.
+      bool line_state_changed = false;
+
+      if (auto const current_control_line_state =
+            serial_interface->get_control_line_state();
+          current_control_line_state != last_control_line_state) {
+        last_control_line_state = current_control_line_state;
+        line_state_changed = true;
       }
+
+      if (auto const current_line_coding = serial_interface->get_line_coding();
+          current_line_coding != last_line_coding) {
+        last_line_coding = current_line_coding;
+        line_state_changed = true;
+      }
+
+      if (line_state_changed) {
+        hal::print<128>(
+          *console,
+          "\n[LINE STATE]:(dtr=%d, rts=%d, baud=%lu, stop=%d, parity=%d, "
+          "data_bits=%d)\n",
+          static_cast<int>(last_control_line_state.dtr()),
+          static_cast<int>(last_control_line_state.rts()),
+          last_line_coding.baud_rate(),
+          static_cast<int>(last_line_coding.stop_bits()),
+          static_cast<int>(last_line_coding.parity()),
+          static_cast<int>(last_line_coding.data_bits()));
+      }
+
+      auto const now = clock->uptime();
+
+      if (serial_interface->is_enumerated()) {
+        if (not previously_enumerated) {
+          hal::write(*console, "\n[ENUMERATED]\n");
+          previously_enumerated = true;
+        }
+        if (now >= dot_deadline) {
+          hal::write(*console, "+");
+          dot_deadline = hal::future_deadline(*clock, activity_period);
+        }
+        if (now >= send_deadline) {
+          serial_interface->write(mem::scatter_span<hal::byte const>{
+            hal::as_bytes("Hello, World\n"sv) });
+          hal::write(*console, "\n[SENT]:(Hello, World\\n)\n");
+          send_deadline = hal::future_deadline(*clock, send_period);
+        }
+      } else {
+        if (previously_enumerated) {
+          hal::write(*console, "\n[ENUMERATION LOST]\n");
+          previously_enumerated = false;
+        }
+        if (now >= dot_deadline) {
+          hal::write(*console, "-");
+          dot_deadline = hal::future_deadline(*clock, activity_period);
+        }
+      }
+    } catch (hal::exception const& p_error) {
+      exception_caught = true;
+      error_code_to_print = static_cast<int>(p_error.error_code());
+    }
+    if (exception_caught) {
+      hal::print<64>(
+        *console, "\nException Error Code '%d' caught\n", error_code_to_print);
     }
   }
 }

@@ -15,7 +15,6 @@
 module;
 
 #include <chrono>
-#include <coroutine>
 
 module arm_mcu_demos;
 
@@ -23,28 +22,26 @@ import hal;
 import hal.util;
 
 namespace {
-async::future<void> print_can_message(async::context& p_ctx,
-                                      hal::serial& p_console,
-                                      hal::can_message const& p_message)
+void print_can_message(hal::serial& p_console,
+                       hal::can_message const& p_message)
 {
-  co_await hal::print<96>(p_ctx,
-                          p_console,
-                          "Received new hal::can_message {\n"
-                          "    id: 0x%lX,\n"
-                          "    length: %u\n"
-                          "    payload = [ ",
-                          p_message.id,
-                          p_message.length);
+  hal::print<96>(p_console,
+                 "Received new hal::can_message {\n"
+                 "    id: 0x%lX,\n"
+                 "    length: %u\n"
+                 "    payload = [ ",
+                 p_message.id,
+                 p_message.length);
 
   for (auto const& byte : p_message.payload) {
-    co_await hal::print<8>(p_ctx, p_console, "0x%02X, ", byte);
+    hal::print<8>(p_console, "0x%02X, ", byte);
   }
 
-  co_await hal::write(p_ctx, p_console, "]\n}\n");
+  hal::write(p_console, "]\n}\n");
 }
 }  // namespace
 
-hal::task application(async::context& p_ctx)
+void application()
 {
   using namespace std::chrono_literals;
 
@@ -53,14 +50,14 @@ hal::task application(async::context& p_ctx)
   auto bus_manager = resources::can_bus_manager();
   auto id_filter = resources::can_identifier_filter();
 
-  co_await hal::write(p_ctx, *console, "Starting CAN demo!\n");
+  hal::write(*console, "Starting CAN demo!\n");
 
-  co_await bus_manager->baud_rate(p_ctx, 100'000);
+  bus_manager->baud_rate(100'000);
 
   constexpr auto allowed_id = 0x111;
-  co_await id_filter->allow(p_ctx, allowed_id);
-  co_await hal::print<64>(
-    p_ctx, *console, "Allowing ID [0x%lX] through the filter!\n", allowed_id);
+  id_filter->allow(allowed_id);
+  hal::print<64>(
+    *console, "Allowing ID [0x%lX] through the filter!\n", allowed_id);
 
   hal::can_message_finder message_finder(*transceiver, allowed_id);
 
@@ -92,39 +89,36 @@ hal::task application(async::context& p_ctx)
       .payload = { 0xAA, 0xBB, 0xCC },
     };
 
-    co_await hal::write(p_ctx, *console, "Sending 4x payloads...\n");
+    hal::write(*console, "Sending 4x payloads...\n");
 
     int send_count = 0;
     bool bus_unresponsive = false;
     try {
-      co_await transceiver->send(p_ctx, standard_message);
+      transceiver->send(standard_message);
       send_count++;
-      co_await transceiver->send(p_ctx, standard_message2);
+      transceiver->send(standard_message2);
       send_count++;
-      co_await transceiver->send(p_ctx, extended_message);
+      transceiver->send(extended_message);
       send_count++;
-      co_await transceiver->send(p_ctx, extended_message2);
+      transceiver->send(extended_message2);
       send_count++;
     } catch (hal::resource_unavailable_try_again const&) {
       bus_unresponsive = send_count == 0;
     }
 
     if (bus_unresponsive) {
-      co_await hal::write(p_ctx,
-                          *console,
-                          "CAN messages are not getting acknowledged by "
-                          "the bus! Trying again...\n");
+      hal::write(*console,
+                 "CAN messages are not getting acknowledged by "
+                 "the bus! Trying again...\n");
     }
 
-    co_await 1s;
+    hal::sleep_for(1s);
 
     for (auto msg = message_finder.find(); msg.has_value();
-        msg = message_finder.find()) {
-      co_await print_can_message(p_ctx, *console, *msg);
-      co_await hal::print<64>(p_ctx,
-                              *console,
-                              "Receive cursor: %zu\n\n",
-                              transceiver->receive_cursor());
+         msg = message_finder.find()) {
+      print_can_message(*console, *msg);
+      hal::print<64>(
+        *console, "Receive cursor: %zu\n\n", transceiver->receive_cursor());
     }
   }
 }

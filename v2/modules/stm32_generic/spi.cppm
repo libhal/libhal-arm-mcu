@@ -288,8 +288,8 @@ private:
  * develop, prefer to use the platform specific drivers instead as they
  * handle all of the initialization for you.
  *
- * This driver is synchronous/blocking. It does not participate in the
- * async::context/coroutine model.
+ * This driver busy-waits on the peripheral's status registers rather than
+ * blocking through a `hal::notifier`.
  */
 export class spi
 {

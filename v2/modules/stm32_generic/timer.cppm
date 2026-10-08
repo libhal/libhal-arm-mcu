@@ -337,7 +337,7 @@ public:
   }
 
 private:
-  async::future<revolutions> driver_read(async::context&) override
+  revolutions driver_read() override
   {
     auto* timer_register = timer_reg::from(m_reg);
     // difference from start pos

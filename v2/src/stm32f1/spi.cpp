@@ -12,12 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-module;
-
-#include <atomic>
-#include <coroutine>
-#include <optional>
-
 module hal.arm_mcu.stm32f1;
 
 import hal;
@@ -102,47 +96,40 @@ public:
   ~channel() = default;
 
 private:
-  async::future<void> driver_configure(
-    async::context&,
-    hal::spi_channel::settings const& p_settings) override
+  void driver_configure(hal::spi_channel::settings const& p_settings) override
   {
     m_settings = p_settings;
-    return {};
   }
 
-  async::future<hal::hertz> driver_clock_rate(async::context&) override
+  hal::hertz driver_clock_rate() override
   {
     return m_manager->achievable_clock_rate(m_settings);
   }
 
-  async::future<void> driver_chip_select(async::context& p_context,
-                                         bool p_select) override
+  void driver_chip_select(bool p_select) override
   {
-    co_await m_manager->chip_select(
-      p_context, m_chip_select, m_settings, p_select);
+    m_manager->chip_select(m_chip_select, m_settings, p_select);
     m_asserted = p_select;
   }
 
-  async::future<void> driver_transfer(
-    async::context& p_context,
-    mem::scatter_span<hal::byte const> p_data_out,
-    mem::scatter_span<hal::byte> p_data_in,
-    hal::byte p_filler) override
+  void driver_transfer(mem::scatter_span<hal::byte const> p_data_out,
+                       mem::scatter_span<hal::byte> p_data_in,
+                       hal::byte p_filler) override
   {
     if (m_asserted) {
-      co_await m_manager->transfer(p_context, p_data_out, p_data_in, p_filler);
-      co_return;
+      m_manager->transfer(p_data_out, p_data_in, p_filler);
+      return;
     }
 
-    co_await driver_chip_select(p_context, true);
-    co_await m_manager->transfer(p_context, p_data_out, p_data_in, p_filler);
-    co_await driver_chip_select(p_context, false);
+    driver_chip_select(true);
+    m_manager->transfer(p_data_out, p_data_in, p_filler);
+    driver_chip_select(false);
   }
 
   hal::ptr<spi> m_manager;
   hal::ptr<hal::output_pin> m_chip_select;
   hal::spi_channel::settings m_settings;
-  std::atomic<bool> m_asserted = false;
+  bool m_asserted = false;
 };
 }  // namespace
 
@@ -156,7 +143,6 @@ struct spi::impl
 
   peripheral id;
   hal::stm32_generic::spi driver;
-  async::mutex bus_lock;
 };
 
 hal::ptr<spi> spi::create(hal::allocator p_allocator, peripheral p_id)
@@ -188,32 +174,31 @@ hal::ptr<hal::spi_channel> spi::acquire_channel(
     memory_resource(), strong_from_this(), p_chip_select, p_settings);
 }
 
-async::future<void> spi::chip_select(
-  async::context& p_context,
-  hal::ptr<hal::output_pin> const& p_chip_select,
-  hal::spi_channel::settings const& p_settings,
-  bool p_select)
+void spi::chip_select(hal::ptr<hal::output_pin> const& p_chip_select,
+                      hal::spi_channel::settings const& p_settings,
+                      bool p_select)
 {
   auto& state = inner();
 
+  // TODO(kammce): Lock the bus from assert to de-assert once libhal provides
+  // a mutex built on hal::waiter. Until then, channels on this bus that are
+  // used from more than one context must be serialized by the caller.
   if (p_select) {
-    auto guard = co_await state.bus_lock.lock(p_context);
     state.driver.configure(p_settings, frequency(state.id));
     // Chip select is active low.
-    co_await p_chip_select->level(p_context, false);
+    p_chip_select->level(false);
   } else {
-    co_await p_chip_select->level(p_context, true);
+    p_chip_select->level(true);
   }
 }
 
-async::future<void> spi::transfer(async::context&,
-                                  mem::scatter_span<hal::byte const> p_data_out,
-                                  mem::scatter_span<hal::byte> p_data_in,
-                                  hal::byte p_filler)
+void spi::transfer(mem::scatter_span<hal::byte const> p_data_out,
+                   mem::scatter_span<hal::byte> p_data_in,
+                   hal::byte p_filler)
 {
-  // TODO(#211): Convert generic stm32 spi into a coroutine
+  // TODO(#211): Block on the transfer complete interrupt through a
+  // hal::notifier instead of polling the status register.
   inner().driver.transfer(p_data_out, p_data_in, p_filler);
-  return {};
 }
 
 hal::hertz spi::achievable_clock_rate(

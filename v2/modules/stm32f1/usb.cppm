@@ -83,23 +83,21 @@ public:
    * @brief Acquire a USB peripheral manager
    *
    * Powers on the USB peripheral and performs its power-up sequence
-   * (RM0008's PDWN/FRES timed transition), which requires suspending for a
-   * few fixed settle-time delays — hence this factory is a coroutine rather
-   * than a synchronous call.
+   * (RM0008's PDWN/FRES timed transition), which sleeps for a few fixed
+   * settle-time delays through `hal::sleep_for()`. A waiter provider must be
+   * installed before calling this.
    *
-   * @param p_context - async context for coroutine suspension and resumption
    * @param p_allocator - allocator used to allocate the memory for the
    * object. Resources later acquired from this manager (control/interrupt/
    * bulk endpoints) are allocated from this same allocator via
    * `memory_resource()`.
-   * @return hal::future_ptr<usb> - completes with the USB peripheral manager
+   * @return hal::ptr<usb> - the USB peripheral manager
    * @throws hal::operation_not_supported - if the USB peripheral's input
    * clock is not exactly 48 MHz.
    * @throws hal::device_or_resource_busy - if USB or CAN1 is already powered
    * on and managed elsewhere (they share the same packet memory).
    */
-  [[nodiscard]] static hal::future_ptr<usb> create(async::context& p_context,
-                                                    hal::allocator p_allocator);
+  [[nodiscard]] static hal::ptr<usb> create(hal::allocator p_allocator);
 
   /**
    * @brief Acquire the control endpoint (endpoint 0)
@@ -135,35 +133,41 @@ public:
 
   /**
    * @private
-   * @brief Write data to an IN endpoint, suspending until each 16-byte chunk
+   * @brief Write data to an IN endpoint, blocking until each 16-byte chunk
    * has been transmitted
    *
-   * Called by the endpoint resource types acquired from this manager.
-   */
-  [[nodiscard]] async::future<void> write(
-    async::context& p_context,
-    hal::u8 p_endpoint,
-    mem::scatter_span<hal::byte const> p_data);
-
-  /**
-   * @private
-   * @brief Suspend until data becomes available on an OUT endpoint
-   *
    * Called by the endpoint resource types acquired from this manager. Only
-   * a single waiting context is supported per endpoint.
+   * one write per endpoint may be in progress at a time.
    */
-  [[nodiscard]] async::future<void> wait_for_receive(async::context& p_context,
-                                                      hal::u8 p_endpoint);
+  void write(hal::u8 p_endpoint, mem::scatter_span<hal::byte const> p_data);
 
   /**
    * @private
-   * @brief Suspend until the next bus-level event occurs
+   * @brief Set the callback invoked when an OUT endpoint receives data
    *
-   * Called by the control endpoint resource acquired from this manager.
-   * Only a single waiting context is supported.
+   * Called by the endpoint resource types acquired from this manager. The
+   * callback runs in interrupt context.
+   *
+   * @param p_endpoint - the OUT endpoint's logical number
+   * @param p_callback - the callback to invoke. Pass an empty optional to
+   * remove the callback.
    */
-  [[nodiscard]] async::future<hal::usb::bus_event> wait_for_bus_event(
-    async::context& p_context);
+  void on_receive(
+    hal::u8 p_endpoint,
+    mem::optional_ptr<hal::usb::receive_callback> const& p_callback);
+
+  /**
+   * @private
+   * @brief Set the callback invoked when a bus-level event occurs
+   *
+   * Called by the control endpoint resource acquired from this manager. The
+   * callback runs in interrupt context.
+   *
+   * @param p_callback - the callback to invoke. Pass an empty optional to
+   * remove the callback.
+   */
+  void on_bus_event(
+    mem::optional_ptr<hal::usb::bus_event_callback> const& p_callback);
 
   /**
    * @private

@@ -17,7 +17,6 @@ module;
 #include <algorithm>
 #include <array>
 #include <chrono>
-#include <coroutine>
 #include <string_view>
 
 module arm_mcu_demos;
@@ -25,7 +24,7 @@ module arm_mcu_demos;
 import hal;
 import hal.util;
 
-hal::task application(async::context& p_ctx)
+void application()
 {
   auto console = resources::console();
 
@@ -35,7 +34,7 @@ hal::task application(async::context& p_ctx)
     using namespace std::chrono_literals;
     using namespace std::string_view_literals;
 
-    co_await hal::write(p_ctx, *console, "Hello, World!\n"sv);
+    hal::write(*console, "Hello, World!\n"sv);
 
     // Echo back anything received since the last iteration.
     auto const receive_buffer = console->receive_buffer();
@@ -52,10 +51,10 @@ hal::task application(async::context& p_ctx)
     last_cursor = cursor;
 
     if (echoed > 0) {
-      co_await hal::write(
-        p_ctx, *console, { std::span<hal::byte const>(echo_buffer.data(), echoed) });
+      hal::write(*console,
+                 { std::span<hal::byte const>(echo_buffer.data(), echoed) });
     }
 
-    co_await 1s;
+    hal::sleep_for(1s);
   }
 }

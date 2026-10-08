@@ -270,8 +270,8 @@ void read_status_reg2(i2c_reg_t const* p_i2c_reg)
  * should use the driver specific to their platform instead of this class as
  * they handle proper initialization for you.
  *
- * This driver is synchronous/blocking. It does not participate in the
- * async::context/coroutine model.
+ * This driver busy-waits on the peripheral's status registers rather than
+ * blocking through a `hal::notifier`.
  */
 export class i2c
 {

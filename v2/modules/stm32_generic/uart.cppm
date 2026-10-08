@@ -90,8 +90,8 @@ struct usart_t
  * should use the driver specific to their platform instead of this class as
  * they handle proper initialization for you.
  *
- * This driver is synchronous/blocking for writes. It does not participate
- * in the async::context/coroutine model.
+ * Writes busy-wait on the peripheral's status registers rather than
+ * blocking through a `hal::notifier`.
  *
  * This driver does not manage the receive DMA cursor itself. The receive
  * buffer is exposed via `receive_buffer()`; the platform specific driver is

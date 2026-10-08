@@ -104,14 +104,12 @@ public:
    *
    * Called by the transceiver resource acquired from this manager.
    *
-   * @param p_context - async context for coroutine suspension and resumption
    * @param p_message - message to be sent over the can network
    * @throws hal::operation_not_permitted - if the device is bus-off
    * @throws hal::resource_unavailable_try_again - if no transmit mailbox
    * becomes available in time
    */
-  [[nodiscard]] async::future<void> send(async::context& p_context,
-                                         hal::can_message const& p_message);
+  void send(hal::can_message const& p_message);
 
   /**
    * @private
@@ -141,18 +139,20 @@ public:
    *
    * @throws hal::operation_not_supported - if `p_hertz` cannot be achieved
    */
-  [[nodiscard]] async::future<void> set_baud_rate(async::context& p_context,
-                                                  hal::u32 p_hertz);
+  void set_baud_rate(hal::u32 p_hertz);
 
   /**
    * @private
-   * @brief Suspend until the device enters the bus-off state
+   * @brief Set the callback invoked when the device enters bus-off
    *
-   * Called by the bus manager resource acquired from this manager. Only one
-   * waiter is supported at a time, matching `hal::can_bus_manager`'s
-   * documented single-owner usage.
+   * Called by the bus manager resource acquired from this manager. The
+   * callback runs in interrupt context.
+   *
+   * @param p_callback - the callback to invoke on bus-off. Pass an empty
+   * optional to remove the callback.
    */
-  [[nodiscard]] async::future<void> wait_for_bus_off(async::context& p_context);
+  void on_bus_off(
+    mem::optional_ptr<hal::can_bus_off_callback> const& p_callback);
 
   /**
    * @private
@@ -160,7 +160,7 @@ public:
    *
    * Called by the bus manager resource acquired from this manager.
    */
-  [[nodiscard]] async::future<void> bus_on(async::context& p_context);
+  void bus_on();
 
   /**
    * @private

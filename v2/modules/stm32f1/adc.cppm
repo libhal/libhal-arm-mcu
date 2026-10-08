@@ -90,17 +90,15 @@ public:
    * @private
    * @brief Sample an analog input pin
    *
-   * Serializes concurrent access from every channel resource acquired from
-   * this manager, since the ADC's conversion hardware is shared and only
-   * one conversion can run at a time.
+   * The ADC's conversion hardware is shared by every channel acquired from
+   * this manager and runs one conversion at a time. Calls are not locked, so
+   * channels used from more than one context must be serialized by the
+   * caller.
    *
-   * @param p_context - async context for coroutine suspension and
-   * resumption
    * @param p_pin - analog input pin to sample
-   * @return async::future<hal::u16> - the sampled value upscaled to 16-bits
+   * @return hal::u16 - the sampled value upscaled to 16-bits
    */
-  [[nodiscard]] async::future<hal::u16> read(async::context& p_context,
-                                             adc_pins p_pin);
+  [[nodiscard]] hal::u16 read(adc_pins p_pin);
 
   /// @private
   adc(private_key, hal::allocator p_allocator, peripheral p_id);

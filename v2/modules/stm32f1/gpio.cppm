@@ -34,42 +34,86 @@ export enum class output_speed : hal::u8 {
 };
 
 /**
- * @brief STM32F1 input pin factory
+ * @brief STM32F1 GPIO input pin
+ *
+ * Construct one per pin, wherever it should live: on the stack, as a static,
+ * or on the heap with `hal::make_owner<hal::stm32f1::input_pin>(...)`.
+ *
+ * ```cpp
+ * hal::stm32f1::input_pin button({ .port = 'B', .pin = 4 },
+ *                                { .resistor = hal::pin_resistor::pull_up });
+ * bool const pressed = not button.level();
+ * ```
  */
-export struct input_pin
+export class input_pin final : public hal::input_pin
 {
+public:
   /**
-   * @brief Acquire an input pin
+   * @brief Configure a pin as an input
    *
-   * @param p_allocator - allocator used to allocate the memory for the object
    * @param p_pin - port & pin selection
    * @param p_settings - settings to apply to the input pin
-   * @return hal::ptr<hal::input_pin> - type erased input pin driver
    */
-  static hal::ptr<hal::input_pin> create(
-    hal::allocator p_allocator,
-    pin p_pin,
-    hal::pin_settings const& p_settings = {});
+  explicit input_pin(pin p_pin, hal::pin_settings const& p_settings = {});
+
+  input_pin(input_pin const&) = delete;
+  input_pin& operator=(input_pin const&) = delete;
+  /// Moving hands the pin to the new object; nothing refers to the old one.
+  input_pin(input_pin&&) noexcept = default;
+  /// Moving hands the pin to the new object; nothing refers to the old one.
+  input_pin& operator=(input_pin&&) noexcept = default;
+  ~input_pin() = default;
+
+private:
+  void configure(hal::pin_settings const& p_settings);
+  void driver_configure(hal::pin_settings const& p_settings) override;
+  bool driver_level() override;
+
+  pin m_pin;
 };
 
 /**
- * @brief STM32F1 output pin factory
+ * @brief STM32F1 GPIO output pin
+ *
+ * Construct one per pin, wherever it should live: on the stack, as a static,
+ * or on the heap with `hal::make_owner<hal::stm32f1::output_pin>(...)`.
+ *
+ * ```cpp
+ * hal::stm32f1::output_pin led({ .port = 'C', .pin = 13 });
+ * led.level(true);
+ * ```
  */
-export struct output_pin
+export class output_pin final : public hal::output_pin
 {
+public:
   /**
-   * @brief Acquire an output pin
+   * @brief Configure a pin as an output
    *
-   * @param p_allocator - allocator used to allocate the memory for the object
    * @param p_pin - port & pin selection
    * @param p_settings - settings to apply to the output pin
    * @param p_speed - maximum output slew-rate for the pin
-   * @return hal::ptr<hal::output_pin> - type erased output pin driver
+   * @throws hal::device_or_resource_busy - if the pin is not in its reset
+   * state, meaning something else already configured it
    */
-  static hal::ptr<hal::output_pin> create(
-    hal::allocator p_allocator,
-    pin p_pin,
-    hal::pin_settings const& p_settings = {},
-    output_speed p_speed = output_speed::max_50_mhz);
+  explicit output_pin(pin p_pin,
+                      hal::pin_settings const& p_settings = {},
+                      output_speed p_speed = output_speed::max_50_mhz);
+
+  output_pin(output_pin const&) = delete;
+  output_pin& operator=(output_pin const&) = delete;
+  /// Moving hands the pin to the new object; nothing refers to the old one.
+  output_pin(output_pin&&) noexcept = default;
+  /// Moving hands the pin to the new object; nothing refers to the old one.
+  output_pin& operator=(output_pin&&) noexcept = default;
+  ~output_pin() = default;
+
+private:
+  void configure(hal::pin_settings const& p_settings);
+  void driver_configure(hal::pin_settings const& p_settings) override;
+  void driver_level(bool p_high) override;
+  bool driver_level() override;
+
+  pin m_pin;
+  output_speed m_speed;
 };
 }  // namespace hal::stm32f1

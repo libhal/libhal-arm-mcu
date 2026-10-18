@@ -24,51 +24,49 @@ find_package(libhal REQUIRED)
 find_package(libhal-util REQUIRED)
 
 libhal_project_init()
+# Drivers are being ported to libhal 5.0.0-alpha.1 one at a time (see README).
+# Until a driver is ported, it is left out of the build and its line below
+# stays commented out.
 libhal_add_library(arm-mcu
     MODULES
         modules/arm_mcu.cppm
-
-
         modules/cortex_m/cortex_m.cppm
         modules/cortex_m/dwt_counter.cppm
         modules/cortex_m/interrupt.cppm
         modules/cortex_m/startup.cppm
         modules/cortex_m/system_control.cppm
-        modules/cortex_m/systick_timer.cppm
+        # modules/cortex_m/systick_timer.cppm
         modules/cortex_m/terminate_handler.cpp
-
-        modules/stm32_generic/stm32_generic.cppm
-        modules/stm32_generic/registers.cppm
-        modules/stm32_generic/i2c.cppm
-        modules/stm32_generic/pwm.cppm
-        modules/stm32_generic/spi.cppm
-        modules/stm32_generic/timer.cppm
-        modules/stm32_generic/uart.cppm
-
+        # modules/stm32_generic/stm32_generic.cppm
+        # modules/stm32_generic/registers.cppm
+        # modules/stm32_generic/i2c.cppm
+        # modules/stm32_generic/pwm.cppm
+        # modules/stm32_generic/spi.cppm
+        # modules/stm32_generic/timer.cppm
+        # modules/stm32_generic/uart.cppm
         modules/stm32f1/stm32f1.cppm
         modules/stm32f1/constants.cppm
         modules/stm32f1/power.cppm
         modules/stm32f1/clock.cppm
-        modules/stm32f1/dma.cppm
+        # modules/stm32f1/dma.cppm
         modules/stm32f1/pin.cppm
         modules/stm32f1/gpio.cppm
-        modules/stm32f1/usart.cppm
-        modules/stm32f1/adc.cppm
-        modules/stm32f1/spi.cppm
-        modules/stm32f1/independent_watchdog.cppm
-        modules/stm32f1/can.cppm
-        modules/stm32f1/usb.cppm
+        # modules/stm32f1/usart.cppm
+        # modules/stm32f1/adc.cppm
+        # modules/stm32f1/spi.cppm
+        # modules/stm32f1/independent_watchdog.cppm
+        # modules/stm32f1/can.cppm
+        # modules/stm32f1/usb.cppm
     SOURCES
         src/dwt_counter.cpp
-
         src/stm32f1/gpio.cpp
         src/stm32f1/clock.cpp
-        src/stm32f1/usart.cpp
-        src/stm32f1/adc.cpp
-        src/stm32f1/spi.cpp
-        src/stm32f1/independent_watchdog.cpp
-        src/stm32f1/can.cpp
-        src/stm32f1/usb.cpp
+        # src/stm32f1/usart.cpp
+        # src/stm32f1/adc.cpp
+        # src/stm32f1/spi.cpp
+        # src/stm32f1/independent_watchdog.cpp
+        # src/stm32f1/can.cpp
+        # src/stm32f1/usb.cpp
 )
 
 target_link_libraries(arm-mcu

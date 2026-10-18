@@ -1,34 +1,52 @@
 # libhal v5
 
-libhal v5 addresses major design concerns from v4, focusing on non-blocking operations and preventing unintended halting through coroutines.
+libhal v5 addresses major design concerns from v4. Interfaces stay synchronous, while concurrency becomes a property of the runtime: drivers block through a pluggable waiter seam that a platform, RTOS, or fiber runtime implements.
+
+## Driver migration status
+
+The drivers are being ported to libhal 5.0.0-alpha.1 (synchronous, no
+`async_context`, no `strong_ptr`) one at a time. Drivers that aren't ported
+yet are left out of the build: their lines in `CMakeLists.txt`,
+`modules/cortex_m/cortex_m.cppm`, `modules/stm32f1/stm32f1.cppm` and
+`modules/arm_mcu.cppm` are commented out, along with the demos that use them.
+
+| Ported | Not yet ported |
+| --- | --- |
+| Cortex-M: interrupts, startup, system control, DWT counter (steady clock) | Cortex-M: SysTick timer, WFI waiter (needed for `hal::sleep_for()`) |
+| STM32F1: constants, power, clock, pin, gpio | `stm32_generic` (i2c, pwm, spi, timer, uart) |
+| Demos: blank, blinker, gpio | STM32F1: dma, usart, adc, spi, independent_watchdog, can, usb |
+| | Demos: adc, uart, can, usb_cdc_raw, usb |
+
+Until the waiter is ported, the demos delay by polling the DWT counter.
 
 ## Changes from v4
 
 ### Foundational
 
 - **Modules First**: Migrate from headers to C++20 modules for all code and libraries
-- **Async Foundation**: All libhal interfaces return `future<T>` and accept `async_context&` as first parameter. Coroutines enable suspension points for concurrent task progress without blocking. The `async_runtime` provides `async_context` objects and accepts a transition handler callback for managing suspension points (e.g., when blocked by I/O). This system avoids global heap allocation, allowing developers to provide stack memory for each async operation.
-- **Remove Timeout Parameters**: All timeout-accepting APIs replaced with coroutine-based suspension
+- **Waiter Seam**: All libhal interfaces are synchronous. Peripheral drivers that wait on interrupts or DMA block through a `hal::notifier`, which wakes the calling context's `hal::blocking_waiter`. Platforms install a default waiter provider (e.g. WFI on Cortex-M, std-based on hosts) and runtimes such as an RTOS or fibers replace it, so blocking calls idle the CPU or yield to other contexts without the interfaces changing. Composite drivers only call `hal::sleep_for` and the blocking APIs of the interfaces they hold.
+- **Callbacks for Events**: Interfaces expose non-blocking access to state and data plus a callback for "state changed" (e.g. `hal::edge_triggered_interrupt`, `hal::serial_interrupt`, `hal::can_interrupt`). Blocking waits and polling loops are built on top of those callbacks outside of the interfaces.
+- **No Timeout Parameters**: Transfer operations are bounded by the hardware; their fault timeouts are a property of each implementation, set at construction, rather than a parameter of the interface.
 - **Labelled ABI**: Namespace becomes `hal::inline v5` to label ABIs and support future backwards compatibility
 - **Strongly Typed Units**: Migrate to mp-units library. Single precision float for most units, unsigned 32-bit integer for frequency
 - **Factor Out Dependencies**: Extract generic libraries into standalone components:
-  - strong_ptr
-  - async_runtime/async_context
-  - inplace_function (or alternative)
   - scatter_span
 - **Tagged Callbacks**: All interface callbacks include unique first parameter tag type (e.g., `struct my_tag{};`) for exception disambiguation
 - **Scatter Span Usage**: All span-accepting APIs must accept scatter_span
 
 ### Policies
 
-- Use `std::pmr::polymorphic_allocator` for dynamic memory allocation during program initialization or `dyninit` time
-- Factory functions use `acquire_` prefix and return type-erased smart pointers
-- Widespread use of `strong_ptr` for memory management
+- Drivers are returned and stored **by value**. Simple drivers are constructed
+  directly (`hal::stm32f1::output_pin led({ .port = 'C', .pin = 13 });`).
+  Managers are constructed directly too, and hand out resources by value from
+  `acquire_*()`, which is `[[clang::lifetimebound]]` so a resource can't
+  outlive its manager. No `create()` factories, no `hal::pimpl`.
+- The application decides where a driver lives: on the stack, as a static, or
+  on the heap with `hal::make_owner<T>(allocator, ...)`.
 
 ### Interfaces
 
-- Replace `hal::io_waiter` with C++20 coroutines and `async_context`
-- Interface adjustments to accommodate coroutines
+- Replace `hal::io_waiter` with the `hal::waiter`/`hal::notifier` seam
 - `hal::zero_copy_serial` becomes default serial implementation
 
 ### Open Questions

@@ -15,22 +15,24 @@
 module;
 
 #include <chrono>
-#include <coroutine>
 
 module arm_mcu_demos;
 
 import hal;
 
-hal::task application(async::context& p_ctx)
+void application()
 {
+  // Busy-waits on the steady clock. Use hal::sleep_for() instead once the
+  // SysTick timer and WFI waiter are ported.
+  auto clock = resources::clock();
   auto led = resources::status_led();
 
   while (true) {
     using namespace std::chrono_literals;
-    co_await led->level(p_ctx, false);
-    co_await 500ms;
+    led->level(false);
+    hal::busy_wait_without_yielding_for(*clock, 500ms);
 
-    co_await led->level(p_ctx, true);
-    co_await 2s;
+    led->level(true);
+    hal::busy_wait_without_yielding_for(*clock, 2s);
   }
 }

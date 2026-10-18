@@ -130,12 +130,12 @@ void dwt_counter::register_cpu_frequency(hertz p_cpu_frequency)
   m_cpu_frequency = p_cpu_frequency;
 }
 
-async::future<u64> dwt_counter::driver_uptime(async::context&)
+u64 dwt_counter::driver_uptime()
 {
   return m_uptime.update(dwt->cyccnt);
 }
 
-async::future<hertz> dwt_counter::driver_frequency(async::context&)
+hertz dwt_counter::driver_frequency()
 {
   return m_cpu_frequency;
 }

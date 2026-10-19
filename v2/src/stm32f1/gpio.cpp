@@ -32,120 +32,77 @@ pin_config_t output_config(hal::pin_settings const& p_settings,
   };
 }
 
-class input final : public hal::input_pin
+bool read_level(pin p_pin)
 {
-public:
-  input(pin p_pin, pin_settings const& p_settings)
-    : m_pin(p_pin)
-  {
-    reset_pin(m_pin);
-    configure(p_settings);
-  }
-
-  input(input const&) = delete;
-  input& operator=(input const&) = delete;
-  input(input&&) noexcept = default;
-  input& operator=(input&&) noexcept = default;
-  ~input() = default;
-
-private:
-  void configure(pin_settings const& p_settings)
-  {
-    reset_pin(m_pin);
-
-    if (p_settings.resistor == pin_resistor::pull_up) {
-      configure_pin(m_pin, input_pull_up);
-    } else if (p_settings.resistor == pin_resistor::pull_down) {
-      configure_pin(m_pin, input_pull_down);
-    } else {
-      configure_pin(m_pin, input_float);
-    }
-  }
-
-  async::future<void> driver_configure(async::context&,
-                                       pin_settings const& p_settings) override
-  {
-    configure(p_settings);
-    return {};
-  }
-
-  async::future<bool> driver_level(async::context&) override
-  {
-    auto const& reg = gpio_reg(m_pin.port);
-    auto const pin_value = bit_extract(bit_mask::from(m_pin.pin), reg.idr);
-    return static_cast<bool>(pin_value);
-  }
-
-  pin m_pin;
-};
-
-class output final : public hal::output_pin
-{
-public:
-  output(pin p_pin, pin_settings const& p_settings, output_speed p_speed)
-    : m_pin(p_pin)
-    , m_speed(p_speed)
-  {
-    throw_if_pin_is_unavailable(m_pin);
-    configure(p_settings);
-  }
-
-  output(output const&) = delete;
-  output& operator=(output const&) = delete;
-  output(output&&) noexcept = default;
-  output& operator=(output&&) noexcept = default;
-  ~output() = default;
-
-private:
-  void configure(pin_settings const& p_settings)
-  {
-    reset_pin(m_pin);
-    configure_pin(m_pin, output_config(p_settings, m_speed));
-  }
-
-  async::future<void> driver_configure(async::context&,
-                                       pin_settings const& p_settings) override
-  {
-    configure(p_settings);
-    return {};
-  }
-
-  async::future<void> driver_level(async::context&, bool p_high) override
-  {
-    if (p_high) {
-      // The first 16 bits of the register set the output state
-      gpio_reg(m_pin.port).bsrr = 1U << m_pin.pin;
-    } else {
-      // The last 16 bits of the register reset the output state
-      gpio_reg(m_pin.port).bsrr = 1U << (16 + m_pin.pin);
-    }
-    return {};
-  }
-
-  async::future<bool> driver_level(async::context&) override
-  {
-    auto const& reg = gpio_reg(m_pin.port);
-    auto const pin_value = bit_extract(bit_mask::from(m_pin.pin), reg.idr);
-    return static_cast<bool>(pin_value);
-  }
-
-  pin m_pin;
-  output_speed m_speed;
-};
+  auto const& reg = gpio_reg(p_pin.port);
+  auto const pin_value = bit_extract(bit_mask::from(p_pin.pin), reg.idr);
+  return static_cast<bool>(pin_value);
+}
 }  // namespace
 
-hal::ptr<hal::input_pin> input_pin::create(hal::allocator p_allocator,
-                                           pin p_pin,
-                                           pin_settings const& p_settings)
+input_pin::input_pin(pin p_pin, pin_settings const& p_settings)
+  : m_pin(p_pin)
 {
-  return hal::allocate<input>(p_allocator, p_pin, p_settings);
+  configure(p_settings);
 }
 
-hal::ptr<hal::output_pin> output_pin::create(hal::allocator p_allocator,
-                                             pin p_pin,
-                                             pin_settings const& p_settings,
-                                             output_speed p_speed)
+void input_pin::configure(pin_settings const& p_settings)
 {
-  return hal::allocate<output>(p_allocator, p_pin, p_settings, p_speed);
+  reset_pin(m_pin);
+
+  if (p_settings.resistor == pin_resistor::pull_up) {
+    configure_pin(m_pin, input_pull_up);
+  } else if (p_settings.resistor == pin_resistor::pull_down) {
+    configure_pin(m_pin, input_pull_down);
+  } else {
+    configure_pin(m_pin, input_float);
+  }
+}
+
+void input_pin::driver_configure(pin_settings const& p_settings)
+{
+  configure(p_settings);
+}
+
+bool input_pin::driver_level()
+{
+  return read_level(m_pin);
+}
+
+output_pin::output_pin(pin p_pin,
+                       pin_settings const& p_settings,
+                       output_speed p_speed)
+  : m_pin(p_pin)
+  , m_speed(p_speed)
+{
+  throw_if_pin_is_unavailable(m_pin);
+  configure(p_settings);
+}
+
+void output_pin::configure(pin_settings const& p_settings)
+{
+  reset_pin(m_pin);
+  configure_pin(m_pin, output_config(p_settings, m_speed));
+}
+
+void output_pin::driver_configure(pin_settings const& p_settings)
+{
+  configure(p_settings);
+}
+
+void output_pin::driver_level(bool p_high)
+{
+  if (p_high) {
+    // The first 16 bits of the register set the output state
+    gpio_reg(m_pin.port).bsrr = 1U << m_pin.pin;
+  } else {
+    // The last 16 bits of the register reset the output state
+    gpio_reg(m_pin.port).bsrr = 1U << (16 + m_pin.pin);
+  }
+}
+
+bool output_pin::driver_level()
+{
+  return read_level(m_pin);
 }
 }  // namespace hal::stm32f1

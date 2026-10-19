@@ -20,7 +20,6 @@ find_package(LibhalCMakeUtil REQUIRED)
 find_package(libhal REQUIRED)
 find_package(libhal-util REQUIRED)
 find_package(libhal-arm-mcu REQUIRED)
-find_package(libhal-usb REQUIRED)
 
 libhal_project_init()
 
@@ -45,20 +44,17 @@ target_sources(startup_code PRIVATE
 target_link_libraries(startup_code PUBLIC
     libhal::libhal
     libhal::util
-    libhal::usb
     libhal::arm-mcu
 )
 target_compile_features(startup_code PUBLIC cxx_std_23)
 libhal_apply_compile_options(startup_code)
 
+# The other demos come back as their drivers are ported (see
+# ../CMakeLists.txt): adc, uart, can, usb_cdc_raw, usb.
 set(DEMOS
     blank
     blinker
-    adc
-    uart
-    can
-    usb_cdc_raw
-    usb
+    gpio
 )
 
 foreach(demo IN LISTS DEMOS)
@@ -72,7 +68,6 @@ foreach(demo IN LISTS DEMOS)
     target_link_libraries(${demo} PUBLIC
         libhal::libhal
         libhal::util
-        libhal::usb
         libhal::arm-mcu
     )
 

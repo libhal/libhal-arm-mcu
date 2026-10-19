@@ -1,0 +1,84 @@
+# Copyright 2026 Khalil Estell and the libhal contributors
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+name: ✅ CI v2
+
+# Checks v2/ (libhal 5, C++ modules, LLVM 23). library_test.yml and
+# demos_test.yml check v1/.
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "v2/**"
+      - ".github/workflows/v2.yml"
+  push:
+    branches:
+      - main
+    paths:
+      - "v2/**"
+      - ".github/workflows/v2.yml"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # Builds the package on a host and runs its unit tests and test_package.
+  host:
+    uses: libhal/ci/.github/workflows/package_and_upload.yml@5.x.y
+    with:
+      name: 🐉 LLVM 🐧 Linux x86_64
+      runner_os: ubuntu-24.04
+      arch: x86_64
+      os: Linux
+      compiler_profile: hal/tc/llvm-23
+      conan_version: 2.33.0  # first release that knows clang 23
+      dir: v2
+      build_types: MinSizeRel
+    secrets: inherit
+
+  # Builds the package for a real MCU, then the demos against it. The package
+  # is created as libhal-arm-mcu/latest, which is what the demos require.
+  demos:
+    name: 🐉 LLVM demos ${{ matrix.platform }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        platform:
+          - stm32f103c8
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 📥 Install Conan 2.33.0
+        run: pipx install conan==2.33.0
+
+      - name: 📡 Install libhal conan config
+        run: conan config install https://github.com/libhal/conan-config2.git
+
+      - name: 📡 Set up libhal
+        run: conan hal setup
+
+      - name: 📦 Create libhal-arm-mcu/latest for ${{ matrix.platform }}
+        run: >-
+          conan create v2 --version=latest
+          -pr:a hal/tc/llvm-23 -pr:h hal/mcu/${{ matrix.platform }}
+          --build=missing
+
+      - name: 🏗️ Build demos for ${{ matrix.platform }}
+        run: >-
+          conan build v2/demos
+          -pr:a hal/tc/llvm-23 -pr:h hal/mcu/${{ matrix.platform }}
+          --build=missing

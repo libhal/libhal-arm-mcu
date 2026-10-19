@@ -35,7 +35,8 @@ libhal_add_library(arm-mcu
         modules/cortex_m/interrupt.cppm
         modules/cortex_m/startup.cppm
         modules/cortex_m/system_control.cppm
-        # modules/cortex_m/systick_timer.cppm
+        modules/cortex_m/systick_timer.cppm
+        modules/cortex_m/waiter.cppm
         modules/cortex_m/terminate_handler.cpp
         # modules/stm32_generic/stm32_generic.cppm
         # modules/stm32_generic/registers.cppm

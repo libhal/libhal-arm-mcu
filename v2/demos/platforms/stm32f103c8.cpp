@@ -76,4 +76,12 @@ void initialize_platform()
     hal::stm32f1::mco_source::pll_clock_divided_by_2);
 
   hal::stm32f1::release_jtag_pins();
+
+  // Blocking calls such as hal::sleep_for() sleep the CPU with WFI, woken by
+  // SysTick. Constructed after the clocks are configured, since SysTick counts
+  // CPU cycles.
+  static hal::cortex_m::systick_timer timer(
+    hal::stm32f1::frequency(hal::stm32f1::peripheral::cpu));
+  static hal::cortex_m::wfi_waiter waiter(timer);
+  waiter.install();
 }

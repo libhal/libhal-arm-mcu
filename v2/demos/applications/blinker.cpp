@@ -22,17 +22,14 @@ import hal;
 
 void application()
 {
-  // Busy-waits on the steady clock. Use hal::sleep_for() instead once the
-  // SysTick timer and WFI waiter are ported.
-  auto clock = resources::clock();
   auto led = resources::status_led();
 
   while (true) {
     using namespace std::chrono_literals;
     led->level(false);
-    hal::busy_wait_without_yielding_for(*clock, 500ms);
+    hal::sleep_for(500ms);
 
     led->level(true);
-    hal::busy_wait_without_yielding_for(*clock, 2s);
+    hal::sleep_for(2s);
   }
 }

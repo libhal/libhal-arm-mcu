@@ -38,7 +38,7 @@ class demos(ConanFile):
         self.tool_requires("libhal-cmake-util/[^5.0.5]")
 
     def requirements(self):
-        self.requires("libhal-arm-mcu/[^2.0.0]")
+        self.requires("libhal-arm-mcu/latest")
         self.requires("libhal-usb/latest")
         self.requires("libhal/[^5.0.0]")
         self.requires("libhal-util/[^6.0.0]")

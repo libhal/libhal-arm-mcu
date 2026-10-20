@@ -14,6 +14,7 @@
 
 module;
 
+#include <algorithm>
 #include <cstdint>
 
 export module hal.arm_mcu.cortex_m:systick_timer;
@@ -87,7 +88,7 @@ void systick_stop()
  * simple timer for every platform using these processor.
  *
  */
-export class systick_timer : public hal::timed_interrupt
+export class systick_timer final : public hal::timed_interrupt
 {
 public:
   /**
@@ -179,6 +180,11 @@ public:
     }
   }
 
+  systick_timer(systick_timer const&) = delete;
+  systick_timer& operator=(systick_timer const&) = delete;
+  systick_timer(systick_timer&&) = delete;
+  systick_timer& operator=(systick_timer&&) = delete;
+
 private:
   static constexpr u32 maximum = 0x00FF'FFFF;
 
@@ -191,79 +197,102 @@ private:
 
     auto& active = *s_active;
 
-    if (active.m_remaining_counts > maximum) {
-      sys_tick->current_value = 0;
-      sys_tick->reload = maximum;
-      active.m_remaining_counts -= maximum;
-      systick_start();
-      return;
-    } else if (active.m_remaining_counts > 0) {
-      sys_tick->current_value = 0;
-      // NOTE: This value is safe to cast without narrowing due to the if
-      // statement before it that checks if the value is greater than maximum.
-      sys_tick->reload = static_cast<std::uint32_t>(active.m_remaining_counts);
-      active.m_remaining_counts = 0;
-      systick_start();
+    // Delays longer than the 24-bit counter run as several full counts
+    // followed by the remainder.
+    if (active.m_remaining_counts > 0) {
+      active.load_next_count();
       return;
     }
 
-    // remaining counts is 0, time to execute callback
-
-    if (active.m_callback.has_value()) {
-      active.m_callback.value()->callback();
-    }
-
-    if (active.m_mode == timer_mode::one_shot) {
+    // Time is up. Re-arm or stop before calling the callback, so the
+    // callback is free to schedule() or cancel() the timer itself.
+    if (active.m_mode == timer_mode::periodic) {
+      active.start(active.m_period_counts);
+    } else {
       systick_stop();
-      active.m_callback.reset();
+      active.m_armed = false;
     }
+
+    // Read the callback once: it can be cleared between expirations.
+    auto* const callback = active.m_callback;
+    if (callback != nullptr) {
+      callback->callback();
+    }
+  }
+
+  /// Load the counter with the next chunk of m_remaining_counts and start it.
+  void load_next_count()
+  {
+    auto const count = std::min(m_remaining_counts, u64{ maximum });
+    m_remaining_counts -= count;
+    sys_tick->current_value = 0;
+    // NOTE: Safe to cast without narrowing: count is at most `maximum`.
+    sys_tick->reload = static_cast<std::uint32_t>(count);
+    systick_start();
+  }
+
+  /// Start counting down p_counts cycles, then fire the interrupt.
+  void start(u64 p_counts)
+  {
+    systick_stop();
+    m_remaining_counts = p_counts;
+    load_next_count();
   }
 
   bool driver_scheduled() override
   {
-    return m_callback.has_value();
+    return m_armed;
   }
 
-  void driver_schedule(mem::optional_ptr<hal::timed_callback> const& p_callback,
-                       hal::time_duration p_delay,
+  void driver_schedule(hal::time_duration p_delay,
                        hal::timer_mode p_mode) override
   {
     systick_stop();
 
-    if (not p_callback.has_value()) {
-      m_callback = nullptr;
-      return;
-    }
-
     auto cycle_count = hal::cycles_per(m_frequency, p_delay);
-
-    if (cycle_count <= 1) {
+    if (cycle_count < 1) {
       cycle_count = 1;
-    } else if (cycle_count > maximum) {
-      m_remaining_counts = cycle_count - maximum;
-      cycle_count = maximum;
     }
 
-    m_callback = p_callback;
     m_mode = p_mode;
+    m_period_counts = cycle_count;
+    m_armed = true;
     s_active = this;
 
     // Enable interrupt service routine for SysTick and use this callback as
     // the handler
     enable_interrupt(irq::systick, &isr);
+    start(cycle_count);
+  }
 
-    sys_tick->current_value = 0;
-    sys_tick->reload = static_cast<std::uint32_t>(cycle_count);
+  void driver_cancel() noexcept override
+  {
+    systick_stop();
+    m_armed = false;
+    m_remaining_counts = 0;
+  }
 
-    // Starting the timer will restart the count
-    systick_start();
+  void driver_on_expire(hal::timed_callback& p_callback) override
+  {
+    if (m_callback != nullptr) {
+      throw hal::subscription_busy(this);
+    }
+    m_callback = &p_callback;
+  }
+
+  void driver_clear_expire() noexcept override
+  {
+    driver_cancel();
+    m_callback = nullptr;
   }
 
   inline static systick_timer* s_active = nullptr;
 
   hertz m_frequency{ 1 * mp_units::si::unit_symbols::MHz };
-  mem::optional_ptr<hal::timed_callback> m_callback;
+  hal::timed_callback* m_callback = nullptr;
   timer_mode m_mode = timer_mode::one_shot;
+  u64 m_period_counts = 0;
   u64 m_remaining_counts = 0;
+  bool m_armed = false;
 };
 }  // namespace hal::cortex_m

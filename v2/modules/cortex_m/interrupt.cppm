@@ -201,28 +201,6 @@ export void usage_fault_handler()
 }
 
 /**
- * @brief Disable all interrupts
- *
- */
-export void disable_all_interrupts()
-{
-#if defined(__arm__)
-  asm volatile("cpsid i" : : : "memory");
-#endif
-}
-
-/**
- * @brief Re-enable all interrupts
- *
- */
-export void enable_all_interrupts()
-{
-#if defined(__arm__)
-  asm volatile("cpsie i" : : : "memory");
-#endif
-}
-
-/**
  * @brief Returns true if the interrupt vector table has been initialized
  *
  * This API should NOT be called by platform peripheral drivers. Those

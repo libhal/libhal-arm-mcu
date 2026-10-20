@@ -12,12 +12,9 @@ yet are left out of the build: their lines in `CMakeLists.txt`,
 
 | Ported | Not yet ported |
 | --- | --- |
-| Cortex-M: interrupts, startup, system control, DWT counter (steady clock) | Cortex-M: SysTick timer, WFI waiter (needed for `hal::sleep_for()`) |
-| STM32F1: constants, power, clock, pin, gpio | `stm32_generic` (i2c, pwm, spi, timer, uart) |
-| Demos: blank, blinker, gpio | STM32F1: dma, usart, adc, spi, independent_watchdog, can, usb |
-| | Demos: adc, uart, can, usb_cdc_raw, usb |
-
-Until the waiter is ported, the demos delay by polling the DWT counter.
+| Cortex-M: interrupts, startup, system control, DWT counter (steady clock), SysTick timer, WFI waiter | `stm32_generic` (i2c, pwm, spi, timer, uart) |
+| STM32F1: constants, power, clock, pin, gpio | STM32F1: dma, usart, adc, spi, independent_watchdog, can, usb |
+| Demos: blank, blinker, gpio | Demos: adc, uart, can, usb_cdc_raw, usb |
 
 ## Changes from v4
 

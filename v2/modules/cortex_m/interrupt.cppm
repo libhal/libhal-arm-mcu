@@ -17,7 +17,6 @@ module;
 #include <algorithm>
 #include <array>
 #include <cstdint>
-#include <exception>
 #include <span>
 #include <type_traits>
 
@@ -198,88 +197,6 @@ export void usage_fault_handler()
 {
   while (true) {
     continue;
-  }
-}
-
-/**
- * @brief Disable all interrupts
- *
- */
-export void disable_all_interrupts()
-{
-#if defined(__arm__)
-  asm volatile("cpsid i" : : : "memory");
-#endif
-}
-
-/**
- * @brief Re-enable all interrupts
- *
- */
-export void enable_all_interrupts()
-{
-#if defined(__arm__)
-  asm volatile("cpsie i" : : : "memory");
-#endif
-}
-
-/// IPSR bits holding the number of the exception currently being serviced.
-/// Zero means the CPU is in thread mode.
-constexpr auto exception_number = hal::bit_mask::from<0, 8>();
-
-/// PRIMASK bit that masks all configurable-priority interrupts when set.
-constexpr auto interrupts_masked = hal::bit_mask::from<0>();
-
-/// @return u32 - the contents of the Interrupt Program Status Register
-u32 read_ipsr()
-{
-  u32 value = 0;
-#if defined(__arm__)
-  asm volatile("mrs %0, ipsr" : "=r"(value));
-#endif
-  return value;
-}
-
-/// @return u32 - the contents of the PRIMASK register
-u32 read_primask()
-{
-  u32 value = 0;
-#if defined(__arm__)
-  asm volatile("mrs %0, primask" : "=r"(value));
-#endif
-  return value;
-}
-
-/**
- * @brief Sleep the CPU with WFI until `p_done()` returns true.
- *
- * `p_done()` is evaluated with interrupts masked, so an interrupt that makes it
- * true cannot land between the check and the WFI and leave the CPU asleep. WFI
- * still wakes on a pending interrupt while PRIMASK is set, and the interrupt is
- * serviced as soon as interrupts are unmasked again.
- *
- * Blocking from an interrupt service routine, or with interrupts already
- * masked, can never be woken. Both are contract violations and terminate.
- *
- * @param p_done - condition to wait for
- */
-void sleep_until(auto p_done)
-{
-  bool const in_interrupt =
-    hal::bit_extract<exception_number>(read_ipsr()) != 0;
-  bool const masked = hal::bit_extract<interrupts_masked>(read_primask()) != 0;
-  if (in_interrupt or masked) [[unlikely]] {
-    std::terminate();
-  }
-
-  while (true) {
-    disable_all_interrupts();
-    if (p_done()) {
-      enable_all_interrupts();
-      return;
-    }
-    wait_for_interrupt();
-    enable_all_interrupts();
   }
 }
 

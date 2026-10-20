@@ -23,7 +23,7 @@ export module hal.arm_mcu.cortex_m:waiter;
 import hal;
 import hal.util;
 
-import :interrupt;
+import :system_control;
 
 namespace hal::cortex_m {
 /**

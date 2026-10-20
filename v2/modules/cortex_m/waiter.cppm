@@ -16,7 +16,6 @@ module;
 
 #include <algorithm>
 #include <chrono>
-#include <exception>
 #include <utility>
 
 export module hal.arm_mcu.cortex_m:waiter;
@@ -25,69 +24,8 @@ import hal;
 import hal.util;
 
 import :interrupt;
-import :system_control;
 
 namespace hal::cortex_m {
-/// IPSR bits holding the number of the exception currently being serviced.
-/// Zero means the CPU is in thread mode.
-constexpr auto exception_number = hal::bit_mask::from<0, 8>();
-
-/// PRIMASK bit that masks all configurable-priority interrupts when set.
-constexpr auto interrupts_masked = hal::bit_mask::from<0>();
-
-/// @return u32 - the contents of the Interrupt Program Status Register
-u32 read_ipsr()
-{
-  u32 value = 0;
-#if defined(__arm__)
-  asm volatile("mrs %0, ipsr" : "=r"(value));
-#endif
-  return value;
-}
-
-/// @return u32 - the contents of the PRIMASK register
-u32 read_primask()
-{
-  u32 value = 0;
-#if defined(__arm__)
-  asm volatile("mrs %0, primask" : "=r"(value));
-#endif
-  return value;
-}
-
-/**
- * @brief Sleep the CPU with WFI until `p_done()` returns true.
- *
- * `p_done()` is evaluated with interrupts masked, so an interrupt that makes it
- * true cannot land between the check and the WFI and leave the CPU asleep. WFI
- * still wakes on a pending interrupt while PRIMASK is set, and the interrupt is
- * serviced as soon as interrupts are unmasked again.
- *
- * Blocking from an interrupt service routine, or with interrupts already
- * masked, can never be woken. Both are contract violations and terminate.
- *
- * @param p_done - condition to wait for
- */
-void sleep_until(auto p_done)
-{
-  bool const in_interrupt =
-    hal::bit_extract<exception_number>(read_ipsr()) != 0;
-  bool const masked = hal::bit_extract<interrupts_masked>(read_primask()) != 0;
-  if (in_interrupt or masked) [[unlikely]] {
-    std::terminate();
-  }
-
-  while (true) {
-    disable_all_interrupts();
-    if (p_done()) {
-      enable_all_interrupts();
-      return;
-    }
-    wait_for_interrupt();
-    enable_all_interrupts();
-  }
-}
-
 /**
  * @brief Bare-metal waiter that sleeps the CPU with WFI while blocked.
  *
@@ -104,8 +42,7 @@ void sleep_until(auto p_done)
  *
  * @code
  * static hal::cortex_m::systick_timer timer(cpu_frequency);
- * static hal::cortex_m::wfi_waiter waiter(timer);  // must have static lifetime
- * waiter.install();
+ * static hal::cortex_m::wfi_waiter waiter(timer);  // installs itself
  * hal::sleep_for(10ms);
  * @endcode
  */
@@ -113,7 +50,13 @@ export class wfi_waiter final : public hal::blocking_waiter
 {
 public:
   /**
-   * @brief Construct a waiter that uses `p_timer` to wake from timed waits.
+   * @brief Construct a waiter and install it as the waiter of every context.
+   *
+   * After construction, `hal::current_waiter()` returns this waiter, so
+   * construct it before any driver that blocks. Drivers keep a pointer to the
+   * waiter that was current when they were constructed, so this waiter must
+   * outlive every driver that can block or notify. In practice that means it
+   * needs static storage.
    *
    * @param p_timer - timer used to end `block_for()` timeouts and
    * `sleep_for()` durations. The waiter registers its own callback with it,
@@ -124,25 +67,26 @@ public:
     : m_timer(p_timer)
     , m_wakeup_subscription(p_timer.on_expire(m_wakeup))
   {
+    // Set s_installed first, so the provider never returns a null waiter.
+    m_previous_installed = std::exchange(s_installed, this);
+    m_previous_provider = hal::set_waiter_provider(&provider);
   }
 
   wfi_waiter(wfi_waiter const&) = delete;
   wfi_waiter& operator=(wfi_waiter const&) = delete;
   wfi_waiter(wfi_waiter&&) = delete;
   wfi_waiter& operator=(wfi_waiter&&) = delete;
-  ~wfi_waiter() = default;
 
   /**
-   * @brief Install this waiter as the waiter of every context.
+   * @brief Restore the waiter that was installed before this one.
    *
-   * After this call, `hal::current_waiter()` returns this waiter. Call it
-   * before any driver blocks. This waiter must outlive every driver that can
-   * block or notify, which in practice means it needs static storage.
+   * Waiters are expected to be destroyed in the reverse order of their
+   * construction, as static and local objects are.
    */
-  void install()
+  ~wfi_waiter()
   {
-    s_installed = this;
-    hal::set_waiter_provider(&provider);
+    hal::set_waiter_provider(m_previous_provider);
+    s_installed = m_previous_installed;
   }
 
 private:
@@ -214,6 +158,8 @@ private:
   inline static wfi_waiter* s_installed = nullptr;
 
   hal::ref<hal::timed_interrupt> m_timer;
+  hal::waiter_provider m_previous_provider = nullptr;
+  wfi_waiter* m_previous_installed = nullptr;
   wakeup m_wakeup{};
   bool volatile m_notified = false;
   // Last, so the timer stops calling m_wakeup before it is destroyed.

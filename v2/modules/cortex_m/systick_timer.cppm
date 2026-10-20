@@ -14,6 +14,7 @@
 
 module;
 
+#include <algorithm>
 #include <cstdint>
 
 export module hal.arm_mcu.cortex_m:systick_timer;
@@ -222,8 +223,7 @@ private:
   /// Load the counter with the next chunk of m_remaining_counts and start it.
   void load_next_count()
   {
-    auto const count =
-      m_remaining_counts > maximum ? u64{ maximum } : m_remaining_counts;
+    auto const count = std::min(m_remaining_counts, u64{ maximum });
     m_remaining_counts -= count;
     sys_tick->current_value = 0;
     // NOTE: Safe to cast without narrowing: count is at most `maximum`.

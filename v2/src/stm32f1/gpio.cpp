@@ -43,7 +43,14 @@ bool read_level(pin p_pin)
 input_pin::input_pin(pin p_pin, pin_settings const& p_settings)
   : m_pin(p_pin)
 {
+  claim_pin(m_pin);
   configure(p_settings);
+}
+
+input_pin::~input_pin()
+{
+  reset_pin(m_pin);
+  release_pin(m_pin);
 }
 
 void input_pin::configure(pin_settings const& p_settings)
@@ -75,8 +82,14 @@ output_pin::output_pin(pin p_pin,
   : m_pin(p_pin)
   , m_speed(p_speed)
 {
-  throw_if_pin_is_unavailable(m_pin);
+  claim_pin(m_pin);
   configure(p_settings);
+}
+
+output_pin::~output_pin()
+{
+  reset_pin(m_pin);
+  release_pin(m_pin);
 }
 
 void output_pin::configure(pin_settings const& p_settings)

@@ -108,9 +108,6 @@ usart::usart(peripheral p_id)
 {
   // Rejects unsupported peripherals before anything is powered on.
   [[maybe_unused]] auto const reg = peripheral_to_register(p_id);
-  if (is_on(p_id)) {
-    throw hal::device_or_resource_busy(this);
-  }
   power_on(p_id);
 }
 
@@ -122,20 +119,26 @@ usart::~usart()
 usart::serial usart::acquire_serial(std::span<hal::byte> p_buffer,
                                     hal::serial::settings const& p_settings)
 {
+  if (m_serial_acquired) {
+    throw hal::device_or_resource_busy(this);
+  }
   if (p_buffer.size() > max_dma_length) {
     throw hal::operation_not_supported(this);
   }
-  return { m_id, p_buffer, p_settings };
+  return { *this, p_buffer, p_settings };
 }
 
-usart::serial::serial(peripheral p_id,
+usart::serial::serial(usart& p_manager,
                       std::span<hal::byte> p_buffer,
                       hal::serial::settings const& p_settings)
-  : m_id(p_id)
-  // NOLINTNEXTLINE(performance-no-int-to-ptr)
-  , m_uart(reinterpret_cast<void*>(peripheral_to_register(p_id)), p_buffer)
+  : m_manager(p_manager)
+  , m_id(p_manager.m_id)
+  , m_uart(
+      // NOLINTNEXTLINE(performance-no-int-to-ptr)
+      reinterpret_cast<void*>(peripheral_to_register(p_manager.m_id)),
+      p_buffer)
 {
-  auto const resources = resources_for(p_id);
+  auto const resources = resources_for(m_id);
   m_tx = resources.tx;
   m_rx = resources.rx;
   m_dma_channel = resources.dma_channel;
@@ -161,6 +164,9 @@ usart::serial::serial(peripheral p_id,
 
   configure_pin(m_tx, push_pull_alternative_output);
   configure_pin(m_rx, input_pull_up);
+
+  // Set last, so a constructor that throws leaves the manager free.
+  m_manager->m_serial_acquired = true;
 }
 
 usart::serial::~serial()
@@ -170,6 +176,7 @@ usart::serial::~serial()
     .clear<dma::enable>();
   reset_pin(m_tx);
   reset_pin(m_rx);
+  m_manager->m_serial_acquired = false;
 }
 
 void usart::serial::driver_configure(hal::serial::settings const& p_settings)

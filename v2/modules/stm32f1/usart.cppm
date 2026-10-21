@@ -90,6 +90,8 @@ public:
    * @return serial - the serial port, which can't be copied or moved. Store
    * it where it is returned, or use `hal::make_owner_from()` to put it on the
    * heap.
+   * @throws hal::device_or_resource_busy - if a serial port acquired from this
+   * manager still exists. Destroy it before acquiring another.
    * @throws hal::operation_not_supported - if `p_buffer` is larger than the
    * DMA controller can address (`max_dma_length`).
    */
@@ -99,6 +101,7 @@ public:
 
 private:
   peripheral m_id;
+  bool m_serial_acquired = false;
 };
 
 /**
@@ -124,7 +127,7 @@ public:
 private:
   friend class usart;
 
-  serial(peripheral p_id,
+  serial(usart& p_manager,
          std::span<hal::byte> p_buffer,
          hal::serial::settings const& p_settings);
 
@@ -133,6 +136,7 @@ private:
   hal::circular_span<hal::byte const> driver_receive_buffer() override;
   hal::usize driver_receive_cursor() override;
 
+  hal::ref<usart> m_manager;
   peripheral m_id;
   pin m_tx{};
   pin m_rx{};

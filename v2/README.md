@@ -4,7 +4,7 @@ libhal v5 addresses major design concerns from v4. Interfaces stay synchronous, 
 
 ## Driver migration status
 
-The drivers are being ported to libhal 5.0.0-alpha.1 (synchronous, no
+The drivers are being ported to libhal 5.0.0-alpha (synchronous, no
 `async_context`, no `strong_ptr`) one at a time. Drivers that aren't ported
 yet are left out of the build: their lines in `CMakeLists.txt`,
 `modules/cortex_m/cortex_m.cppm`, `modules/stm32f1/stm32f1.cppm` and
@@ -12,9 +12,10 @@ yet are left out of the build: their lines in `CMakeLists.txt`,
 
 | Ported | Not yet ported |
 | --- | --- |
-| Cortex-M: interrupts, startup, system control, DWT counter (steady clock), SysTick timer, WFI waiter | `stm32_generic` (i2c, pwm, spi, timer, uart) |
-| STM32F1: constants, power, clock, pin, gpio | STM32F1: dma, usart, adc, spi, independent_watchdog, can, usb |
-| Demos: blank, blinker, gpio | Demos: adc, uart, can, usb_cdc_raw, usb |
+| Cortex-M: interrupts, startup, system control, DWT counter (steady clock), SysTick timer, WFI waiter | `stm32_generic`: i2c, pwm, spi, timer |
+| `stm32_generic`: uart | STM32F1: adc, spi, independent_watchdog, can, usb |
+| STM32F1: constants, power, clock, pin, gpio, dma (register map), usart | Demos: adc, can, usb_cdc_raw, usb |
+| Demos: blank, blinker, gpio, uart, uart_heap | |
 
 ## Changes from v4
 

@@ -12,6 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+module;
+
+#include <array>
+
 module arm_mcu_demos;
 
 import hal;
@@ -36,6 +40,14 @@ hal::static_ref<hal::input_pin> input_pin()
 {
   static hal::stm32f1::input_pin pin({ .port = 'B', .pin = 4 });
   return pin;
+}
+
+hal::static_ref<hal::serial> console()
+{
+  static hal::stm32f1::usart usart1(hal::stm32f1::peripheral::usart1);
+  static std::array<hal::byte, 128> receive_buffer{};
+  static auto serial = usart1.acquire_serial(receive_buffer);
+  return serial;
 }
 }  // namespace resources
 

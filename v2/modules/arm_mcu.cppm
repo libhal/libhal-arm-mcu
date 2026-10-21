@@ -16,6 +16,5 @@ export module hal.arm_mcu;
 
 export import hal;
 export import hal.arm_mcu.cortex_m;
-// Left out until its drivers are ported (see CMakeLists.txt)
-// export import hal.arm_mcu.stm32_generic;
+export import hal.arm_mcu.stm32_generic;
 export import hal.arm_mcu.stm32f1;

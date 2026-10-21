@@ -55,17 +55,17 @@ public:
   class serial;
 
   /**
-   * @brief Power on a USART peripheral and manage it
+   * @brief Claim a USART peripheral, power it on, and reset it
    *
-   * The peripheral is powered off when the manager is destroyed. The manager
-   * must outlive the serial port acquired from it.
+   * The peripheral is powered off and released when the manager is
+   * destroyed. The manager must outlive the serial port acquired from it.
    *
    * @param p_id - which USART peripheral to manage. Must be `usart1`,
    * `usart2`, or `usart3`.
    * @throws hal::operation_not_supported - if `p_id` is not `usart1`,
    * `usart2`, or `usart3`.
-   * @throws hal::device_or_resource_busy - if the peripheral is already
-   * powered on, meaning something else manages it.
+   * @throws hal::device_or_resource_busy - if another driver has claimed the
+   * peripheral (see `claim()`), for example a second `usart` for it.
    */
   explicit usart(peripheral p_id);
 

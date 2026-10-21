@@ -14,6 +14,7 @@
 
 module;
 
+#include <bitset>
 #include <cstdint>
 
 export module hal.arm_mcu.stm32f1:power;
@@ -88,18 +89,81 @@ rcc_register_info get_reset_register_info(peripheral p_peripheral)
   }
 }
 
+/// One bit per peripheral value with an enable register, set while a driver
+/// has claimed the peripheral. Indexed directly by the peripheral's value.
+constinit std::bitset<beyond_bus> claimed_peripherals{};
+
+/// @throws hal::argument_out_of_domain - if the peripheral has no enable
+/// register, so it can't be claimed
+std::size_t claim_index(peripheral p_peripheral)
+{
+  auto const index = hal::value(p_peripheral);
+  if (index >= claimed_peripherals.size()) {
+    throw hal::argument_out_of_domain(nullptr);
+  }
+  return index;
+}
+
+/**
+ * @brief Claim a peripheral for one driver's exclusive use
+ *
+ * Drivers that control an entire peripheral (a USART, SPI, I2C or CAN
+ * controller, a timer) claim it when constructed and release it when
+ * destroyed, so a second driver for the same peripheral is detected. Shared
+ * peripherals, such as GPIO ports, AFIO and DMA1, are only powered on, never
+ * claimed.
+ *
+ * Claims are tracked in software, not by reading the clock-enable bit, so a
+ * peripheral a bootloader left powered on can still be claimed.
+ *
+ * @param p_peripheral - the peripheral to claim
+ * @throws hal::device_or_resource_busy - if the peripheral is already claimed
+ * @throws hal::argument_out_of_domain - if the peripheral has no enable
+ * register
+ */
+export void claim(peripheral p_peripheral)
+{
+  auto const index = claim_index(p_peripheral);
+  if (claimed_peripherals.test(index)) {
+    throw hal::device_or_resource_busy(nullptr);
+  }
+  claimed_peripherals.set(index);
+}
+
+/**
+ * @brief Release a peripheral claimed with claim()
+ *
+ * Releasing a peripheral that isn't claimed does nothing.
+ *
+ * @param p_peripheral - the peripheral to release
+ */
+export void release(peripheral p_peripheral) noexcept
+{
+  auto const index = hal::value(p_peripheral);
+  if (index < claimed_peripherals.size()) {
+    claimed_peripherals.reset(index);
+  }
+}
+
+/**
+ * @brief Check if a peripheral is claimed
+ *
+ * @param p_peripheral - the peripheral to check
+ * @return true - a driver has claimed the peripheral
+ * @return false - the peripheral is free, or has no enable register
+ */
+export [[nodiscard]] bool is_claimed(peripheral p_peripheral) noexcept
+{
+  auto const index = hal::value(p_peripheral);
+  return index < claimed_peripherals.size() && claimed_peripherals.test(index);
+}
+
 /**
  * @brief Power on the peripheral
  *
- * This API also acts as a resource overlap detector. If this API is called
- * twice on the same peripheral, it will throw an exception. Only drivers
- * with control over the entire peripheral should call this API for their
- * respective peripheral. This allows this API to detect when two drivers
- * attempt to utilize the same resource.
+ * If the peripheral is already powered on, this does nothing. To detect two
+ * drivers using the same peripheral, use claim().
  *
- * @throws hal::device_or_resource_busy - if the peripheral is already
- * powered on, constituting a violation of the 1 peripheral manager per
- * peripheral rule.
  * @throws hal::argument_out_of_domain - if the peripheral's value is
  * outside of the bounds of the enum class OR if there is no enable
  * register for that peripheral.
@@ -107,11 +171,6 @@ rcc_register_info get_reset_register_info(peripheral p_peripheral)
 export void power_on(peripheral p_peripheral)
 {
   auto const info = get_enable_register_info(p_peripheral);
-
-  if (hal::bit_extract(info.mask, *info.reg)) {
-    throw hal::device_or_resource_busy(nullptr);
-  }
-
   hal::bit_modify(*info.reg).set(info.mask);
 }
 

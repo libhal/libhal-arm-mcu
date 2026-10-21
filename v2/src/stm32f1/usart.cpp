@@ -106,14 +106,18 @@ dma::dma_channel_t& receive_channel(u8 p_dma_channel)
 usart::usart(peripheral p_id)
   : m_id(p_id)
 {
-  // Rejects unsupported peripherals before anything is powered on.
+  // Rejects unsupported peripherals before anything is claimed.
   [[maybe_unused]] auto const reg = peripheral_to_register(p_id);
+  claim(p_id);
   power_on(p_id);
+  // Start from the reset state, whatever ran before (e.g. a bootloader) left.
+  reset_peripheral(p_id);
 }
 
 usart::~usart()
 {
   power_off(m_id);
+  release(m_id);
 }
 
 usart::serial usart::acquire_serial(std::span<hal::byte> p_buffer,

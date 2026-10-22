@@ -41,7 +41,7 @@ class demos(ConanFile):
         self.requires("libhal-arm-mcu/latest")
         # TODO(#228): drop include_prerelease once libhal 5.0.0 and libhal-util
         # 6.0.0 are released.
-        self.requires("libhal/[>=5.0.0-alpha.1 <6, include_prerelease]")
+        self.requires("libhal/[>=5.0.0-alpha.4 <6, include_prerelease]")
         self.requires("libhal-util/[>=6.0.0-alpha.1 <7, include_prerelease]")
 
     def generate(self):

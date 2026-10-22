@@ -96,138 +96,107 @@ constexpr auto uart_dma_settings1 =
     .insert<dma::channel_priority, 0b10U>()  // Low Medium [High] Very_High
     .to<u32>();
 
-class serial_driver final : public hal::serial
+/// @return dma::dma_channel_t& - the DMA1 channel that receives for this USART
+dma::dma_channel_t& receive_channel(u8 p_dma_channel)
 {
-public:
-  serial_driver(hal::ptr<usart> p_manager,
-                peripheral p_id,
-                usart_resources const& p_resources,
-                void* p_register,
-                std::span<hal::byte> p_buffer,
-                hal::serial::settings const& p_settings)
-    : m_manager(p_manager)
-    , m_id(p_id)
-    , m_tx(p_resources.tx)
-    , m_rx(p_resources.rx)
-    , m_dma_channel(p_resources.dma_channel)
-    , m_uart(p_register, p_buffer)
-  { 
-    // NOTE: DMA1 is shared across multiple peripherals
-    if (not is_on(peripheral::dma1)) {
-      power_on(peripheral::dma1);
-    }
-
-    // TODO(#219): The stm32f1 platform needs APIs to determine if a DMA channel
-    // is already taken and to hold that resource until destruction.
-    auto const data_register_address =
-      reinterpret_cast<uptr>(m_uart.data_register());
-    auto const buffer_address = reinterpret_cast<uptr>(p_buffer.data());
-
-    auto& channel = dma::dma1->channel[m_dma_channel - 1];
-    channel.transfer_amount = static_cast<u32>(p_buffer.size());
-    channel.peripheral_address = static_cast<u32>(data_register_address);
-    channel.memory_address = static_cast<u32>(buffer_address);
-    channel.configuration = uart_dma_settings1;
-
-    m_uart.configure(p_settings, frequency(m_id));
-
-    configure_pin(m_tx, push_pull_alternative_output);
-    configure_pin(m_rx, input_pull_up);
-  }
-
-  serial_driver(serial_driver const&) = delete;
-  serial_driver& operator=(serial_driver const&) = delete;
-  serial_driver(serial_driver&&) = delete;
-  serial_driver& operator=(serial_driver&&) = delete;
-
-  ~serial_driver()
-  {
-    reset_pin(m_tx);
-    reset_pin(m_rx);
-  }
-
-private:
-  async::future<void> driver_configure(
-    async::context&,
-    hal::serial::settings const& p_settings) override
-  {
-    m_uart.configure(p_settings, frequency(m_id));
-    return {};
-  }
-
-  async::future<void> driver_write(
-    async::context&,
-    mem::scatter_span<hal::byte const> p_data) override
-  {
-    m_uart.write(p_data);
-    return {};
-  }
-
-  hal::circular_span<hal::byte const> driver_receive_buffer() override
-  {
-    return m_uart.receive_buffer();
-  }
-
-  hal::usize driver_receive_cursor() override
-  {
-    auto const buffer_size = m_uart.receive_buffer().size();
-    auto const& channel = dma::dma1->channel[m_dma_channel - 1];
-    return buffer_size - channel.transfer_amount;
-  }
-
-  // Co-owns the manager so the USART register bank and its power state
-  // outlive this resource.
-  hal::ptr<usart> m_manager;
-  peripheral m_id;
-  pin m_tx;
-  pin m_rx;
-  u8 m_dma_channel;
-  hal::stm32_generic::uart m_uart;
-};
+  return dma::dma1->channel[p_dma_channel - 1];
+}
 }  // namespace
 
-struct usart::impl
+usart::usart(peripheral p_id)
+  : m_id(p_id)
 {
-  peripheral id;
-  void* reg;
-};
-
-hal::ptr<usart> usart::create(hal::allocator p_allocator, peripheral p_id)
-{
-  return hal::allocate<usart>(p_allocator, private_key{}, p_allocator, p_id);
-}
-
-usart::usart(private_key, hal::allocator p_allocator, peripheral p_id)
-  : pimpl(p_allocator,
-          impl{ .id = p_id,
-                // NOLINTNEXTLINE(performance-no-int-to-ptr)
-                .reg = reinterpret_cast<void*>(peripheral_to_register(p_id)) })
-{
+  // Rejects unsupported peripherals before anything is powered on.
+  [[maybe_unused]] auto const reg = peripheral_to_register(p_id);
   power_on(p_id);
 }
 
 usart::~usart()
 {
-  power_off(inner().id);
+  power_off(m_id);
 }
 
-hal::ptr<hal::serial> usart::acquire_serial(
-  std::span<hal::byte> p_buffer,
-  hal::serial::settings const& p_settings)
+usart::serial usart::acquire_serial(std::span<hal::byte> p_buffer,
+                                    hal::serial::settings const& p_settings)
 {
+  if (m_serial_acquired) {
+    throw hal::device_or_resource_busy(this);
+  }
   if (p_buffer.size() > max_dma_length) {
     throw hal::operation_not_supported(this);
   }
+  return { *this, p_buffer, p_settings };
+}
 
-  auto const id = inner().id;
-  auto const resources = resources_for(id);
+usart::serial::serial(usart& p_manager,
+                      std::span<hal::byte> p_buffer,
+                      hal::serial::settings const& p_settings)
+  : m_manager(p_manager)
+  , m_id(p_manager.m_id)
+  , m_uart(
+      // NOLINTNEXTLINE(performance-no-int-to-ptr)
+      reinterpret_cast<void*>(peripheral_to_register(p_manager.m_id)),
+      p_buffer)
+{
+  auto const resources = resources_for(m_id);
+  m_tx = resources.tx;
+  m_rx = resources.rx;
+  m_dma_channel = resources.dma_channel;
 
-  return hal::allocate<serial_driver>(memory_resource(),
-                                      strong_from_this(),
-                                      id,
-                                      resources,
-                                      inner().reg,
-                                      p_buffer,
-                                      p_settings);
+  // NOTE: DMA1 is shared across multiple peripherals
+  if (not is_on(peripheral::dma1)) {
+    power_on(peripheral::dma1);
+  }
+
+  // TODO(#219): The stm32f1 platform needs APIs to determine if a DMA channel
+  // is already taken and to hold that resource until destruction.
+  auto const data_register_address =
+    reinterpret_cast<uptr>(m_uart.data_register());
+  auto const buffer_address = reinterpret_cast<uptr>(p_buffer.data());
+
+  auto& channel = receive_channel(m_dma_channel);
+  channel.transfer_amount = static_cast<u32>(p_buffer.size());
+  channel.peripheral_address = static_cast<u32>(data_register_address);
+  channel.memory_address = static_cast<u32>(buffer_address);
+  channel.configuration = uart_dma_settings1;
+
+  m_uart.configure(p_settings, frequency(m_id));
+
+  configure_pin(m_tx, push_pull_alternative_output);
+  configure_pin(m_rx, input_pull_up);
+
+  // Set last, so a constructor that throws leaves the manager free.
+  m_manager->m_serial_acquired = true;
+}
+
+usart::serial::~serial()
+{
+  // Stop DMA writing into the receive buffer, which may be freed next.
+  hal::bit_modify(receive_channel(m_dma_channel).configuration)
+    .clear<dma::enable>();
+  reset_pin(m_tx);
+  reset_pin(m_rx);
+  m_manager->m_serial_acquired = false;
+}
+
+void usart::serial::driver_configure(hal::serial::settings const& p_settings)
+{
+  m_uart.configure(p_settings, frequency(m_id));
+}
+
+void usart::serial::driver_write(mem::scatter_span<hal::byte const> p_data)
+{
+  m_uart.write(p_data);
+}
+
+hal::circular_span<hal::byte const> usart::serial::driver_receive_buffer()
+{
+  return m_uart.receive_buffer();
+}
+
+hal::usize usart::serial::driver_receive_cursor()
+{
+  auto const buffer_size = m_uart.receive_buffer().size();
+  return buffer_size - receive_channel(m_dma_channel).transfer_amount;
 }
 }  // namespace hal::stm32f1

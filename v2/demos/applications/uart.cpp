@@ -17,7 +17,7 @@ module;
 #include <algorithm>
 #include <array>
 #include <chrono>
-#include <coroutine>
+#include <span>
 #include <string_view>
 
 module arm_mcu_demos;
@@ -25,7 +25,7 @@ module arm_mcu_demos;
 import hal;
 import hal.util;
 
-hal::task application(async::context& p_ctx)
+void application()
 {
   auto console = resources::console();
 
@@ -35,27 +35,31 @@ hal::task application(async::context& p_ctx)
     using namespace std::chrono_literals;
     using namespace std::string_view_literals;
 
-    co_await hal::write(p_ctx, *console, "Hello, World!\n"sv);
+    hal::write(*console, "Hello, World!\n"sv);
 
-    // Echo back anything received since the last iteration.
+    // Echo back the newest bytes received since the last iteration. The
+    // cursor is a position in the circular receive buffer, so it wraps.
     auto const receive_buffer = console->receive_buffer();
+    auto const buffer_size = receive_buffer.size();
     auto const cursor = console->receive_cursor();
     auto const new_byte_count =
-      std::min<hal::usize>(cursor - last_cursor, receive_buffer.size());
+      (cursor + buffer_size - last_cursor) % buffer_size;
 
     std::array<hal::byte, 64> echo_buffer{};
     auto const echoed =
       std::min<hal::usize>(new_byte_count, echo_buffer.size());
+    // receive_buffer is a circular_span, so indexes past the end wrap around.
+    auto const first = cursor + buffer_size - echoed;
     for (hal::usize i = 0; i < echoed; i++) {
-      echo_buffer[i] = receive_buffer[cursor - echoed + i];
+      echo_buffer[i] = receive_buffer[first + i];
     }
     last_cursor = cursor;
 
     if (echoed > 0) {
-      co_await hal::write(
-        p_ctx, *console, { std::span<hal::byte const>(echo_buffer.data(), echoed) });
+      hal::write(*console,
+                 { std::span<hal::byte const>(echo_buffer.data(), echoed) });
     }
 
-    co_await 1s;
+    hal::sleep_for(1s);
   }
 }

@@ -56,7 +56,6 @@ set(DEMOS
     blinker
     gpio
     uart
-    uart_heap
 )
 
 foreach(demo IN LISTS DEMOS)

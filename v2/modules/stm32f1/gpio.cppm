@@ -27,7 +27,8 @@ namespace hal::stm32f1 {
  * Values match the MODE[1:0] bits for output pins (see "Table 21. Output
  * MODE bits" in RM0008).
  */
-export enum class output_speed : hal::u8 {
+export enum class output_speed : hal::u8
+{
   max_10_mhz = 0b01,
   max_2_mhz = 0b10,
   max_50_mhz = 0b11,
@@ -55,16 +56,18 @@ public:
    *
    * @param p_pin - port & pin selection
    * @param p_settings - settings to apply to the input pin
+   * @throws hal::device_or_resource_busy - if another driver has claimed the
+   * pin (see `claim_pin()`)
    */
   explicit input_pin(pin p_pin, hal::pin_settings const& p_settings = {});
 
   input_pin(input_pin const&) = delete;
   input_pin& operator=(input_pin const&) = delete;
-  /// Moving hands the pin to the new object; nothing refers to the old one.
-  input_pin(input_pin&&) noexcept = default;
-  /// Moving hands the pin to the new object; nothing refers to the old one.
-  input_pin& operator=(input_pin&&) noexcept = default;
-  ~input_pin() = default;
+  input_pin(input_pin&&) = delete;
+  input_pin& operator=(input_pin&&) = delete;
+
+  /// Return the pin to its reset state and release its claim
+  ~input_pin();
 
 private:
   void configure(hal::pin_settings const& p_settings);
@@ -94,8 +97,8 @@ public:
    * @param p_pin - port & pin selection
    * @param p_settings - settings to apply to the output pin
    * @param p_speed - maximum output slew-rate for the pin
-   * @throws hal::device_or_resource_busy - if the pin is not in its reset
-   * state, meaning something else already configured it
+   * @throws hal::device_or_resource_busy - if another driver has claimed the
+   * pin (see `claim_pin()`)
    */
   explicit output_pin(pin p_pin,
                       hal::pin_settings const& p_settings = {},
@@ -103,11 +106,11 @@ public:
 
   output_pin(output_pin const&) = delete;
   output_pin& operator=(output_pin const&) = delete;
-  /// Moving hands the pin to the new object; nothing refers to the old one.
-  output_pin(output_pin&&) noexcept = default;
-  /// Moving hands the pin to the new object; nothing refers to the old one.
-  output_pin& operator=(output_pin&&) noexcept = default;
-  ~output_pin() = default;
+  output_pin(output_pin&&) = delete;
+  output_pin& operator=(output_pin&&) = delete;
+
+  /// Return the pin to its reset state and release its claim
+  ~output_pin();
 
 private:
   void configure(hal::pin_settings const& p_settings);

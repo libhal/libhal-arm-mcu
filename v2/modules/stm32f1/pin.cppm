@@ -14,9 +14,11 @@
 
 module;
 
+#include <cstddef>
 #include <cstdint>
 
 #include <array>
+#include <bitset>
 
 export module hal.arm_mcu.stm32f1:pin;
 
@@ -46,7 +48,8 @@ export struct pin
  * The following options are available to be sent to the output of the MCO
  * pin
  */
-export enum class mco_source : std::uint8_t {
+export enum class mco_source : std::uint8_t
+{
   system_clock = 0b100,
   high_speed_internal = 0b101,
   high_speed_external = 0b110,
@@ -57,7 +60,8 @@ export enum class mco_source : std::uint8_t {
  * @brief Remap pins for can bus peripheral
  *
  */
-export enum class can_pins : std::uint8_t {
+export enum class can_pins : std::uint8_t
+{
   pa11_pa12 = 0b00,
   pb9_pb8 = 0b10,
   pd0_pd1 = 0b11,
@@ -180,22 +184,13 @@ constexpr auto mode = bit_mask::from<0, 1>();
 /**
  * @brief This is the default state of each pin when the stm32f1 resets
  *
- * This is used to determine if a pin is in the reset state prior to
- * configuration. This is also used to set the pin state when `reset_pin` is
- * called.
+ * This is used to set the pin state when `reset_pin` is called.
  */
 constexpr auto reset_pin_config = bit_value<u32>(0)
                                     .insert<cnf1>(input_float.CNF1)
                                     .insert<cnf0>(input_float.CNF0)
                                     .insert<mode>(input_float.MODE)
                                     .get();
-
-/**
- * @brief The state of the MODE of a pin in RESET
- *
- */
-constexpr auto reset_pin_mode =
-  bit_value<u32>(0).insert<mode>(input_float.MODE).get();
 
 /// Bit masks for the AFIO MAPR register
 export struct pin_remap
@@ -253,14 +248,6 @@ bit_mask config_mask(u8 p_pin)
   };
 }
 
-bit_mask config_mode_mask(u8 p_pin)
-{
-  return {
-    .position = static_cast<std::uint32_t>((p_pin * 4) % 32),
-    .width = 2,
-  };
-}
-
 /// Returns a bit mask indicating where the odr bit is in the output data
 /// register.
 bit_mask odr_mask(u8 p_pin)
@@ -309,24 +296,6 @@ std::uint32_t volatile& odr_register(pin const& p_pin)
   return gpio_reg(p_pin.port).odr;
 }
 
-bool is_pin_reset(pin p_pin)
-{
-  auto& config_reg = config_register(p_pin);
-  // NOTE: To check if a pin is in "reset" mode, we simply check to see if
-  // the pin is in the input MODE (MODE=0b00). We ignore the pull up/down
-  // resistor states since these can be different for the JTAG pins (see
-  // RM0008 pg. 161)
-  //
-  //    PA15: JTDI in PU
-  //    PA14: JTCK in PD
-  //    PA13: JTMS in PU
-  //    PB4: NJTRST in PU
-  auto const current_configuration =
-    bit_extract(config_mode_mask(p_pin.pin), config_reg);
-
-  return reset_pin_mode == current_configuration;
-}
-
 void safely_power_on(pin const& p_pin)
 {
   // Ensure that AFIO is powered on before attempting to access it
@@ -360,6 +329,16 @@ void safely_power_on(pin const& p_pin)
         power_on(peripheral::gpio_e);
       }
       break;
+    case 'F':
+      if (not is_on(peripheral::gpio_f)) {
+        power_on(peripheral::gpio_f);
+      }
+      break;
+    case 'G':
+      if (not is_on(peripheral::gpio_g)) {
+        power_on(peripheral::gpio_g);
+      }
+      break;
     default:
       throw hal::argument_out_of_domain(nullptr);
   }
@@ -384,20 +363,68 @@ export void release_jtag_pins()
     .insert<bit_mask::from<24, 26>()>(0b010U);
 }
 
-/**
- * @brief Throws an exception if a pin is not available
- *
- * Use this function to validate if a pin is available.
- *
- * @param p_pin - the pin to validate
- * @throw hal::device_or_resource_busy - if the pin is not available, meaning
- * it was not in the reset state.
- */
-export void throw_if_pin_is_unavailable(pin p_pin)
+/// One bit per pin of ports A to G, set while a driver has claimed the pin.
+constinit std::bitset<7 * 16> claimed_pins{};
+
+/// @throws hal::argument_out_of_domain - if the port isn't 'A' to 'G' or the
+/// pin isn't 0 to 15
+std::size_t pin_index(pin p_pin)
 {
-  if (not is_pin_reset(p_pin)) {
+  if (p_pin.port < 'A' || p_pin.port > 'G' || p_pin.pin > 15) {
+    throw hal::argument_out_of_domain(nullptr);
+  }
+  return static_cast<std::size_t>(p_pin.port - 'A') * 16 + p_pin.pin;
+}
+
+/**
+ * @brief Claim a pin for one driver's exclusive use
+ *
+ * Every driver that configures a pin claims it first, and releases it when
+ * destroyed, so two drivers using the same pin are detected no matter which
+ * is constructed first. Claims are tracked in software, so a pin a bootloader
+ * left configured can still be claimed.
+ *
+ * @param p_pin - the pin to claim
+ * @throws hal::device_or_resource_busy - if the pin is already claimed
+ * @throws hal::argument_out_of_domain - if the port isn't 'A' to 'G' or the
+ * pin isn't 0 to 15
+ */
+export void claim_pin(pin p_pin)
+{
+  auto const index = pin_index(p_pin);
+  if (claimed_pins.test(index)) {
     throw hal::device_or_resource_busy(nullptr);
   }
+  claimed_pins.set(index);
+}
+
+/**
+ * @brief Release a pin claimed with claim_pin()
+ *
+ * Releasing a pin that isn't claimed, or that doesn't exist, does nothing.
+ *
+ * @param p_pin - the pin to release
+ */
+export void release_pin(pin p_pin) noexcept
+{
+  if (p_pin.port >= 'A' && p_pin.port <= 'G' && p_pin.pin <= 15) {
+    claimed_pins.reset(pin_index(p_pin));
+  }
+}
+
+/**
+ * @brief Check if a pin is claimed
+ *
+ * @param p_pin - the pin to check
+ * @return true - a driver has claimed the pin
+ * @return false - the pin is free, or doesn't exist
+ */
+export [[nodiscard]] bool is_pin_claimed(pin p_pin) noexcept
+{
+  if (p_pin.port < 'A' || p_pin.port > 'G' || p_pin.pin > 15) {
+    return false;
+  }
+  return claimed_pins.test(pin_index(p_pin));
 }
 
 /**
@@ -405,10 +432,10 @@ export void throw_if_pin_is_unavailable(pin p_pin)
  *
  * @param p_pin - the pin to configure
  * @param p_config - Configuration to set the pin to
+ * Claim the pin with claim_pin() before configuring it.
+ *
  * @throw hal::argument_out_of_domain - pin select is outside of the range of
  * available pins.
- * @throw hal::device_or_resource_busy - pin has already been configured once
- * from its reset state and thus is in use by something else in the code.
  */
 export void configure_pin(pin p_pin, pin_config_t p_config)
 {
@@ -423,7 +450,6 @@ export void configure_pin(pin p_pin, pin_config_t p_config)
   auto& config_reg = config_register(p_pin);
   auto& odr_reg = odr_register(p_pin);
   safely_power_on(p_pin);
-  throw_if_pin_is_unavailable(p_pin);
 
   auto const config = bit_value<u32>(0)
                         .insert<cnf1>(p_config.CNF1)
@@ -438,8 +464,7 @@ export void configure_pin(pin p_pin, pin_config_t p_config)
 /**
  * @brief Set pin to the system reset state
  *
- * This releases control over the pin and allows the pin to be reused by
- * other drivers.
+ * This does not release the pin's claim; call release_pin() for that.
  *
  * @param p_pin - the pin to configure
  */
@@ -454,10 +479,14 @@ export void reset_pin(pin p_pin)
 /**
  * @brief Output a clock on the PA8 pin
  *
+ * Claims PA8 until reset_mco_pa8() is called.
+ *
  * @param p_source - source clock to channel to the PA8 pin
+ * @throws hal::device_or_resource_busy - if PA8 is already claimed
  */
 export void activate_mco_pa8(mco_source p_source)
 {
+  claim_pin({ .port = 'A', .pin = 8 });
   configure_pin({ .port = 'A', .pin = 8 }, push_pull_alternative_output);
   bit_modify(rcc->cfgr).insert<clock_configuration::mco>(value(p_source));
 }
@@ -468,6 +497,7 @@ export void activate_mco_pa8(mco_source p_source)
 export void reset_mco_pa8()
 {
   reset_pin({ .port = 'A', .pin = 8 });
+  release_pin({ .port = 'A', .pin = 8 });
 }
 
 /**

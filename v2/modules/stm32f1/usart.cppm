@@ -91,7 +91,8 @@ public:
    * it where it is returned, or use `hal::make_owner_from()` to put it on the
    * heap.
    * @throws hal::device_or_resource_busy - if a serial port acquired from this
-   * manager still exists. Destroy it before acquiring another.
+   * manager still exists (destroy it before acquiring another), or if another
+   * driver has claimed the TX or RX pin.
    * @throws hal::operation_not_supported - if `p_buffer` is larger than the
    * DMA controller can address (`max_dma_length`).
    */

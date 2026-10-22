@@ -147,6 +147,14 @@ usart::serial::serial(usart& p_manager,
   m_rx = resources.rx;
   m_dma_channel = resources.dma_channel;
 
+  // Claim both pins or neither: check RX first, so a TX claim that succeeds
+  // is never left behind by an RX claim that throws.
+  if (is_pin_claimed(m_rx)) {
+    throw hal::device_or_resource_busy(this);
+  }
+  claim_pin(m_tx);
+  claim_pin(m_rx);
+
   // NOTE: DMA1 is shared across multiple peripherals
   if (not is_on(peripheral::dma1)) {
     power_on(peripheral::dma1);
@@ -180,6 +188,8 @@ usart::serial::~serial()
     .clear<dma::enable>();
   reset_pin(m_tx);
   reset_pin(m_rx);
+  release_pin(m_tx);
+  release_pin(m_rx);
   m_manager->m_serial_acquired = false;
 }
 

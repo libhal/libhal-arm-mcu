@@ -61,27 +61,22 @@ inline auto* const iwdg_regs =
 
 // Reset status register (RM0008 section 8.3.10)
 inline auto* const reset_status_register =
-  reinterpret_cast<uint32_t*>(0x4002'1000 + 0x24);
+  reinterpret_cast<uint32_t volatile*>(0x4002'1000 + 0x24);
 // NOLINTEND(performance-no-int-to-ptr)
 
 }  // namespace
 
-struct independent_watchdog::impl
+independent_watchdog::independent_watchdog()
 {
-  // Nothing to store — all operations are direct register accesses.
-};
-
-hal::ptr<independent_watchdog> independent_watchdog::create(
-  hal::allocator p_allocator)
-{
-  return hal::allocate<independent_watchdog>(
-    p_allocator, private_key{}, p_allocator);
+  if (s_claimed) {
+    throw hal::device_or_resource_busy(this);
+  }
+  s_claimed = true;
 }
 
-independent_watchdog::independent_watchdog(private_key,
-                                           hal::allocator p_allocator)
-  : pimpl(p_allocator, impl{})
+independent_watchdog::~independent_watchdog()
 {
+  s_claimed = false;
 }
 
 void independent_watchdog::start()
@@ -106,7 +101,7 @@ void independent_watchdog::set_countdown_time(hal::time_duration p_wait_time)
   cycle_count = cycle_count >> 2;
 
   if (cycle_count == 0) {
-    throw hal::operation_not_supported(nullptr);
+    throw hal::operation_not_supported(this);
   }
 
   hal::byte freq_divider = 0;
@@ -116,12 +111,14 @@ void independent_watchdog::set_countdown_time(hal::time_duration p_wait_time)
   }
 
   if (freq_divider >= 7) {
-    throw hal::operation_not_supported(nullptr);
+    throw hal::operation_not_supported(this);
   }
 
-  // Registers shouldn't be edited when bits are 1 (section 19.4.4, RM0008)
+  // Registers shouldn't be edited when bits are 1 (section 19.4.4, RM0008).
+  // Don't wait for them: they only clear while the LSI runs, which may not be
+  // until start().
   if (hal::bit_extract(hal::bit_mask::from(0, 1), iwdg_regs->sr)) {
-    throw hal::resource_unavailable_try_again(nullptr);
+    throw hal::device_or_resource_busy(this);
   }
 
   iwdg_regs->set_kr(0x5555);
@@ -142,7 +139,5 @@ void independent_watchdog::clear_flag()
   constexpr hal::bit_mask reset_flag = hal::bit_mask::from(24);
   hal::bit_modify(*reset_status_register).set(reset_flag);
 }
-
-independent_watchdog::~independent_watchdog() = default;
 
 }  // namespace hal::stm32f1

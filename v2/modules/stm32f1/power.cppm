@@ -83,18 +83,24 @@ rcc_register_info get_reset_register_info(peripheral p_peripheral)
     case 1:
       return { .reg = &rcc->apb1rstr, .mask = mask };
     case 2:
-      [[fallthrough]];
-    default:
       return { .reg = &rcc->apb2rstr, .mask = mask };
+    default:
+      // Beyond the buses: there's no reset bit. Falling through to APB2 would
+      // reset an unrelated peripheral.
+      throw hal::argument_out_of_domain(nullptr);
   }
 }
 
-/// One bit per peripheral value with an enable register, set while a driver
-/// has claimed the peripheral. Indexed directly by the peripheral's value.
-constinit std::bitset<beyond_bus> claimed_peripherals{};
+/// One bit per peripheral value, set while a driver has claimed the
+/// peripheral. Indexed directly by the peripheral's value. Covers the
+/// peripherals beyond the buses too, such as the independent watchdog, so
+/// every claim goes through one map.
+constinit std::bitset<peripheral_count> claimed_peripherals{};
 
-/// @throws hal::argument_out_of_domain - if the peripheral has no enable
-/// register, so it can't be claimed
+static_assert(hal::value(peripheral::independent_watchdog) < peripheral_count,
+              "peripheral_count must cover every peripheral value");
+
+/// @throws hal::argument_out_of_domain - if the value isn't a peripheral
 std::size_t claim_index(peripheral p_peripheral)
 {
   auto const index = hal::value(p_peripheral);
@@ -114,12 +120,12 @@ std::size_t claim_index(peripheral p_peripheral)
  * claimed.
  *
  * Claims are tracked in software, not by reading the clock-enable bit, so a
- * peripheral a bootloader left powered on can still be claimed.
+ * peripheral a bootloader left powered on can still be claimed, and so can
+ * peripherals that have no enable bit, such as the independent watchdog.
  *
  * @param p_peripheral - the peripheral to claim
  * @throws hal::device_or_resource_busy - if the peripheral is already claimed
- * @throws hal::argument_out_of_domain - if the peripheral has no enable
- * register
+ * @throws hal::argument_out_of_domain - if the value isn't a peripheral
  */
 export void claim(peripheral p_peripheral)
 {
@@ -150,7 +156,7 @@ export void release(peripheral p_peripheral) noexcept
  *
  * @param p_peripheral - the peripheral to check
  * @return true - a driver has claimed the peripheral
- * @return false - the peripheral is free, or has no enable register
+ * @return false - the peripheral is free, or the value isn't a peripheral
  */
 export [[nodiscard]] bool is_claimed(peripheral p_peripheral) noexcept
 {
@@ -202,6 +208,9 @@ export [[nodiscard]] bool is_on(peripheral p_peripheral)
  *
  * This will reset all the peripheral's registers to their reset/default
  * values.
+ *
+ * @throws hal::argument_out_of_domain - if the peripheral has no reset
+ * register, such as the peripherals beyond the buses
  */
 export void reset_peripheral(peripheral p_peripheral)
 {

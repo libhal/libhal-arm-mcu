@@ -25,6 +25,7 @@ import hal.util;
 
 import :constants;
 import :independent_watchdog;
+import :power;
 
 namespace hal::stm32f1 {
 namespace {
@@ -68,15 +69,14 @@ inline auto* const reset_status_register =
 
 independent_watchdog::independent_watchdog()
 {
-  if (s_claimed) {
-    throw hal::device_or_resource_busy(this);
-  }
-  s_claimed = true;
+  // The IWDG has no clock-enable bit, so there's nothing to power on. The
+  // claim is all that keeps a second instance from existing.
+  claim(peripheral::independent_watchdog);
 }
 
 independent_watchdog::~independent_watchdog()
 {
-  s_claimed = false;
+  release(peripheral::independent_watchdog);
 }
 
 void independent_watchdog::start()

@@ -31,6 +31,9 @@ constexpr u32 apb1_bus = bus_id_offset * 1;
 constexpr u32 apb2_bus = bus_id_offset * 2;
 /// Bit position of systems outside of any bus
 constexpr u32 beyond_bus = bus_id_offset * 3;
+/// One past the last peripheral value. Update it when adding a peripheral
+/// beyond the buses.
+constexpr u32 peripheral_count = beyond_bus + 4;
 
 /// List of each peripheral and their power on id number for this platform
 export enum class peripheral : u8 {
@@ -85,9 +88,12 @@ export enum class peripheral : u8 {
   timer10 = apb2_bus + 20,
   timer11 = apb2_bus + 21,
 
+  // Beyond the buses: no RCC enable bit, so they can be claimed but not
+  // powered on, off or reset.
   cpu = beyond_bus + 0,
   system_timer = beyond_bus + 1,
   i2s = beyond_bus + 2,
+  independent_watchdog = beyond_bus + 3,
 };
 
 // NOLINTBEGIN(performance-enum-size): Underlying type must match

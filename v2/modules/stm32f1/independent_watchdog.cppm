@@ -49,6 +49,9 @@ public:
   /**
    * @brief Take control of the independent watchdog
    *
+   * Claims `peripheral::independent_watchdog` (see `claim()`), and releases
+   * it when destroyed.
+   *
    * @throws hal::device_or_resource_busy - if another `independent_watchdog`
    * exists
    */
@@ -113,9 +116,6 @@ public:
    * one: the hardware only clears them together.
    */
   void clear_flag();
-
-private:
-  inline static bool s_claimed = false;
 };
 
 }  // namespace hal::stm32f1

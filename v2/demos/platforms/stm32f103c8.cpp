@@ -50,6 +50,15 @@ hal::static_ref<hal::serial> console()
   return serial;
 }
 
+hal::static_ref<hal::adc16> adc()
+{
+  static hal::no_op_lock single_context;
+  static hal::stm32f1::adc adc1(
+    hal::stm32f1::peripheral::adc1, *clock(), single_context);
+  static auto channel = adc1.acquire_channel(hal::stm32f1::adc_pins::pb0);
+  return channel;
+}
+
 hal::static_ref<hal::spi_channel> spi_channel()
 {
   using namespace mp_units::si::unit_symbols;

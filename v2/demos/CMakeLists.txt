@@ -50,8 +50,9 @@ target_compile_features(startup_code PUBLIC cxx_std_23)
 libhal_apply_compile_options(startup_code)
 
 # The other demos come back as their drivers are ported (see
-# ../CMakeLists.txt): adc, can, usb_cdc_raw, usb.
+# ../CMakeLists.txt): can, usb_cdc_raw, usb.
 set(DEMOS
+    adc
     blank
     blinker
     gpio

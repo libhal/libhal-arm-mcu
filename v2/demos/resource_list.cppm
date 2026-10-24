@@ -25,10 +25,11 @@ hal::static_ref<hal::steady_clock> clock();
 hal::static_ref<hal::output_pin> status_led();
 hal::static_ref<hal::input_pin> input_pin();
 hal::static_ref<hal::serial> console();
+hal::static_ref<hal::adc16> adc();
 hal::static_ref<hal::spi_channel> spi_channel();
 
 // Left out until their drivers are ported (see ../CMakeLists.txt):
-// adc(), can_transceiver(), can_bus_manager(), can_identifier_filter() and
+// can_transceiver(), can_bus_manager(), can_identifier_filter() and
 // the usb_*() endpoints.
 
 inline void reset()

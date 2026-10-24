@@ -53,7 +53,7 @@ libhal_add_library(arm-mcu
         modules/stm32f1/pin.cppm
         modules/stm32f1/gpio.cppm
         modules/stm32f1/usart.cppm
-        # modules/stm32f1/adc.cppm
+        modules/stm32f1/adc.cppm
         modules/stm32f1/spi.cppm
         modules/stm32f1/independent_watchdog.cppm
         # modules/stm32f1/can.cppm
@@ -63,7 +63,7 @@ libhal_add_library(arm-mcu
         src/stm32f1/gpio.cpp
         src/stm32f1/clock.cpp
         src/stm32f1/usart.cpp
-        # src/stm32f1/adc.cpp
+        src/stm32f1/adc.cpp
         src/stm32f1/spi.cpp
         src/stm32f1/independent_watchdog.cpp
         # src/stm32f1/can.cpp

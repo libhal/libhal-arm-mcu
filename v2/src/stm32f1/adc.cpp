@@ -15,7 +15,8 @@
 module;
 
 #include <array>
-#include <coroutine>
+#include <atomic>
+#include <mutex>
 
 module hal.arm_mcu.stm32f1;
 
@@ -118,6 +119,12 @@ uptr peripheral_to_register(peripheral p_id)
   }
 }
 
+adc_reg_t& registers_of(peripheral p_id)
+{
+  // NOLINTNEXTLINE(performance-no-int-to-ptr)
+  return *reinterpret_cast<adc_reg_t*>(peripheral_to_register(p_id));
+}
+
 pin to_pin(adc_pins p_pin)
 {
   auto const value = hal::value(p_pin);
@@ -130,104 +137,121 @@ pin to_pin(adc_pins p_pin)
   return { .port = 'C', .pin = static_cast<u8>(value - 10) };
 }
 
-class channel final : public hal::adc16
+/// Busy wait until at least `p_ticks` full ticks of `p_clock` have passed
+void wait_ticks(steady_clock& p_clock, u64 p_ticks)
 {
-public:
-  channel(hal::ptr<adc> const& p_manager, adc_pins p_pin)
-    : m_manager(p_manager)
-    , m_pin(p_pin)
-  {
-    configure_pin(to_pin(p_pin), input_analog);
+  // The tick in progress now only partly counts, so wait one more.
+  auto const end = p_clock.uptime() + p_ticks + 1;
+  while (p_clock.uptime() < end) {
+    continue;
   }
-
-  channel(channel const&) = delete;
-  channel& operator=(channel const&) = delete;
-  channel(channel&&) = delete;
-  channel& operator=(channel&&) = delete;
-
-  ~channel()
-  {
-    reset_pin(to_pin(m_pin));
-  }
-
-private:
-  async::future<hal::u16> driver_read(async::context& p_context) override
-  {
-    return m_manager->read(p_context, m_pin);
-  }
-
-  hal::ptr<adc> m_manager;
-  adc_pins m_pin;
-};
-}  // namespace
-
-struct adc::impl
-{
-  peripheral id;
-  void* reg;
-  async::mutex conversion_lock;
-};
-
-hal::ptr<adc> adc::create(hal::allocator p_allocator, peripheral p_id)
-{
-  if (frequency(p_id) > max_adc_frequency) {
-    throw hal::operation_not_supported(nullptr);
-  }
-
-  return hal::allocate<adc>(p_allocator, private_key{}, p_allocator, p_id);
 }
 
-adc::adc(private_key, hal::allocator p_allocator, peripheral p_id)
-  : pimpl(p_allocator,
-          impl{ .id = p_id,
-                // NOLINTNEXTLINE(performance-no-int-to-ptr)
-                .reg = reinterpret_cast<void*>(peripheral_to_register(p_id)),
-                .conversion_lock = {} })
+/// Runs one conversion of `p_pin` on `p_reg`. Doesn't throw.
+u16 convert(adc_reg_t& p_reg, adc_pins p_pin)
 {
+  bit_modify(p_reg.regular_sequence_3)
+    .insert<adc_regular_sequence_register_3::first_conversion>(
+      hal::value(p_pin));
+
+  // ADON is already set, so setting it again starts a conversion.
+  bit_modify(p_reg.control_2).set<adc_control_register_2::ad_converter_on>();
+
+  while (
+    not bit_extract<adc_status_register::end_of_conversion>(p_reg.status)) {
+    continue;
+  }
+
+  // Reading the data register clears the end of conversion flag.
+  auto const sample = static_cast<hal::u16>(
+    bit_extract<adc_regular_data_register::regular_data>(p_reg.regular_data));
+
+  return upscale<u16, 12>(sample);
+}
+}  // namespace
+
+adc::adc(peripheral p_id, steady_clock& p_clock, hal::ref<basic_lock> p_lock)
+  : m_lock(p_lock)
+  , m_id(p_id)
+{
+  // Rejects unsupported peripherals before anything is claimed.
+  auto& reg = registers_of(p_id);
+  auto const adc_frequency = frequency(p_id);
+  if (adc_frequency > max_adc_frequency) {
+    throw hal::operation_not_supported(this);
+  }
+
+  claim(p_id);
   power_on(p_id);
+  // Start from the reset state, whatever ran before (e.g. a bootloader) left.
+  // That also means ADON is clear, so setting it below powers the ADC up
+  // instead of starting a conversion.
+  reset_peripheral(p_id);
 
-  auto& reg = *static_cast<adc_reg_t*>(inner().reg);
+  bit_modify(reg.control_2).set<adc_control_register_2::ad_converter_on>();
 
-  // Turns on and calibrates the adc only if its the first time power-on.
-  // This is to prevent accidentally toggling the start of a new conversion
-  // as it uses the same bit.
-  if (not bit_extract<adc_control_register_2::ad_converter_on>(reg.control_2)) {
-    bit_modify(reg.control_2).set<adc_control_register_2::ad_converter_on>();
-    bit_modify(reg.control_2).set<adc_control_register_2::ad_calibration>();
+  // The ADC must be powered up for tSTAB (1 us, DS5319) before it converts,
+  // and for at least two ADC clock cycles before calibration (RM0008 section
+  // 11.4). Wait for both, each rounded up to whole clock ticks.
+  auto const clock_hz =
+    p_clock.frequency().numerical_value_in(hal::hertz::unit);
+  auto const adc_hz = adc_frequency.numerical_value_in(hal::hertz::unit);
+  auto const tstab_ticks = (clock_hz / 1'000'000) + 1;
+  auto const two_adc_cycles_ticks = 2 * ((clock_hz / adc_hz) + 1);
+  wait_ticks(p_clock, tstab_ticks + two_adc_cycles_ticks);
 
-    while (bit_extract<adc_control_register_2::ad_calibration>(reg.control_2)) {
-      continue;
-    }
+  bit_modify(reg.control_2).set<adc_control_register_2::ad_calibration>();
+  while (bit_extract<adc_control_register_2::ad_calibration>(reg.control_2)) {
+    continue;
   }
 }
 
 adc::~adc()
 {
-  power_off(inner().id);
+  power_off(m_id);
+  release(m_id);
 }
 
-hal::ptr<hal::adc16> adc::acquire_channel(adc_pins p_pin)
+adc::channel adc::acquire_channel(adc_pins p_pin)
 {
-  return hal::allocate<channel>(memory_resource(), strong_from_this(), p_pin);
+  return { *this, p_pin };
 }
 
-async::future<hal::u16> adc::read(async::context&, adc_pins p_pin)
+u16 adc::read(adc_pins p_pin)
 {
-  auto& reg = *static_cast<adc_reg_t*>(inner().reg);
+  // Waits while another context is converting. Not std::scoped_lock, which
+  // libc++ built without threads doesn't provide.
+  std::lock_guard const hold(*m_lock);
 
-  bit_modify(reg.regular_sequence_3)
-    .insert<adc_regular_sequence_register_3::first_conversion>(
-      hal::value(p_pin));
-
-  bit_modify(reg.control_2).set<adc_control_register_2::ad_converter_on>();
-
-  while (not bit_extract<adc_status_register::end_of_conversion>(reg.status)) {
-    continue;
+  // A lock that blocks keeps other contexts out, so this is only true if a
+  // lock that doesn't block, such as hal::no_op_lock, let this read interrupt
+  // another one. Converting would switch the channel under that read.
+  if (m_converting.test_and_set(std::memory_order_acquire)) {
+    throw hal::device_or_resource_busy(this);
   }
+  auto const sample = convert(registers_of(m_id), p_pin);
+  m_converting.clear(std::memory_order_release);
+  return sample;
+}
 
-  auto const sample = static_cast<hal::u16>(
-    bit_extract<adc_regular_data_register::regular_data>(reg.regular_data));
+adc::channel::channel(adc& p_manager, adc_pins p_pin)
+  : m_manager(p_manager)
+  , m_pin(p_pin)
+{
+  auto const selected = to_pin(p_pin);
+  claim_pin(selected);
+  configure_pin(selected, input_analog);
+}
 
-  return upscale<u16, 12>(sample);
+adc::channel::~channel()
+{
+  auto const selected = to_pin(m_pin);
+  reset_pin(selected);
+  release_pin(selected);
+}
+
+u16 adc::channel::driver_read()
+{
+  return m_manager->read(m_pin);
 }
 }  // namespace hal::stm32f1

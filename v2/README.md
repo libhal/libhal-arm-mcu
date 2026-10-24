@@ -12,10 +12,10 @@ yet are left out of the build: their lines in `CMakeLists.txt`,
 
 | Ported | Not yet ported |
 | --- | --- |
-| Cortex-M: interrupts, startup, system control, DWT counter (steady clock), SysTick timer, WFI waiter | `stm32_generic`: i2c, pwm, spi, timer |
-| `stm32_generic`: uart | STM32F1: adc, spi, can, usb |
-| STM32F1: constants, power, clock, pin, gpio, dma (register map), usart, independent_watchdog | Demos: adc, can, usb_cdc_raw, usb |
-| Demos: blank, blinker, gpio, uart | |
+| Cortex-M: interrupts, startup, system control, DWT counter (steady clock), SysTick timer, WFI waiter | `stm32_generic`: i2c, pwm, timer |
+| `stm32_generic`: uart, spi | STM32F1: adc, can, usb |
+| STM32F1: constants, power, clock, pin, gpio, dma (register map), usart, independent_watchdog, spi | Demos: adc, can, usb_cdc_raw, usb |
+| Demos: blank, blinker, gpio, spi, uart | |
 
 ## Changes from v4
 

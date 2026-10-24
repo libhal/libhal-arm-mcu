@@ -25,6 +25,8 @@ export module hal.arm_mcu.stm32_generic:spi;
 import hal;
 import hal.util;
 
+import :scatter_cursor;
+
 namespace hal::stm32_generic {
 /// stm32 spi peripheral register map
 struct spi_reg_t
@@ -219,68 +221,6 @@ export hal::hertz achievable_clock_rate(hal::hertz p_peripheral_clock_speed,
 
   return (peripheral_clock_speed_value / divider) * hal::hertz::unit;
 }
-
-/**
- * @brief Sequential, one-element-at-a-time cursor over a `scatter_span`
- *
- * Walks the constituent chunks of a `scatter_span<T>` as if it were one
- * contiguous range, skipping over empty chunks. Used to drive a byte-by-byte
- * spi transfer across a caller-supplied set of discontiguous buffers without
- * requiring random access into the `scatter_span` (which it does not
- * support).
- *
- * @tparam T - element type of the underlying scatter_span. Use a `const`
- * qualified type for a read-only cursor and an unqualified type for a
- * cursor whose `current()` element can be written to.
- */
-template<typename T>
-class scatter_cursor
-{
-public:
-  explicit scatter_cursor(mem::scatter_span<T> p_span)
-    : m_it(p_span.begin())
-    , m_end(p_span.end())
-  {
-    skip_empty_chunks();
-  }
-
-  /// @return true if every element of the scatter_span has been visited
-  [[nodiscard]] bool done() const
-  {
-    return m_it == m_end;
-  }
-
-  /// @return reference to the element at the cursor's current position.
-  /// Calling this when `done()` is true is undefined behavior.
-  [[nodiscard]] T& current()
-  {
-    return (*m_it)[m_offset];
-  }
-
-  /// Move the cursor to the next element, advancing past chunk boundaries
-  /// (including empty chunks) as needed.
-  void advance()
-  {
-    ++m_offset;
-    if (m_offset >= (*m_it).size()) {
-      ++m_it;
-      m_offset = 0;
-      skip_empty_chunks();
-    }
-  }
-
-private:
-  void skip_empty_chunks()
-  {
-    while (m_it != m_end and (*m_it).empty()) {
-      ++m_it;
-    }
-  }
-
-  mem::scatter_span_iterator<T> m_it;
-  mem::scatter_span_iterator<T> m_end;
-  std::size_t m_offset = 0;
-};
 
 /**
  * @brief A generic spi implementation for all stm32f series MCUs

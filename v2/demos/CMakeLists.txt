@@ -56,6 +56,7 @@ set(DEMOS
     blank
     blinker
     gpio
+    i2c
     spi
     uart
 )

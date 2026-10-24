@@ -40,7 +40,8 @@ libhal_add_library(arm-mcu
         modules/cortex_m/terminate_handler.cpp
         modules/stm32_generic/stm32_generic.cppm
         modules/stm32_generic/registers.cppm
-        # modules/stm32_generic/i2c.cppm
+        modules/stm32_generic/scatter_cursor.cppm
+        modules/stm32_generic/i2c.cppm
         # modules/stm32_generic/pwm.cppm
         modules/stm32_generic/spi.cppm
         # modules/stm32_generic/timer.cppm
@@ -55,6 +56,7 @@ libhal_add_library(arm-mcu
         modules/stm32f1/usart.cppm
         modules/stm32f1/adc.cppm
         modules/stm32f1/spi.cppm
+        modules/stm32f1/i2c.cppm
         modules/stm32f1/independent_watchdog.cppm
         # modules/stm32f1/can.cppm
         # modules/stm32f1/usb.cppm
@@ -65,6 +67,7 @@ libhal_add_library(arm-mcu
         src/stm32f1/usart.cpp
         src/stm32f1/adc.cpp
         src/stm32f1/spi.cpp
+        src/stm32f1/i2c.cpp
         src/stm32f1/independent_watchdog.cpp
         # src/stm32f1/can.cpp
         # src/stm32f1/usb.cpp
@@ -160,6 +163,7 @@ libhal_install_library(arm-mcu NAMESPACE libhal PACKAGE_NAME libhal-arm-mcu)
 libhal_add_tests(arm-mcu
     TEST_NAMES
         gpio
+        i2c
         pin
         power
         spi

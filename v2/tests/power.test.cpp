@@ -41,6 +41,42 @@ void power_test()
     expect(not hal::stm32f1::is_claimed(peripheral::usart1));
   };
 
+  "peripherals beyond the buses can be claimed"_test = []() {
+    // Setup
+    bool const claimed_before =
+      hal::stm32f1::is_claimed(peripheral::independent_watchdog);
+
+    // Exercise
+    hal::stm32f1::claim(peripheral::independent_watchdog);
+    bool const claimed_during =
+      hal::stm32f1::is_claimed(peripheral::independent_watchdog);
+    bool threw_busy = false;
+    try {
+      hal::stm32f1::claim(peripheral::independent_watchdog);
+    } catch (hal::device_or_resource_busy const&) {
+      threw_busy = true;
+    }
+    hal::stm32f1::release(peripheral::independent_watchdog);
+
+    // Verify
+    expect(not claimed_before);
+    expect(claimed_during);
+    expect(threw_busy);
+    expect(not hal::stm32f1::is_claimed(peripheral::independent_watchdog));
+    // Claims are independent of each other
+    expect(not hal::stm32f1::is_claimed(peripheral::i2s));
+  };
+
+  // These throw before touching any register, so they're safe on the host.
+  "peripherals beyond the buses can't be powered or reset"_test = []() {
+    // Exercise + Verify
+    expect(throws<hal::argument_out_of_domain>(
+      []() { hal::stm32f1::power_on(peripheral::independent_watchdog); }));
+    expect(throws<hal::argument_out_of_domain>([]() {
+      hal::stm32f1::reset_peripheral(peripheral::independent_watchdog);
+    }));
+  };
+
   "claiming a claimed peripheral throws"_test = []() {
     // Setup
     hal::stm32f1::claim(peripheral::spi2);
@@ -74,24 +110,28 @@ void power_test()
     hal::stm32f1::release(peripheral::dma1);
   };
 
-  "peripherals without an enable register can't be claimed"_test = []() {
+  "values that aren't peripherals can't be claimed"_test = []() {
+    // Setup
+    auto const not_a_peripheral = static_cast<peripheral>(200);
+
     // Exercise
     bool threw = false;
     try {
-      hal::stm32f1::claim(peripheral::cpu);
+      hal::stm32f1::claim(not_a_peripheral);
     } catch (hal::argument_out_of_domain const&) {
       threw = true;
     }
 
     // Verify
     expect(threw);
-    expect(not hal::stm32f1::is_claimed(peripheral::cpu));
+    expect(not hal::stm32f1::is_claimed(not_a_peripheral));
   };
 
   "releasing a free peripheral does nothing"_test = []() {
     // Exercise
     hal::stm32f1::release(peripheral::usart2);
     hal::stm32f1::release(peripheral::cpu);
+    hal::stm32f1::release(static_cast<peripheral>(200));
 
     // Verify
     expect(not hal::stm32f1::is_claimed(peripheral::usart2));

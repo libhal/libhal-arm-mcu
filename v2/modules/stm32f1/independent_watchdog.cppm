@@ -23,27 +23,47 @@ import :power;
 namespace hal::stm32f1 {
 
 /**
- * @brief STM32F1 Independent Watchdog (IWDG) peripheral manager
+ * @brief STM32F1 Independent Watchdog (IWDG)
  *
- * Owns the STM32F1's independent watchdog hardware block: its register bank.
- * The IWDG is clocked from the Low Speed Internal (LSI) oscillator and does
- * not require explicit power management.
+ * Owns the STM32F1's independent watchdog. The IWDG is clocked from the Low
+ * Speed Internal (LSI) oscillator and has no clock-enable bit, so there is
+ * nothing to power on. Only one may exist at a time.
+ *
+ * Once started, the watchdog can't be stopped, not even by destroying this
+ * object: only a system reset stops it. Call `reset()` often enough to keep
+ * the countdown from reaching zero.
+ *
+ * ```cpp
+ * static hal::stm32f1::independent_watchdog watchdog;
+ * watchdog.set_countdown_time(100ms);
+ * watchdog.start();
+ * while (true) {
+ *   do_work();
+ *   watchdog.reset();
+ * }
+ * ```
  */
-export struct independent_watchdog
-  : public hal::pimpl<independent_watchdog>
-  , public mem::enable_strong_from_this<independent_watchdog>
+export class independent_watchdog
 {
 public:
-  struct impl;
-
   /**
-   * @brief Acquire an independent watchdog peripheral manager
+   * @brief Take control of the independent watchdog
    *
-   * @param p_allocator - allocator used to allocate the memory for the object
-   * @return hal::ptr<independent_watchdog> - independent watchdog manager
+   * Claims `peripheral::independent_watchdog` (see `claim()`), and releases
+   * it when destroyed.
+   *
+   * @throws hal::device_or_resource_busy - if another `independent_watchdog`
+   * exists
    */
-  [[nodiscard]] static hal::ptr<independent_watchdog> create(
-    hal::allocator p_allocator);
+  independent_watchdog();
+
+  independent_watchdog(independent_watchdog const&) = delete;
+  independent_watchdog& operator=(independent_watchdog const&) = delete;
+  independent_watchdog(independent_watchdog&&) = delete;
+  independent_watchdog& operator=(independent_watchdog&&) = delete;
+
+  /// Give up control of the watchdog. A started watchdog keeps counting.
+  ~independent_watchdog();
 
   /**
    * @brief Start the watchdog countdown
@@ -68,38 +88,34 @@ public:
    * actual wait time may be 66%-133% of the specified time due to LSI clock
    * variance (section 7.2.5, RM0008).
    *
+   * The hardware takes a few LSI cycles to apply new values, and only while
+   * the LSI runs, which starts with `start()`. Configure the countdown once
+   * before `start()`, or wait at least a few milliseconds between changes.
+   *
    * @param p_wait_time - countdown time till the watchdog triggers a reset
    * @throws hal::operation_not_supported - if the requested time cannot be
-   *         achieved with the available prescaler/reload combinations.
+   * achieved with the available prescaler/reload combinations.
+   * @throws hal::device_or_resource_busy - if the previous countdown change
+   * hasn't been applied yet
    */
   void set_countdown_time(hal::time_duration p_wait_time);
 
   /**
-   * @brief Checks if a reset flag is set
+   * @brief Checks if the last reset was caused by the independent watchdog
    *
-   * Returns true if the independent watchdog reset flag is set in the
-   * reset status register.
-   *
-   * @return true if the IWDG reset flag is set, false otherwise
+   * @return true - the IWDG reset flag is set in the reset status register
+   * @return false - the IWDG did not cause a reset since the flags were last
+   * cleared
    */
-  bool check_flag();
+  [[nodiscard]] bool check_flag();
 
   /**
    * @brief Clears the reset flags
    *
-   * Clears the reset flag bits in the reset status register.
+   * Clears every reset flag in the reset status register, not just the IWDG
+   * one: the hardware only clears them together.
    */
   void clear_flag();
-
-  /// @private
-  independent_watchdog(private_key, hal::allocator p_allocator);
-
-  independent_watchdog(independent_watchdog const&) = delete;
-  independent_watchdog& operator=(independent_watchdog const&) = delete;
-  independent_watchdog(independent_watchdog&&) = delete;
-  independent_watchdog& operator=(independent_watchdog&&) = delete;
-
-  ~independent_watchdog();
 };
 
 }  // namespace hal::stm32f1

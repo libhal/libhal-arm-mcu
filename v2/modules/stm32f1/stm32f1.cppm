@@ -7,9 +7,9 @@ export import :pin;
 export import :gpio;
 export import :dma;
 export import :usart;
+export import :independent_watchdog;
 // Left out until they are ported (see CMakeLists.txt)
 // export import :adc;
 // export import :spi;
-// export import :independent_watchdog;
 // export import :can;
 // export import :usb;

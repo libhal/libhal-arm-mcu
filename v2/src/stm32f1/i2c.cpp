@@ -1,0 +1,174 @@
+// Copyright 2026 Khalil Estell and the libhal contributors
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+module;
+
+#include <array>
+#include <atomic>
+#include <mutex>
+
+module hal.arm_mcu.stm32f1;
+
+import hal;
+import hal.util;
+import hal.arm_mcu.stm32_generic;
+
+import :constants;
+import :pin;
+import :power;
+import :clock;
+
+namespace hal::stm32f1 {
+namespace {
+/// SCL and SDA pins of a supported I2C peripheral
+struct i2c_pins
+{
+  pin scl;
+  pin sda;
+};
+
+/// @throws hal::operation_not_supported - if `p_id` is not `i2c1` or `i2c2`.
+uptr peripheral_to_register(peripheral p_id)
+{
+  // See Chapter 3.3 "Memory map" in RM0008 for these magic numbers
+  switch (p_id) {
+    case peripheral::i2c1:
+      return 0x4000'5400;
+    case peripheral::i2c2:
+      return 0x4000'5800;
+    default:
+      throw hal::operation_not_supported(nullptr);
+  }
+}
+
+/// @throws hal::operation_not_supported - if `p_id` is not `i2c1` or `i2c2`.
+i2c_pins pins_for(peripheral p_id)
+{
+  // See the pin definitions table in the STM32F103 datasheets (DS5319,
+  // DS5792). I2C1 uses its default pins; its PB8/PB9 remap isn't supported.
+  switch (p_id) {
+    case peripheral::i2c1:
+      return { .scl = { .port = 'B', .pin = 6 },
+               .sda = { .port = 'B', .pin = 7 } };
+    case peripheral::i2c2:
+      return { .scl = { .port = 'B', .pin = 10 },
+               .sda = { .port = 'B', .pin = 11 } };
+    default:
+      throw hal::operation_not_supported(nullptr);
+  }
+}
+
+void* register_address(peripheral p_id)
+{
+  // NOLINTNEXTLINE(performance-no-int-to-ptr)
+  return reinterpret_cast<void*>(peripheral_to_register(p_id));
+}
+}  // namespace
+
+i2c::i2c(peripheral p_id,
+         hal::ref<hal::steady_clock> p_clock,
+         hal::ref<basic_lock> p_lock,
+         hal::i2c::settings const& p_settings)
+  : m_clock(p_clock)
+  , m_lock(p_lock)
+  , m_id(p_id)
+  , m_driver(register_address(p_id))  // Rejects unsupported peripherals
+{
+  auto const pins = pins_for(p_id);
+
+  // Claim every pin or none: check them all before claiming any.
+  for (auto const& selected : std::array{ pins.scl, pins.sda }) {
+    if (is_pin_claimed(selected)) {
+      throw hal::device_or_resource_busy(this);
+    }
+  }
+  claim(p_id);
+  claim_pin(pins.scl);
+  claim_pin(pins.sda);
+
+  power_on(p_id);
+  // Start from the reset state, whatever ran before (e.g. a bootloader) left.
+  reset_peripheral(p_id);
+
+  if (p_id == peripheral::i2c1) {
+    // AFIO is shared, so it is powered on, never claimed.
+    power_on(peripheral::afio);
+    bit_modify(alternative_function_io->mapr).clear<pin_remap::i2c1_remap>();
+  }
+
+  configure_pin(pins.scl, open_drain_alternative_output);
+  configure_pin(pins.sda, open_drain_alternative_output);
+
+  try {
+    m_driver.configure(p_settings, frequency(m_id));
+  } catch (...) {
+    // The destructor won't run, so undo what the constructor did.
+    for (auto const& selected : std::array{ pins.scl, pins.sda }) {
+      reset_pin(selected);
+      release_pin(selected);
+    }
+    reset_peripheral(m_id);
+    power_off(m_id);
+    release(m_id);
+    throw;
+  }
+}
+
+i2c::~i2c()
+{
+  auto const pins = pins_for(m_id);
+  for (auto const& selected : std::array{ pins.scl, pins.sda }) {
+    reset_pin(selected);
+    release_pin(selected);
+  }
+  // Disables the peripheral. m_driver doesn't touch the registers when it is
+  // destroyed after this.
+  reset_peripheral(m_id);
+  power_off(m_id);
+  release(m_id);
+}
+
+void i2c::driver_configure(hal::i2c::settings const& p_settings)
+{
+  // Not std::scoped_lock, which libc++ built without threads doesn't provide.
+  std::lock_guard const hold(*m_lock);
+  m_driver.configure(p_settings, frequency(m_id));
+}
+
+void i2c::driver_transaction(hal::byte p_address,
+                             mem::scatter_span<hal::byte const> p_data_out,
+                             mem::scatter_span<hal::byte> p_data_in)
+{
+  // Waits while another context is using the bus.
+  std::lock_guard const hold(*m_lock);
+
+  // A lock that blocks keeps other contexts out, so this is only true if a
+  // lock that doesn't block, such as hal::no_op_lock, let this transaction
+  // interrupt another one.
+  if (m_busy.test_and_set(std::memory_order_acquire)) {
+    throw hal::device_or_resource_busy(this);
+  }
+  // Clears the flag even if the transaction throws.
+  struct clear_on_exit
+  {
+    std::atomic_flag& flag;
+    ~clear_on_exit()
+    {
+      flag.clear(std::memory_order_release);
+    }
+  } const guard{ .flag = m_busy };
+
+  m_driver.transaction(p_address, p_data_out, p_data_in, *m_clock);
+}
+}  // namespace hal::stm32f1

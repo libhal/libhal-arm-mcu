@@ -42,7 +42,7 @@ libhal_add_library(arm-mcu
         modules/stm32_generic/registers.cppm
         # modules/stm32_generic/i2c.cppm
         # modules/stm32_generic/pwm.cppm
-        # modules/stm32_generic/spi.cppm
+        modules/stm32_generic/spi.cppm
         # modules/stm32_generic/timer.cppm
         modules/stm32_generic/uart.cppm
         modules/stm32f1/stm32f1.cppm
@@ -54,7 +54,7 @@ libhal_add_library(arm-mcu
         modules/stm32f1/gpio.cppm
         modules/stm32f1/usart.cppm
         # modules/stm32f1/adc.cppm
-        # modules/stm32f1/spi.cppm
+        modules/stm32f1/spi.cppm
         modules/stm32f1/independent_watchdog.cppm
         # modules/stm32f1/can.cppm
         # modules/stm32f1/usb.cppm
@@ -64,7 +64,7 @@ libhal_add_library(arm-mcu
         src/stm32f1/clock.cpp
         src/stm32f1/usart.cpp
         # src/stm32f1/adc.cpp
-        # src/stm32f1/spi.cpp
+        src/stm32f1/spi.cpp
         src/stm32f1/independent_watchdog.cpp
         # src/stm32f1/can.cpp
         # src/stm32f1/usb.cpp
@@ -162,4 +162,5 @@ libhal_add_tests(arm-mcu
         gpio
         pin
         power
+        spi
 )

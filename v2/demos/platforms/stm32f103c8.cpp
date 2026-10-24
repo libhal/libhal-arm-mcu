@@ -49,6 +49,19 @@ hal::static_ref<hal::serial> console()
   static auto serial = usart1.acquire_serial(receive_buffer);
   return serial;
 }
+
+hal::static_ref<hal::spi_channel> spi_channel()
+{
+  using namespace mp_units::si::unit_symbols;
+  static hal::no_op_lock single_context;
+  static hal::spi_bus_manager spi1(
+    [] { return hal::stm32f1::spi(hal::stm32f1::peripheral::spi1); },
+    single_context);
+  static hal::stm32f1::output_pin chip_select({ .port = 'A', .pin = 4 });
+  static auto channel =
+    spi1.acquire_channel(chip_select, { .clock_rate = 1 * MHz });
+  return channel;
+}
 }  // namespace resources
 
 void initialize_platform()

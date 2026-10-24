@@ -14,9 +14,7 @@
 
 module;
 
-#include <atomic>
-#include <coroutine>
-#include <optional>
+#include <array>
 
 module hal.arm_mcu.stm32f1;
 
@@ -31,11 +29,19 @@ import :clock;
 
 namespace hal::stm32f1 {
 namespace {
+/// Clock, CIPO and COPI pins of a supported SPI peripheral
+struct spi_pins
+{
+  pin clock;
+  pin cipo;
+  pin copi;
+};
+
 /// @throws hal::operation_not_supported - if `p_id` is not `spi1`, `spi2`,
 /// or `spi3`.
 uptr peripheral_to_register(peripheral p_id)
 {
-  // See Chapter 4: Pin definition, Table 9 in RM0008 for these magic numbers
+  // See Chapter 3.3 "Memory map" in RM0008 for these magic numbers
   switch (p_id) {
     case peripheral::spi1:
       return 0x4001'3000;
@@ -50,176 +56,99 @@ uptr peripheral_to_register(peripheral p_id)
 
 /// @throws hal::operation_not_supported - if `p_id` is not `spi1`, `spi2`,
 /// or `spi3`.
-void configure_bus_pins(peripheral p_id)
+spi_pins pins_for(peripheral p_id)
 {
-  // Datasheet: Chapter 4: Pin definition Table 9
+  // See the pin definitions table in the STM32F103 datasheets (DS5319,
+  // DS5792). SPI3 only exists on high density and larger parts, where it is
+  // fixed to PB3, PB4 and PB5.
   switch (p_id) {
     case peripheral::spi1:
-      bit_modify(alternative_function_io->mapr).clear<pin_remap::spi1_remap>();
-      configure_pin({ .port = 'A', .pin = 5 },
-                    push_pull_alternative_output);            // clock
-      configure_pin({ .port = 'A', .pin = 6 }, input_float);  // cipo
-      configure_pin({ .port = 'A', .pin = 7 },
-                    push_pull_alternative_output);  // copi
-      break;
+      return { .clock = { .port = 'A', .pin = 5 },
+               .cipo = { .port = 'A', .pin = 6 },
+               .copi = { .port = 'A', .pin = 7 } };
     case peripheral::spi2:
-      configure_pin({ .port = 'B', .pin = 13 },
-                    push_pull_alternative_output);             // clock
-      configure_pin({ .port = 'B', .pin = 14 }, input_float);  // cipo
-      configure_pin({ .port = 'B', .pin = 15 },
-                    push_pull_alternative_output);  // copi
-      break;
+      return { .clock = { .port = 'B', .pin = 13 },
+               .cipo = { .port = 'B', .pin = 14 },
+               .copi = { .port = 'B', .pin = 15 } };
     case peripheral::spi3:
-      bit_modify(alternative_function_io->mapr2).set<pin_remap2::spi3_remap>();
-      configure_pin({ .port = 'C', .pin = 10 },
-                    push_pull_alternative_output);             // clock
-      configure_pin({ .port = 'C', .pin = 11 }, input_float);  // cipo
-      configure_pin({ .port = 'C', .pin = 12 },
-                    push_pull_alternative_output);  // copi
-      break;
+      return { .clock = { .port = 'B', .pin = 3 },
+               .cipo = { .port = 'B', .pin = 4 },
+               .copi = { .port = 'B', .pin = 5 } };
     default:
       throw hal::operation_not_supported(nullptr);
   }
 }
 
-class channel final : public hal::spi_channel
+void* register_address(peripheral p_id)
 {
-public:
-  channel(hal::ptr<spi> p_manager,
-          hal::ptr<hal::output_pin> p_chip_select,
-          hal::spi_channel::settings const& p_settings)
-    : m_manager(p_manager)
-    , m_chip_select(p_chip_select)
-    , m_settings(p_settings)
-  {
-  }
-
-  channel(channel const&) = delete;
-  channel& operator=(channel const&) = delete;
-  channel(channel&&) = delete;
-  channel& operator=(channel&&) = delete;
-
-  ~channel() = default;
-
-private:
-  async::future<void> driver_configure(
-    async::context&,
-    hal::spi_channel::settings const& p_settings) override
-  {
-    m_settings = p_settings;
-    return {};
-  }
-
-  async::future<hal::hertz> driver_clock_rate(async::context&) override
-  {
-    return m_manager->achievable_clock_rate(m_settings);
-  }
-
-  async::future<void> driver_chip_select(async::context& p_context,
-                                         bool p_select) override
-  {
-    co_await m_manager->chip_select(
-      p_context, m_chip_select, m_settings, p_select);
-    m_asserted = p_select;
-  }
-
-  async::future<void> driver_transfer(
-    async::context& p_context,
-    mem::scatter_span<hal::byte const> p_data_out,
-    mem::scatter_span<hal::byte> p_data_in,
-    hal::byte p_filler) override
-  {
-    if (m_asserted) {
-      co_await m_manager->transfer(p_context, p_data_out, p_data_in, p_filler);
-      co_return;
-    }
-
-    co_await driver_chip_select(p_context, true);
-    co_await m_manager->transfer(p_context, p_data_out, p_data_in, p_filler);
-    co_await driver_chip_select(p_context, false);
-  }
-
-  hal::ptr<spi> m_manager;
-  hal::ptr<hal::output_pin> m_chip_select;
-  hal::spi_channel::settings m_settings;
-  std::atomic<bool> m_asserted = false;
-};
+  // NOLINTNEXTLINE(performance-no-int-to-ptr)
+  return reinterpret_cast<void*>(peripheral_to_register(p_id));
+}
 }  // namespace
 
-struct spi::impl
+spi::spi(peripheral p_id)
+  : m_id(p_id)
+  , m_driver(register_address(p_id))  // Rejects unsupported peripherals
 {
-  impl(peripheral p_id, void* p_reg)
-    : id(p_id)
-    , driver(p_reg)
-  {
+  auto const pins = pins_for(p_id);
+
+  // Claim every pin or none: check them all before claiming any.
+  for (auto const& selected : std::array{ pins.clock, pins.cipo, pins.copi }) {
+    if (is_pin_claimed(selected)) {
+      throw hal::device_or_resource_busy(this);
+    }
+  }
+  claim(p_id);
+  claim_pin(pins.clock);
+  claim_pin(pins.cipo);
+  claim_pin(pins.copi);
+
+  power_on(p_id);
+  // Start from the reset state, whatever ran before (e.g. a bootloader) left.
+  reset_peripheral(p_id);
+
+  if (p_id == peripheral::spi1) {
+    // AFIO is shared, so it is powered on, never claimed.
+    power_on(peripheral::afio);
+    bit_modify(alternative_function_io->mapr).clear<pin_remap::spi1_remap>();
   }
 
-  peripheral id;
-  hal::stm32_generic::spi driver;
-  async::mutex bus_lock;
-};
-
-hal::ptr<spi> spi::create(hal::allocator p_allocator, peripheral p_id)
-{
-  return hal::allocate<spi>(p_allocator, private_key{}, p_allocator, p_id);
-}
-
-spi::spi(private_key, hal::allocator p_allocator, peripheral p_id)
-  // NOLINTBEGIN(performance-no-int-to-ptr)
-  : pimpl(p_allocator,
-          p_id,
-          reinterpret_cast<void*>(peripheral_to_register(p_id)))
-// NOLINTEND(performance-no-int-to-ptr)
-{
-  configure_bus_pins(p_id);
-  power_on(p_id);
+  configure_pin(pins.clock, push_pull_alternative_output);
+  configure_pin(pins.cipo, input_float);
+  configure_pin(pins.copi, push_pull_alternative_output);
 }
 
 spi::~spi()
 {
-  power_off(inner().id);
-}
-
-hal::ptr<hal::spi_channel> spi::acquire_channel(
-  hal::ptr<hal::output_pin> const& p_chip_select,
-  hal::spi_channel::settings const& p_settings)
-{
-  return hal::allocate<channel>(
-    memory_resource(), strong_from_this(), p_chip_select, p_settings);
-}
-
-async::future<void> spi::chip_select(
-  async::context& p_context,
-  hal::ptr<hal::output_pin> const& p_chip_select,
-  hal::spi_channel::settings const& p_settings,
-  bool p_select)
-{
-  auto& state = inner();
-
-  if (p_select) {
-    auto guard = co_await state.bus_lock.lock(p_context);
-    state.driver.configure(p_settings, frequency(state.id));
-    // Chip select is active low.
-    co_await p_chip_select->level(p_context, false);
-  } else {
-    co_await p_chip_select->level(p_context, true);
+  auto const pins = pins_for(m_id);
+  for (auto const& selected : std::array{ pins.clock, pins.cipo, pins.copi }) {
+    reset_pin(selected);
+    release_pin(selected);
   }
+  // Disables the peripheral. m_driver doesn't touch the registers when it is
+  // destroyed after this.
+  reset_peripheral(m_id);
+  power_off(m_id);
+  release(m_id);
 }
 
-async::future<void> spi::transfer(async::context&,
-                                  mem::scatter_span<hal::byte const> p_data_out,
-                                  mem::scatter_span<hal::byte> p_data_in,
-                                  hal::byte p_filler)
+void spi::driver_configure(hal::spi_settings const& p_settings)
 {
-  // TODO(#211): Convert generic stm32 spi into a coroutine
-  inner().driver.transfer(p_data_out, p_data_in, p_filler);
-  return {};
+  m_driver.configure(p_settings, frequency(m_id));
 }
 
-hal::hertz spi::achievable_clock_rate(
-  hal::spi_channel::settings const& p_settings)
+hal::hertz spi::driver_clock_rate(hal::spi_settings const& p_settings)
 {
-  return hal::stm32_generic::achievable_clock_rate(frequency(inner().id),
+  return hal::stm32_generic::achievable_clock_rate(frequency(m_id),
                                                    p_settings.clock_rate);
+}
+
+void spi::driver_transfer(mem::scatter_span<hal::byte const> p_data_out,
+                          mem::scatter_span<hal::byte> p_data_in,
+                          hal::byte p_filler)
+{
+  // TODO(#211): Block on the transfer complete interrupt through a
+  // hal::notifier instead of polling the status register.
+  m_driver.transfer(p_data_out, p_data_in, p_filler);
 }
 }  // namespace hal::stm32f1

@@ -165,31 +165,34 @@ bool rx_not_empty(spi_reg_t& p_reg)
  * bus running at `p_peripheral_clock_speed` as close as possible to, but not
  * above, `p_requested_clock_rate`.
  *
- * @throws hal::operation_not_supported - if `p_requested_clock_rate` is
- * higher than the bus can achieve even at the lowest available prescaler.
+ * A request outside the bus's range selects the nearest rate: faster than
+ * the bus can go selects the peripheral clock divided by 2, and slower than
+ * it can go (including zero) selects the peripheral clock divided by 256.
  */
 std::uint16_t select_baud_rate_control(hal::hertz p_peripheral_clock_speed,
                                        hal::hertz p_requested_clock_rate)
 {
-  auto const peripheral_clock_speed_value =
-    p_peripheral_clock_speed.numerical_value_in(hal::hertz::unit);
-  auto const clock_rate_value =
-    p_requested_clock_rate.numerical_value_in(hal::hertz::unit);
-  auto const clock_divider = peripheral_clock_speed_value / clock_rate_value;
-  auto prescaler = static_cast<std::uint16_t>(clock_divider);
+  auto const peripheral_clock = static_cast<std::uint32_t>(
+    p_peripheral_clock_speed.numerical_value_in(hal::hertz::unit));
+  auto const requested = static_cast<std::uint32_t>(
+    p_requested_clock_rate.numerical_value_in(hal::hertz::unit));
 
-  if (prescaler <= 1) {
-    prescaler = 2;
-  } else if (prescaler > 256) {
-    throw hal::operation_not_supported(nullptr);
-  }
+  constexpr std::uint32_t min_prescaler = 2;
+  constexpr std::uint32_t max_prescaler = 256;
 
-  std::uint16_t baud_control = 15 - std::countl_zero(prescaler);
-  if (std::has_single_bit(prescaler)) {
-    baud_control--;
-  }
+  // Zero asks for the slowest rate. Treating it as 1 Hz gets there, since the
+  // divider is then clamped to the largest prescaler below.
+  auto const nonzero_request = std::max(requested, 1U);
+  auto const whole_divider = peripheral_clock / nonzero_request;
+  bool const has_remainder = (peripheral_clock % nonzero_request) != 0;
+  // Round the divider up, so the bus never runs faster than requested when it
+  // can avoid it.
+  auto const divider = has_remainder ? whole_divider + 1U : whole_divider;
 
-  return baud_control;
+  // The prescaler is a power of two from 2 (field value 0) to 256 (field
+  // value 7). Pick the smallest one that is at least the divider.
+  auto const prescaler = std::clamp(divider, min_prescaler, max_prescaler);
+  return static_cast<std::uint16_t>(std::bit_width(prescaler - 1U) - 1);
 }
 
 /**
@@ -197,14 +200,13 @@ std::uint16_t select_baud_rate_control(hal::hertz p_peripheral_clock_speed,
  * a given peripheral clock and requested clock rate, without touching any
  * hardware state.
  *
- * The achieved rate is always less than or equal to `p_requested_clock_rate`.
- * This is meant for platform specific spi drivers that need to answer
- * `hal::spi_channel::clock_rate()` for a channel that may not currently be
+ * This is the exact rate, and never rejects a request: one outside the
+ * bus's range gets the nearest rate it can do. A result greater than
+ * `p_requested_clock_rate` means the bus can't go that slowly, and
+ * `configure()` would throw. This is meant for platform specific spi drivers
+ * that need to answer `clock_rate()` for a channel that may not currently be
  * the one selected on the bus, and therefore cannot be answered by simply
  * reading back live hardware registers.
- *
- * @throws hal::operation_not_supported - if `p_requested_clock_rate` is
- * higher than the bus can achieve even at the lowest available prescaler.
  */
 export hal::hertz achievable_clock_rate(hal::hertz p_peripheral_clock_speed,
                                         hal::hertz p_requested_clock_rate)
@@ -333,11 +335,15 @@ public:
   spi(spi&& p_other) noexcept = delete;
   spi& operator=(spi&& p_other) noexcept = delete;
 
-  ~spi()
-  {
-    auto& regs = reg();
-    bit_modify(regs.cr1).clear<control_register1::enable>();
-  }
+  /**
+   * @brief Leaves the peripheral as it is
+   *
+   * Like the constructor, the destructor doesn't touch the registers, since
+   * the peripheral may already be powered off. The platform specific driver
+   * disables the peripheral, for example by resetting it, before powering it
+   * off.
+   */
+  ~spi() = default;
 
   /**
    * @brief Configure the SPI peripheral
@@ -351,13 +357,20 @@ public:
    *
    * @param p_settings - spi settings
    * @param p_peripheral_clock_speed - peripheral's operating clock rate
-   * @throws hal::operation_not_supported - if the requested clock rate
-   * cannot be achieved by the spi bus.
+   * @throws hal::operation_not_supported - if the bus can't run as slowly as
+   * the requested clock rate. A faster request runs at the bus's fastest
+   * rate.
    */
-  void configure(hal::spi_channel::settings const& p_settings,
+  void configure(hal::spi_settings const& p_settings,
                  hal::hertz p_peripheral_clock_speed)
   {
     auto& regs = reg();
+
+    // Running a device faster than it asked for isn't safe.
+    if (achievable_clock_rate(p_peripheral_clock_speed, p_settings.clock_rate) >
+        p_settings.clock_rate) {
+      throw hal::operation_not_supported(this);
+    }
 
     auto const baud_control =
       select_baud_rate_control(p_peripheral_clock_speed, p_settings.clock_rate);
@@ -366,12 +379,10 @@ public:
     //
     //   m0: CPOL 0, CPHA 0        m2: CPOL 1, CPHA 0
     //   m1: CPOL 0, CPHA 1        m3: CPOL 1, CPHA 1
-    bool const clock_polarity =
-      p_settings.bus_mode == hal::spi_channel::mode::m2 ||
-      p_settings.bus_mode == hal::spi_channel::mode::m3;
-    bool const clock_phase =
-      p_settings.bus_mode == hal::spi_channel::mode::m1 ||
-      p_settings.bus_mode == hal::spi_channel::mode::m3;
+    bool const clock_polarity = p_settings.bus_mode == hal::spi_mode::m2 ||
+                                p_settings.bus_mode == hal::spi_mode::m3;
+    bool const clock_phase = p_settings.bus_mode == hal::spi_mode::m1 ||
+                             p_settings.bus_mode == hal::spi_mode::m3;
 
     bit_modify(regs.cr2)
       .clear<control_register2::rx_dma_enable>()
@@ -402,7 +413,7 @@ public:
   }
 
   /**
-   * @brief Perform a transfer operation as defined in `hal::spi_channel`
+   * @brief Perform a transfer operation as defined in `hal::raw_spi_bus`
    *
    * This call blocks until the transfer has completed.
    *

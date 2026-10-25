@@ -14,7 +14,11 @@
 
 module;
 
+#include <algorithm>
 #include <array>
+#include <cstddef>
+#include <optional>
+#include <span>
 
 module arm_mcu_demos;
 
@@ -22,7 +26,56 @@ import hal;
 import hal.arm_mcu.stm32f1;
 import hal.arm_mcu.cortex_m;
 
+namespace {
+/// Copies memory with a DMA1 channel, claimed for as long as it lives
+class dma_copier final : public memory_copier
+{
+public:
+  dma_copier()
+    : m_channel(hal::stm32f1::dma_channel::try_claim_any())
+  {
+    if (not m_channel) {
+      throw hal::device_or_resource_busy(this);
+    }
+  }
+
+private:
+  void driver_copy(std::span<hal::byte const> p_source,
+                   std::span<hal::byte> p_destination) override
+  {
+    // One DMA transfer moves at most 65,535 bytes or words. A multiple of 4
+    // keeps every chunk word aligned.
+    constexpr std::size_t chunk = 65'532;
+    auto const length = std::min(p_source.size(), p_destination.size());
+
+    hal::notifier::scope operation(m_notifier,
+                                   [this]() noexcept { m_channel->stop(); });
+    for (std::size_t offset = 0; offset < length; offset += chunk) {
+      auto const count = std::min(chunk, length - offset);
+      m_channel->copy(p_source.subspan(offset, count),
+                      p_destination.subspan(offset, count),
+                      m_notifier);
+      while (m_channel->remaining() != 0) {
+        if (m_channel->failed()) {
+          throw hal::io_error(this);
+        }
+        operation.block();
+      }
+    }
+  }
+
+  std::optional<hal::stm32f1::dma_channel> m_channel;
+  hal::notifier m_notifier;
+};
+}  // namespace
+
 namespace resources {
+hal::static_ref<memory_copier> copier()
+{
+  static dma_copier copier;
+  return copier;
+}
+
 hal::static_ref<hal::steady_clock> clock()
 {
   static hal::cortex_m::dwt_counter counter(

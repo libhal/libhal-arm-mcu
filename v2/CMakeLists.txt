@@ -62,6 +62,7 @@ libhal_add_library(arm-mcu
         src/dwt_counter.cpp
         src/stm32f1/gpio.cpp
         src/stm32f1/clock.cpp
+        src/stm32f1/dma.cpp
         src/stm32f1/usart.cpp
         src/stm32f1/adc.cpp
         src/stm32f1/spi.cpp

@@ -30,12 +30,12 @@ import :dma;
 
 namespace hal::stm32f1 {
 namespace {
-/// TX/RX pin pair and receive DMA channel for a supported USART peripheral
+/// TX/RX pin pair and receive DMA request for a supported USART peripheral
 struct usart_resources
 {
   pin tx;
   pin rx;
-  u8 dma_channel;
+  dma_request receive_request;
 };
 
 /// @throws hal::operation_not_supported - if `p_id` is not `usart1`,
@@ -63,44 +63,20 @@ usart_resources resources_for(peripheral p_id)
     case peripheral::usart1:
       return { .tx = { .port = 'A', .pin = 9 },
                .rx = { .port = 'A', .pin = 10 },
-               .dma_channel = 5 };
+               .receive_request = dma_request::usart1_rx };
     case peripheral::usart2:
       return { .tx = { .port = 'A', .pin = 2 },
                .rx = { .port = 'A', .pin = 3 },
-               .dma_channel = 6 };
+               .receive_request = dma_request::usart2_rx };
     case peripheral::usart3:
       return { .tx = { .port = 'B', .pin = 10 },
                .rx = { .port = 'B', .pin = 11 },
-               .dma_channel = 3 };
+               .receive_request = dma_request::usart3_rx };
     default:
       throw hal::operation_not_supported(nullptr);
   }
 }
 
-/// Configure the receive DMA channel to continuously (circular mode) copy
-/// incoming bytes from the USART data register into memory, 8-bits at a
-/// time.
-constexpr auto uart_dma_settings1 =
-  hal::bit_value()
-    .clear<dma::transfer_complete_interrupt_enable>()
-    .clear<dma::half_transfer_interrupt_enable>()
-    .clear<dma::transfer_error_interrupt_enable>()
-    .clear<dma::data_transfer_direction>()  // Read from peripheral
-    .set<dma::circular_mode>()
-    .clear<dma::peripheral_increment_enable>()
-    .set<dma::memory_increment_enable>()
-    .clear<dma::memory_to_memory>()
-    .set<dma::enable>()
-    .insert<dma::peripheral_size, 0b00U>()   // size = 8 bits
-    .insert<dma::memory_size, 0b00U>()       // size = 8 bits
-    .insert<dma::channel_priority, 0b10U>()  // Low Medium [High] Very_High
-    .to<u32>();
-
-/// @return dma::dma_channel_t& - the DMA1 channel that receives for this USART
-dma::dma_channel_t& receive_channel(u8 p_dma_channel)
-{
-  return dma::dma1->channel[p_dma_channel - 1];
-}
 }  // namespace
 
 usart::usart(peripheral p_id)
@@ -137,6 +113,9 @@ usart::serial::serial(usart& p_manager,
                       hal::serial::settings const& p_settings)
   : m_manager(p_manager)
   , m_id(p_manager.m_id)
+  // Claims the channel first, so its destructor releases it if a pin claim
+  // below throws.
+  , m_receive_dma(resources_for(p_manager.m_id).receive_request)
   , m_uart(
       // NOLINTNEXTLINE(performance-no-int-to-ptr)
       reinterpret_cast<void*>(peripheral_to_register(p_manager.m_id)),
@@ -145,7 +124,6 @@ usart::serial::serial(usart& p_manager,
   auto const resources = resources_for(m_id);
   m_tx = resources.tx;
   m_rx = resources.rx;
-  m_dma_channel = resources.dma_channel;
 
   // Claim both pins or neither: check RX first, so a TX claim that succeeds
   // is never left behind by an RX claim that throws.
@@ -155,22 +133,7 @@ usart::serial::serial(usart& p_manager,
   claim_pin(m_tx);
   claim_pin(m_rx);
 
-  // NOTE: DMA1 is shared across multiple peripherals
-  if (not is_on(peripheral::dma1)) {
-    power_on(peripheral::dma1);
-  }
-
-  // TODO(#219): The stm32f1 platform needs APIs to determine if a DMA channel
-  // is already taken and to hold that resource until destruction.
-  auto const data_register_address =
-    reinterpret_cast<uptr>(m_uart.data_register());
-  auto const buffer_address = reinterpret_cast<uptr>(p_buffer.data());
-
-  auto& channel = receive_channel(m_dma_channel);
-  channel.transfer_amount = static_cast<u32>(p_buffer.size());
-  channel.peripheral_address = static_cast<u32>(data_register_address);
-  channel.memory_address = static_cast<u32>(buffer_address);
-  channel.configuration = uart_dma_settings1;
+  m_receive_dma.receive_circular(*m_uart.data_register(), p_buffer);
 
   m_uart.configure(p_settings, frequency(m_id));
 
@@ -184,8 +147,7 @@ usart::serial::serial(usart& p_manager,
 usart::serial::~serial()
 {
   // Stop DMA writing into the receive buffer, which may be freed next.
-  hal::bit_modify(receive_channel(m_dma_channel).configuration)
-    .clear<dma::enable>();
+  m_receive_dma.stop();
   reset_pin(m_tx);
   reset_pin(m_rx);
   release_pin(m_tx);
@@ -211,6 +173,6 @@ hal::circular_span<hal::byte const> usart::serial::driver_receive_buffer()
 hal::usize usart::serial::driver_receive_cursor()
 {
   auto const buffer_size = m_uart.receive_buffer().size();
-  return buffer_size - receive_channel(m_dma_channel).transfer_amount;
+  return buffer_size - m_receive_dma.remaining();
 }
 }  // namespace hal::stm32f1

@@ -17,17 +17,20 @@ module;
 #include <array>
 #include <atomic>
 #include <mutex>
+#include <optional>
 
 module hal.arm_mcu.stm32f1;
 
 import hal;
 import hal.util;
 import hal.arm_mcu.stm32_generic;
+import hal.arm_mcu.cortex_m;
 
 import :constants;
 import :pin;
 import :power;
 import :clock;
+import :dma;
 
 namespace hal::stm32f1 {
 namespace {
@@ -73,6 +76,48 @@ void* register_address(peripheral p_id)
 {
   // NOLINTNEXTLINE(performance-no-int-to-ptr)
   return reinterpret_cast<void*>(peripheral_to_register(p_id));
+}
+
+/// Interrupts and DMA requests of a supported I2C peripheral
+struct i2c_signals
+{
+  std::size_t index;
+  irq event;
+  irq error;
+  dma_request transmit;
+  dma_request receive;
+};
+
+i2c_signals signals_for(peripheral p_id)
+{
+  if (p_id == peripheral::i2c1) {
+    return { .index = 0,
+             .event = irq::i2c1_ev,
+             .error = irq::i2c1_er,
+             .transmit = dma_request::i2c1_tx,
+             .receive = dma_request::i2c1_rx };
+  }
+  return { .index = 1,
+           .event = irq::i2c2_ev,
+           .error = irq::i2c2_er,
+           .transmit = dma_request::i2c2_tx,
+           .receive = dma_request::i2c2_rx };
+}
+
+/// The driver each I2C peripheral's interrupts wake
+constinit std::array<hal::stm32_generic::i2c*, 2> drivers{};
+
+template<std::size_t Index>
+void i2c_isr()
+{
+  if (auto* const driver = drivers[Index]) {
+    driver->handle_interrupt();
+  }
+}
+
+dma_channel* pointer_to(std::optional<dma_channel>& p_channel)
+{
+  return p_channel ? &*p_channel : nullptr;
 }
 }  // namespace
 
@@ -123,10 +168,21 @@ i2c::i2c(peripheral p_id,
     release(m_id);
     throw;
   }
+
+  auto const signals = signals_for(m_id);
+  drivers[signals.index] = &m_driver;
+  auto* const isr = signals.index == 0 ? &i2c_isr<0> : &i2c_isr<1>;
+  cortex_m::enable_interrupt(signals.event, isr);
+  cortex_m::enable_interrupt(signals.error, isr);
 }
 
 i2c::~i2c()
 {
+  auto const signals = signals_for(m_id);
+  cortex_m::disable_interrupt(signals.event);
+  cortex_m::disable_interrupt(signals.error);
+  drivers[signals.index] = nullptr;
+
   auto const pins = pins_for(m_id);
   for (auto const& selected : std::array{ pins.scl, pins.sda }) {
     reset_pin(selected);
@@ -169,6 +225,22 @@ void i2c::driver_transaction(hal::byte p_address,
     }
   } const guard{ .flag = m_busy };
 
-  m_driver.transaction(p_address, p_data_out, p_data_in, *m_clock);
+  // Channels are claimed per transaction, so drivers whose requests share a
+  // channel take turns. If another driver holds one, the bytes in that
+  // direction move without DMA instead.
+  auto const signals = signals_for(m_id);
+  auto transmit = p_data_out.length() != 0
+                    ? dma_channel::try_claim(signals.transmit)
+                    : std::optional<dma_channel>{};
+  auto receive = p_data_in.length() != 0
+                   ? dma_channel::try_claim(signals.receive)
+                   : std::optional<dma_channel>{};
+
+  m_driver.transaction(p_address,
+                       p_data_out,
+                       p_data_in,
+                       *m_clock,
+                       pointer_to(transmit),
+                       pointer_to(receive));
 }
 }  // namespace hal::stm32f1

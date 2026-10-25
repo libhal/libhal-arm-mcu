@@ -39,6 +39,16 @@ namespace hal::stm32f1 {
  * `hal::no_op_lock`. A transaction that interrupts another one on the same
  * bus then throws `hal::device_or_resource_busy` instead of corrupting it.
  *
+ * A transaction sleeps the calling context on its waiter while the bus
+ * works, so a waiter provider must be installed (see `hal::current_waiter()`)
+ * and transactions can't run inside an interrupt. The bytes move by DMA when
+ * the transaction can claim the peripheral's DMA channels: DMA1 channels 6
+ * (transmit) and 7 (receive) for `i2c1`, 4 and 5 for `i2c2`. They are
+ * claimed for each transaction and released after it, so other drivers on
+ * those channels take turns with this one. If another driver holds a channel,
+ * such as a USART receiving on it, the bytes in that direction move without
+ * DMA, waking the context once per byte.
+ *
  * A transaction throws `hal::timed_out` if the bus makes no progress for
  * 25 ms, for example while a device holds SCL low.
  *
@@ -64,8 +74,8 @@ public:
    * released, when the controller is destroyed.
    *
    * @param p_id - which I2C peripheral to use. Must be `i2c1` or `i2c2`.
-   * @param p_clock - times how long a transaction waits on the bus. It must
-   * outlive the controller.
+   * @param p_clock - times the short waits on the bus that raise no
+   * interrupt. It must outlive the controller.
    * @param p_lock - lock held for each transaction. It must outlive the
    * controller. If an interrupt uses this bus, the lock must be safe to take
    * from that interrupt, which most RTOS mutexes aren't. Use

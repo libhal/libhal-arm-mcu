@@ -41,6 +41,7 @@ libhal_add_library(arm-mcu
         modules/stm32_generic/stm32_generic.cppm
         modules/stm32_generic/registers.cppm
         modules/stm32_generic/scatter_cursor.cppm
+        modules/stm32_generic/dma.cppm
         modules/stm32_generic/i2c.cppm
         # modules/stm32_generic/pwm.cppm
         modules/stm32_generic/spi.cppm
@@ -64,6 +65,7 @@ libhal_add_library(arm-mcu
         src/dwt_counter.cpp
         src/stm32f1/gpio.cpp
         src/stm32f1/clock.cpp
+        src/stm32f1/dma.cpp
         src/stm32f1/usart.cpp
         src/stm32f1/adc.cpp
         src/stm32f1/spi.cpp

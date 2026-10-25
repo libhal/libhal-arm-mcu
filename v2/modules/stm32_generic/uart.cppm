@@ -14,8 +14,6 @@
 
 module;
 
-#include <cmath>
-
 #include <cstdint>
 #include <span>
 
@@ -62,14 +60,38 @@ constexpr auto control_settings3 = hal::bit_value(0UL)
                                      .to<std::uint16_t>();
 }  // namespace control_reg
 
-/// Namespace for the baud rate (BRR) registers bit masks
-namespace baud_rate_reg {
-/// Mantissa of USART DIV
-constexpr auto mantissa = hal::bit_mask::from<4, 15>();
+/**
+ * @brief Compute the baud rate register (BRR) value for a baud rate
+ *
+ * With 16x oversampling, BRR holds USARTDIV = f_ck / (16 * baud) as a fixed
+ * point number with 4 fractional bits, so BRR = f_ck / baud. It is rounded to
+ * the nearest value, which keeps the baud rate error within half a step.
+ *
+ * @param p_frequency - frequency of the input clock to the peripheral
+ * @param p_baud_rate - the baud rate to run at
+ * @return u16 - the value to write to BRR
+ * @throws hal::operation_not_supported - if the baud rate is zero, faster
+ * than `p_frequency / 16` (USARTDIV must be at least 1), or slower than BRR
+ * can divide down to.
+ */
+export [[nodiscard]] u16 compute_usart_brr(hertz p_frequency, hertz p_baud_rate)
+{
+  auto const frequency =
+    static_cast<u64>(p_frequency.numerical_value_in(hal::hertz::unit));
+  auto const baud_rate =
+    static_cast<u64>(p_baud_rate.numerical_value_in(hal::hertz::unit));
+  if (baud_rate == 0) {
+    throw hal::operation_not_supported(nullptr);
+  }
 
-/// Fraction of USART DIV
-constexpr auto fraction = hal::bit_mask::from<0, 3>();
-}  // namespace baud_rate_reg
+  constexpr u64 smallest_brr = 1U << 4U;  // USARTDIV of 1.0
+  constexpr u64 largest_brr = 0xFFFF;
+  auto const brr = (frequency + (baud_rate / 2U)) / baud_rate;
+  if (brr < smallest_brr || brr > largest_brr) {
+    throw hal::operation_not_supported(nullptr);
+  }
+  return static_cast<u16>(brr);
+}
 
 struct usart_t
 {
@@ -129,10 +151,16 @@ public:
    *
    * @param p_settings - serial settings
    * @param p_frequency - frequency of the input clock to the peripheral
+   * @throws hal::operation_not_supported - if the baud rate can't be reached
+   * from `p_frequency` (see `compute_usart_brr()`). The peripheral is left
+   * as it was.
    */
   void configure(hal::serial::settings const& p_settings,
                  hal::hertz p_frequency)
   {
+    // Computed first, so a baud rate that can't be reached changes nothing.
+    auto const brr = compute_usart_brr(p_frequency, p_settings.baud_rate);
+
     auto& uart_reg = reg();
     uart_reg.control1 = control_reg::control_settings1;
 
@@ -141,7 +169,7 @@ public:
     //       other things.
 
     uart_reg.control3 = control_reg::control_settings3;
-    configure_baud_rate(p_frequency, p_settings);
+    uart_reg.baud_rate = brr;
     configure_format(p_settings);
   }
 
@@ -194,36 +222,6 @@ public:
   }
 
 private:
-  void configure_baud_rate(hal::hertz p_frequency,
-                           hal::serial::settings const& p_settings)
-  {
-    auto const clock_frequency_value =
-      p_frequency.numerical_value_in(hal::hertz::unit);
-    auto const baud_rate_value =
-      p_settings.baud_rate.numerical_value_in(hal::hertz::unit);
-    auto const usart_divider = clock_frequency_value / (16 * baud_rate_value);
-
-    // Truncate off the decimal values
-    auto mantissa = static_cast<std::uint16_t>(usart_divider);
-
-    // Subtract the whole number to leave just the decimal
-    auto const fraction = static_cast<float>(static_cast<float>(usart_divider) -
-                                             static_cast<float>(mantissa));
-
-    auto fractional_int =
-      static_cast<std::uint16_t>(std::roundf(fraction * 16));
-
-    if (fractional_int >= 16) {
-      mantissa = static_cast<std::uint16_t>(mantissa + 1U);
-      fractional_int = 0;
-    }
-
-    reg().baud_rate = hal::bit_value()
-                        .insert<baud_rate_reg::mantissa>(mantissa)
-                        .insert<baud_rate_reg::fraction>(fractional_int)
-                        .to<std::uint16_t>();
-  }
-
   void configure_format(hal::serial::settings const& p_settings)
   {
     constexpr auto parity_selection = bit_mask::from<9>();

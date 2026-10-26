@@ -8,4 +8,3 @@ export import :dma;
 export import :spi;
 export import :uart;
 import :registers;
-import :scatter_cursor;

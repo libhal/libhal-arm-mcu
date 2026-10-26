@@ -18,6 +18,7 @@ module;
 
 #include <algorithm>
 #include <chrono>
+#include <concepts>
 #include <cstddef>
 #include <cstdint>
 #include <span>
@@ -29,7 +30,6 @@ import hal;
 import hal.util;
 
 import :dma;
-import :scatter_cursor;
 
 namespace hal::stm32_generic {
 /// stm32 spi peripheral register map
@@ -227,6 +227,55 @@ export hal::hertz achievable_clock_rate(hal::hertz p_peripheral_clock_speed,
 }
 
 /**
+ * @brief Walk the outgoing and incoming data side by side, one contiguous run
+ * at a time
+ *
+ * Calls `p_function` with the longest pair of spans that starts at the same
+ * position and is contiguous in both. Once one side runs out, its span is
+ * empty and the run is the rest of the other side's chunk. Empty chunks are
+ * skipped.
+ *
+ * TODO(libhal/scatter_span#19): use `mem::for_each_run()` once libhal
+ * requires a scatter_span release that has it.
+ */
+template<typename T, typename U, typename Function>
+  requires std::invocable<Function&, std::span<T>, std::span<U>>
+void for_each_run(mem::scatter_span<T> p_first,
+                  mem::scatter_span<U> p_second,
+                  Function&& p_function)
+{
+  auto first_chunks = p_first.begin();
+  auto const first_end = p_first.end();
+  auto second_chunks = p_second.begin();
+  auto const second_end = p_second.end();
+  std::span<T> first_chunk{};
+  std::span<U> second_chunk{};
+
+  while (true) {
+    while (first_chunk.empty() && first_chunks != first_end) {
+      first_chunk = *first_chunks++;
+    }
+    while (second_chunk.empty() && second_chunks != second_end) {
+      second_chunk = *second_chunks++;
+    }
+    if (first_chunk.empty() && second_chunk.empty()) {
+      return;
+    }
+
+    auto run = std::max(first_chunk.size(), second_chunk.size());
+    if (not first_chunk.empty() && not second_chunk.empty()) {
+      run = std::min(first_chunk.size(), second_chunk.size());
+    }
+    auto const first_run = first_chunk.first(std::min(run, first_chunk.size()));
+    auto const second_run =
+      second_chunk.first(std::min(run, second_chunk.size()));
+    p_function(first_run, second_run);
+    first_chunk = first_chunk.subspan(first_run.size());
+    second_chunk = second_chunk.subspan(second_run.size());
+  }
+}
+
+/**
  * @brief A generic spi implementation for all stm32f series MCUs
  *
  * This class is meant to only be used by platform libraries or drivers
@@ -375,8 +424,6 @@ public:
                 hal::byte p_filler)
   {
     auto& regs = reg();
-    std::size_t const max_length =
-      std::max(p_data_in.length(), p_data_out.length());
 
     // NOTE: This is a paranoid check to determine that there is no bus
     // activity before proceeding
@@ -390,33 +437,27 @@ public:
     // internal enable signal.
     bit_modify(regs.cr1).clear<control_register1::internal_slave_select>();
 
-    scatter_cursor<hal::byte const> out_cursor(p_data_out);
-    scatter_cursor<hal::byte> in_cursor(p_data_in);
+    auto const move_run = [&regs, p_filler](std::span<hal::byte const> p_out,
+                                            std::span<hal::byte> p_in) {
+      auto const run = std::max(p_out.size(), p_in.size());
+      for (std::size_t index = 0; index < run; index++) {
+        while (not tx_empty(regs)) {
+          continue;
+        }
 
-    for (std::size_t index = 0; index < max_length; index++) {
-      hal::byte byte = p_filler;
+        regs.dr = index < p_out.size() ? p_out[index] : p_filler;
 
-      if (not out_cursor.done()) {
-        byte = out_cursor.current();
-        out_cursor.advance();
+        while (not rx_not_empty(regs)) {
+          continue;
+        }
+
+        auto const byte = static_cast<hal::byte>(regs.dr);
+        if (index < p_in.size()) {
+          p_in[index] = byte;
+        }
       }
-
-      while (not tx_empty(regs)) {
-        continue;
-      }
-
-      regs.dr = byte;
-
-      while (not rx_not_empty(regs)) {
-        continue;
-      }
-
-      byte = static_cast<std::uint8_t>(regs.dr);
-      if (not in_cursor.done()) {
-        in_cursor.current() = byte;
-        in_cursor.advance();
-      }
-    }
+    };
+    for_each_run(p_data_out, p_data_in, move_run);
 
     bit_modify(regs.cr1).set<control_register1::internal_slave_select>();
 
@@ -492,34 +533,20 @@ public:
     // See transfer() above.
     bit_modify(regs.cr1).clear<control_register1::internal_slave_select>();
 
-    scatter_cursor<hal::byte const> out_cursor(p_data_out);
-    scatter_cursor<hal::byte> in_cursor(p_data_in);
     hal::byte discarded = 0;
-    auto left = std::max(p_data_in.length(), p_data_out.length());
-
-    // Receive requests are enabled before transmit requests (RM0008 section
-    // 25.3.9), so no received byte is missed.
-    bit_modify(regs.cr2).set<control_register2::rx_dma_enable>();
-    while (left != 0) {
-      auto run = std::min(left, max_dma_transfer);
-      if (not out_cursor.done()) {
-        run = std::min(run, out_cursor.contiguous().size());
-      }
-      if (not in_cursor.done()) {
-        run = std::min(run, in_cursor.contiguous().size());
-      }
-
-      if (in_cursor.done()) {
+    // Moves one run, which is no longer than one DMA transfer
+    auto const move_run = [&](std::span<hal::byte const> p_out,
+                              std::span<hal::byte> p_in) {
+      auto const run = std::max(p_out.size(), p_in.size());
+      if (p_in.empty()) {
         p_receive.receive_discarding(regs.dr, discarded, run, m_notifier);
       } else {
-        p_receive.receive(
-          regs.dr, in_cursor.contiguous().first(run), m_notifier);
+        p_receive.receive(regs.dr, p_in, m_notifier);
       }
-      if (out_cursor.done()) {
+      if (p_out.empty()) {
         p_transmit.transmit_repeated(regs.dr, p_filler, run, m_notifier);
       } else {
-        p_transmit.transmit(
-          regs.dr, out_cursor.contiguous().first(run), m_notifier);
+        p_transmit.transmit(regs.dr, p_out, m_notifier);
       }
       // Between runs, the transmit request waits for the next run's channel.
       bit_modify(regs.cr2).set<control_register2::tx_dma_enable>();
@@ -533,15 +560,24 @@ public:
         // again after a while keeps the transfer going even if it doesn't.
         std::ignore = operation.block_for(recheck_period);
       }
+    };
 
-      if (not out_cursor.done()) {
-        out_cursor.advance(run);
-      }
-      if (not in_cursor.done()) {
-        in_cursor.advance(run);
-      }
-      left -= run;
-    }
+    // Receive requests are enabled before transmit requests (RM0008 section
+    // 25.3.9), so no received byte is missed.
+    bit_modify(regs.cr2).set<control_register2::rx_dma_enable>();
+    for_each_run(
+      p_data_out,
+      p_data_in,
+      [&move_run](std::span<hal::byte const> p_out, std::span<hal::byte> p_in) {
+        while (not p_out.empty() || not p_in.empty()) {
+          auto const out =
+            p_out.first(std::min(p_out.size(), max_dma_transfer));
+          auto const in = p_in.first(std::min(p_in.size(), max_dma_transfer));
+          move_run(out, in);
+          p_out = p_out.subspan(out.size());
+          p_in = p_in.subspan(in.size());
+        }
+      });
 
     // Wait for bus activity to cease before leaving the function
     while (not tx_empty(regs) || busy(regs)) {

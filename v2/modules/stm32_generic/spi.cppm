@@ -21,6 +21,7 @@ module;
 #include <concepts>
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <span>
 #include <tuple>
 
@@ -437,27 +438,12 @@ public:
     // internal enable signal.
     bit_modify(regs.cr1).clear<control_register1::internal_slave_select>();
 
-    auto const move_run = [&regs, p_filler](std::span<hal::byte const> p_out,
-                                            std::span<hal::byte> p_in) {
-      auto const run = std::max(p_out.size(), p_in.size());
-      for (std::size_t index = 0; index < run; index++) {
-        while (not tx_empty(regs)) {
-          continue;
-        }
-
-        regs.dr = (index < p_out.size()) ? p_out[index] : p_filler;
-
-        while (not rx_not_empty(regs)) {
-          continue;
-        }
-
-        auto const byte = static_cast<hal::byte>(regs.dr);
-        if (index < p_in.size()) {
-          p_in[index] = byte;
-        }
-      }
-    };
-    for_each_run(p_data_out, p_data_in, move_run);
+    for_each_run(p_data_out,
+                 p_data_in,
+                 [&regs, p_filler](std::span<hal::byte const> p_out,
+                                   std::span<hal::byte> p_in) {
+                   poll_run(regs, p_out, p_in, p_filler);
+                 });
 
     bit_modify(regs.cr1).set<control_register1::internal_slave_select>();
 
@@ -490,10 +476,11 @@ public:
 
   /**
    * @brief Perform a transfer operation as defined in `hal::raw_spi_bus`,
-   * moving the bytes by DMA
+   * moving the bytes by DMA when both channels are given
    *
-   * Blocks the calling context, which sleeps on its waiter until the DMA
-   * channels finish. The transfer is split into runs that are contiguous in
+   * With both channels, blocks the calling context, which sleeps on its
+   * waiter until the DMA channels finish. Without them, polls like the
+   * overloads above. The transfer is split into runs that are contiguous in
    * both the outgoing and the incoming data, and each run is one DMA transfer
    * in each direction. Filler bytes are sent from `p_filler`, and received
    * bytes nobody asked for are read into a scratch byte, so neither needs a
@@ -506,16 +493,18 @@ public:
    * discontiguous chunks
    * @param p_filler - output filler bytes if the outgoing data runs out
    * before the incoming data.
-   * @param p_transmit - channel serving the peripheral's transmit DMA request
-   * @param p_receive - channel serving the peripheral's receive DMA request
+   * @param p_transmit - channel serving the peripheral's transmit DMA
+   * request, or `nullptr` to poll
+   * @param p_receive - channel serving the peripheral's receive DMA request,
+   * or `nullptr` to poll
    * @throws hal::io_error - a DMA transfer failed
    */
   template<byte_dma_channel Dma>
   void transfer(mem::scatter_span<hal::byte const> p_data_out,
                 mem::scatter_span<hal::byte> p_data_in,
                 hal::byte p_filler,
-                Dma& p_transmit,
-                Dma& p_receive)
+                Dma* p_transmit,
+                Dma* p_receive)
   {
     auto& regs = reg();
 
@@ -525,10 +514,15 @@ public:
       continue;
     }
 
-    hal::notifier::scope operation(m_notifier,
-                                   stop_transfer<Dma>{ .regs = &regs,
-                                                       .transmit = &p_transmit,
-                                                       .receive = &p_receive });
+    // Without both channels, the transfer polls.
+    bool const use_dma = (p_transmit != nullptr) and (p_receive != nullptr);
+    std::optional<hal::notifier::scope<stop_transfer<Dma>>> operation;
+    if (use_dma) {
+      operation.emplace(m_notifier,
+                        stop_transfer<Dma>{ .regs = &regs,
+                                            .transmit = p_transmit,
+                                            .receive = p_receive });
+    }
 
     // See transfer() above.
     bit_modify(regs.cr1).clear<control_register1::internal_slave_select>();
@@ -539,36 +533,42 @@ public:
                               std::span<hal::byte> p_in) {
       auto const run = std::max(p_out.size(), p_in.size());
       if (p_in.empty()) {
-        p_receive.receive_discarding(regs.dr, discarded, run, m_notifier);
+        p_receive->receive_discarding(regs.dr, discarded, run, m_notifier);
       } else {
-        p_receive.receive(regs.dr, p_in, m_notifier);
+        p_receive->receive(regs.dr, p_in, m_notifier);
       }
       if (p_out.empty()) {
-        p_transmit.transmit_repeated(regs.dr, p_filler, run, m_notifier);
+        p_transmit->transmit_repeated(regs.dr, p_filler, run, m_notifier);
       } else {
-        p_transmit.transmit(regs.dr, p_out, m_notifier);
+        p_transmit->transmit(regs.dr, p_out, m_notifier);
       }
       // Between runs, the transmit request waits for the next run's channel.
       bit_modify(regs.cr2).set<control_register2::tx_dma_enable>();
 
       // The last byte received is the last one to move.
-      while (p_receive.remaining() != 0) {
-        if (p_receive.failed() or p_transmit.failed()) {
+      while (p_receive->remaining() != 0) {
+        if (p_receive->failed() or p_transmit->failed()) {
           throw hal::io_error(this);
         }
         // The receive channel's interrupt normally ends the wait. Checking
         // again after a while keeps the transfer going even if it doesn't.
-        std::ignore = operation.block_for(recheck_period);
+        std::ignore = operation->block_for(recheck_period);
       }
     };
 
-    // Receive requests are enabled before transmit requests (RM0008 section
-    // 25.3.9), so no received byte is missed.
-    bit_modify(regs.cr2).set<control_register2::rx_dma_enable>();
+    if (use_dma) {
+      // Receive requests are enabled before transmit requests (RM0008
+      // section 25.3.9), so no received byte is missed.
+      bit_modify(regs.cr2).set<control_register2::rx_dma_enable>();
+    }
     for_each_run(
       p_data_out,
       p_data_in,
-      [&move_run](std::span<hal::byte const> p_out, std::span<hal::byte> p_in) {
+      [&](std::span<hal::byte const> p_out, std::span<hal::byte> p_in) {
+        if (not use_dma) {
+          poll_run(regs, p_out, p_in, p_filler);
+          return;
+        }
         while (not p_out.empty() or not p_in.empty()) {
           auto const out =
             p_out.first(std::min(p_out.size(), max_dma_transfer));
@@ -583,6 +583,7 @@ public:
     while (not tx_empty(regs) or busy(regs)) {
       continue;
     }
+    bit_modify(regs.cr1).set<control_register1::internal_slave_select>();
   }
 
   /**
@@ -596,16 +597,18 @@ public:
    * @param p_data_in - incoming data
    * @param p_filler - output filler bytes if the outgoing data runs out
    * before the incoming data.
-   * @param p_transmit - channel serving the peripheral's transmit DMA request
-   * @param p_receive - channel serving the peripheral's receive DMA request
+   * @param p_transmit - channel serving the peripheral's transmit DMA
+   * request, or `nullptr` to poll
+   * @param p_receive - channel serving the peripheral's receive DMA request,
+   * or `nullptr` to poll
    * @throws hal::io_error - a DMA transfer failed
    */
   template<byte_dma_channel Dma>
   void transfer(std::span<hal::byte const> p_data_out,
                 std::span<hal::byte> p_data_in,
                 hal::byte p_filler,
-                Dma& p_transmit,
-                Dma& p_receive)
+                Dma* p_transmit,
+                Dma* p_receive)
   {
     transfer(mem::scatter_span<hal::byte const>({ p_data_out }),
              mem::scatter_span<hal::byte>({ p_data_in }),
@@ -634,6 +637,32 @@ private:
       bit_modify(regs->cr1).set<control_register1::internal_slave_select>();
     }
   };
+
+  /// Moves one run by polling the status register, sending `p_filler` once
+  /// the outgoing data runs out
+  static void poll_run(spi_reg_t& p_regs,
+                       std::span<hal::byte const> p_out,
+                       std::span<hal::byte> p_in,
+                       hal::byte p_filler)
+  {
+    auto const run = std::max(p_out.size(), p_in.size());
+    for (std::size_t index = 0; index < run; index++) {
+      while (not tx_empty(p_regs)) {
+        continue;
+      }
+
+      p_regs.dr = (index < p_out.size()) ? p_out[index] : p_filler;
+
+      while (not rx_not_empty(p_regs)) {
+        continue;
+      }
+
+      auto const byte = static_cast<hal::byte>(p_regs.dr);
+      if (index < p_in.size()) {
+        p_in[index] = byte;
+      }
+    }
+  }
 
   /// How often a DMA transfer checks its channels if their interrupt hasn't
   /// woken it

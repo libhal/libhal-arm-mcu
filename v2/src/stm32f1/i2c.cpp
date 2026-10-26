@@ -171,7 +171,7 @@ i2c::i2c(peripheral p_id,
 
   auto const signals = signals_for(m_id);
   drivers[signals.index] = &m_driver;
-  auto* const isr = signals.index == 0 ? &i2c_isr<0> : &i2c_isr<1>;
+  auto* const isr = (signals.index == 0) ? &i2c_isr<0> : &i2c_isr<1>;
   cortex_m::enable_interrupt(signals.event, isr);
   cortex_m::enable_interrupt(signals.error, isr);
 }
@@ -229,10 +229,10 @@ void i2c::driver_transaction(hal::byte p_address,
   // channel take turns. If another driver holds one, the bytes in that
   // direction move without DMA instead.
   auto const signals = signals_for(m_id);
-  auto transmit = p_data_out.length() != 0
+  auto transmit = (p_data_out.length() != 0)
                     ? dma_channel::try_claim(signals.transmit)
                     : std::optional<dma_channel>{};
-  auto receive = p_data_in.length() != 0
+  auto receive = (p_data_in.length() != 0)
                    ? dma_channel::try_claim(signals.receive)
                    : std::optional<dma_channel>{};
 

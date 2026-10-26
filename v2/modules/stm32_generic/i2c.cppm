@@ -347,8 +347,8 @@ export i2c_timing compute_i2c_timing(hal::hertz p_clock_rate,
   auto const min_supported_frequency =
     fast_mode ? fast_mode_min_frequency : min_frequency;
 
-  if (rate == 0 || frequency < min_supported_frequency ||
-      frequency > max_frequency) {
+  if ((rate == 0) or (frequency < min_supported_frequency) or
+      (frequency > max_frequency)) {
     throw hal::operation_not_supported(nullptr);
   }
 
@@ -360,7 +360,7 @@ export i2c_timing compute_i2c_timing(hal::hertz p_clock_rate,
   auto const divisor = cycles_per_ccr * rate;
   auto const exact_ccr = frequency / divisor;
   bool const has_remainder = (frequency % divisor) != 0;
-  auto const rounded_ccr = has_remainder ? exact_ccr + 1U : exact_ccr;
+  auto const rounded_ccr = has_remainder ? (exact_ccr + 1U) : exact_ccr;
   auto const ccr = fast_mode ? std::max(rounded_ccr, 1U)
                              : std::max(rounded_ccr, standard_mode_min_ccr);
 
@@ -373,7 +373,7 @@ export i2c_timing compute_i2c_timing(hal::hertz p_clock_rate,
   // one: 1000 ns for standard mode and 300 ns for fast mode.
   auto const frequency_mhz = frequency / 1'000'000;
   auto const rise_time =
-    fast_mode ? ((frequency_mhz * 300U) / 1000U) + 1U : frequency_mhz + 1U;
+    fast_mode ? (((frequency_mhz * 300U) / 1000U) + 1U) : (frequency_mhz + 1U);
   return { .ccr = ccr, .rise_time = rise_time, .fast_mode = fast_mode };
 }
 
@@ -650,7 +650,7 @@ private:
         bit_modify(regs->cr1).set(i2c_cr1::stop);
         throw hal::no_such_device(address, instance);
       }
-      if (bit_extract<i2c_sr1::bus_error>(status) ||
+      if (bit_extract<i2c_sr1::bus_error>(status) or
           bit_extract<i2c_sr1::over_under_run>(status)) {
         bit_modify(regs->sr1)
           .clear(i2c_sr1::bus_error)
@@ -676,7 +676,7 @@ private:
         check_errors();
         // handle_interrupt() masks them again when one fires.
         regs->cr2 = regs->cr2 | p_wake_on;
-        if (not operation->block_for(stall_timeout) &&
+        if (not operation->block_for(stall_timeout) and
             not bit_extract(p_flag, regs->sr1)) {
           check_errors();
           throw hal::timed_out(instance);
@@ -704,8 +704,8 @@ private:
           throw hal::io_error(instance);
         }
         regs->cr2 = regs->cr2 | wake_on_error;
-        if (not operation->block_for(stall_timeout) &&
-            p_dma.remaining() == left) {
+        if (not operation->block_for(stall_timeout) and
+            (p_dma.remaining() == left)) {
           check_errors();
           throw hal::timed_out(instance);
         }
@@ -766,7 +766,7 @@ private:
       }
       chunk = chunk.subspan(p_offset);
       p_offset = 0;
-      while (not chunk.empty() && p_count != 0) {
+      while (not chunk.empty() and (p_count != 0)) {
         auto const run =
           chunk.first(std::min({ chunk.size(), p_count, max_dma_transfer }));
         p_function(run);
@@ -816,10 +816,10 @@ private:
 
     // A transaction with nothing to read still addresses the device, as a
     // write with no data.
-    if (p_data_out.length() != 0 || read_length == 0) {
+    if ((p_data_out.length() != 0) or (read_length == 0)) {
       send_address(p_bus, hal::i2c_operation::write);
 
-      if (p_transmit != nullptr && p_data_out.length() != 0) {
+      if ((p_transmit != nullptr) and (p_data_out.length() != 0)) {
         move_by_dma(p_bus, p_data_out, p_data_out.length(), *p_transmit);
       } else {
         clear_addr(regs);
@@ -918,7 +918,7 @@ private:
       ending[1] = received(regs);
       bit_modify(regs.cr1).clear(i2c_cr1::pos);
     } else {
-      if (p_receive != nullptr && body_length != 0) {
+      if ((p_receive != nullptr) and (body_length != 0)) {
         move_by_dma(p_bus, p_data_in, body_length, *p_receive);
       } else {
         clear_addr(regs);

@@ -78,12 +78,13 @@ constexpr u8 channel_index(dma_request p_request)
 
 [[nodiscard]] dma::dma_t& controller(u8 p_index)
 {
-  return p_index < dma1_channel_count ? *dma::dma1 : *dma::dma2;
+  return (p_index < dma1_channel_count) ? *dma::dma1 : *dma::dma2;
 }
 
 [[nodiscard]] u8 controller_channel(u8 p_index)
 {
-  return p_index < dma1_channel_count ? p_index : p_index - dma1_channel_count;
+  return (p_index < dma1_channel_count) ? p_index
+                                        : (p_index - dma1_channel_count);
 }
 
 [[nodiscard]] dma::dma_channel_t& registers(u8 p_index)
@@ -213,7 +214,8 @@ dma_channel::dma_channel(dma_request p_request)
   if (not claim_channel(m_index)) {
     throw hal::device_or_resource_busy(this);
   }
-  power_on(m_index < dma1_channel_count ? peripheral::dma1 : peripheral::dma2);
+  power_on((m_index < dma1_channel_count) ? peripheral::dma1
+                                          : peripheral::dma2);
   cortex_m::enable_interrupt(interrupt_for(m_index), channel_isrs[m_index]);
 }
 
@@ -240,7 +242,8 @@ std::optional<dma_channel> dma_channel::try_claim_any() noexcept
 dma_channel::dma_channel(claimed_key, u8 p_index) noexcept
   : m_index(p_index)
 {
-  power_on(m_index < dma1_channel_count ? peripheral::dma1 : peripheral::dma2);
+  power_on((m_index < dma1_channel_count) ? peripheral::dma1
+                                          : peripheral::dma2);
   cortex_m::enable_interrupt(interrupt_for(m_index), channel_isrs[m_index]);
 }
 
@@ -379,7 +382,7 @@ bool dma_channel::failed() const noexcept
   // The channel disables itself on a transfer error, and stop() disables it.
   // A transfer that finished stays enabled with nothing left to move.
   auto& channel = registers(m_index);
-  return not hal::bit_extract<dma::enable>(channel.configuration) &&
-         channel.transfer_amount != 0;
+  return not hal::bit_extract<dma::enable>(channel.configuration) and
+         (channel.transfer_amount != 0);
 }
 }  // namespace hal::stm32f1

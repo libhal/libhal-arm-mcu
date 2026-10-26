@@ -177,7 +177,7 @@ void spi::driver_transfer(mem::scatter_span<hal::byte const> p_data_out,
   auto const requests = requests_for(m_id);
   auto transmit = dma_channel::try_claim(requests.transmit);
   auto receive = dma_channel::try_claim(requests.receive);
-  if (transmit && receive) {
+  if (transmit and receive) {
     m_driver.transfer(p_data_out, p_data_in, p_filler, *transmit, *receive);
   } else {
     m_driver.transfer(p_data_out, p_data_in, p_filler);

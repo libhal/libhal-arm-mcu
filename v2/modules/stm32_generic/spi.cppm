@@ -193,7 +193,7 @@ std::uint16_t select_baud_rate_control(hal::hertz p_peripheral_clock_speed,
   bool const has_remainder = (peripheral_clock % nonzero_request) != 0;
   // Round the divider up, so the bus never runs faster than requested when it
   // can avoid it.
-  auto const divider = has_remainder ? whole_divider + 1U : whole_divider;
+  auto const divider = has_remainder ? (whole_divider + 1U) : whole_divider;
 
   // The prescaler is a power of two from 2 (field value 0) to 256 (field
   // value 7). Pick the smallest one that is at least the divider.
@@ -252,18 +252,18 @@ void for_each_run(mem::scatter_span<T> p_first,
   std::span<U> second_chunk{};
 
   while (true) {
-    while (first_chunk.empty() && first_chunks != first_end) {
+    while (first_chunk.empty() and (first_chunks != first_end)) {
       first_chunk = *first_chunks++;
     }
-    while (second_chunk.empty() && second_chunks != second_end) {
+    while (second_chunk.empty() and (second_chunks != second_end)) {
       second_chunk = *second_chunks++;
     }
-    if (first_chunk.empty() && second_chunk.empty()) {
+    if (first_chunk.empty() and second_chunk.empty()) {
       return;
     }
 
     auto run = std::max(first_chunk.size(), second_chunk.size());
-    if (not first_chunk.empty() && not second_chunk.empty()) {
+    if (not first_chunk.empty() and not second_chunk.empty()) {
       run = std::min(first_chunk.size(), second_chunk.size());
     }
     auto const first_run = first_chunk.first(std::min(run, first_chunk.size()));
@@ -374,10 +374,10 @@ public:
     //
     //   m0: CPOL 0, CPHA 0        m2: CPOL 1, CPHA 0
     //   m1: CPOL 0, CPHA 1        m3: CPOL 1, CPHA 1
-    bool const clock_polarity = p_settings.bus_mode == hal::spi_mode::m2 ||
-                                p_settings.bus_mode == hal::spi_mode::m3;
-    bool const clock_phase = p_settings.bus_mode == hal::spi_mode::m1 ||
-                             p_settings.bus_mode == hal::spi_mode::m3;
+    bool const clock_polarity = (p_settings.bus_mode == hal::spi_mode::m2) or
+                                (p_settings.bus_mode == hal::spi_mode::m3);
+    bool const clock_phase = (p_settings.bus_mode == hal::spi_mode::m1) or
+                             (p_settings.bus_mode == hal::spi_mode::m3);
 
     bit_modify(regs.cr2)
       .clear<control_register2::rx_dma_enable>()
@@ -445,7 +445,7 @@ public:
           continue;
         }
 
-        regs.dr = index < p_out.size() ? p_out[index] : p_filler;
+        regs.dr = (index < p_out.size()) ? p_out[index] : p_filler;
 
         while (not rx_not_empty(regs)) {
           continue;
@@ -553,7 +553,7 @@ public:
 
       // The last byte received is the last one to move.
       while (p_receive.remaining() != 0) {
-        if (p_receive.failed() || p_transmit.failed()) {
+        if (p_receive.failed() or p_transmit.failed()) {
           throw hal::io_error(this);
         }
         // The receive channel's interrupt normally ends the wait. Checking
@@ -569,7 +569,7 @@ public:
       p_data_out,
       p_data_in,
       [&move_run](std::span<hal::byte const> p_out, std::span<hal::byte> p_in) {
-        while (not p_out.empty() || not p_in.empty()) {
+        while (not p_out.empty() or not p_in.empty()) {
           auto const out =
             p_out.first(std::min(p_out.size(), max_dma_transfer));
           auto const in = p_in.first(std::min(p_in.size(), max_dma_transfer));
@@ -580,7 +580,7 @@ public:
       });
 
     // Wait for bus activity to cease before leaving the function
-    while (not tx_empty(regs) || busy(regs)) {
+    while (not tx_empty(regs) or busy(regs)) {
       continue;
     }
   }

@@ -15,6 +15,7 @@
 module;
 
 #include <array>
+#include <optional>
 
 module hal.arm_mcu.stm32f1;
 
@@ -26,6 +27,7 @@ import :constants;
 import :pin;
 import :power;
 import :clock;
+import :dma;
 
 namespace hal::stm32f1 {
 namespace {
@@ -83,6 +85,28 @@ void* register_address(peripheral p_id)
 {
   // NOLINTNEXTLINE(performance-no-int-to-ptr)
   return reinterpret_cast<void*>(peripheral_to_register(p_id));
+}
+
+/// DMA requests of a supported SPI peripheral
+struct spi_requests
+{
+  dma_request transmit;
+  dma_request receive;
+};
+
+spi_requests requests_for(peripheral p_id)
+{
+  switch (p_id) {
+    case peripheral::spi1:
+      return { .transmit = dma_request::spi1_tx,
+               .receive = dma_request::spi1_rx };
+    case peripheral::spi2:
+      return { .transmit = dma_request::spi2_tx,
+               .receive = dma_request::spi2_rx };
+    default:
+      return { .transmit = dma_request::spi3_tx,
+               .receive = dma_request::spi3_rx };
+  }
 }
 }  // namespace
 
@@ -147,8 +171,16 @@ void spi::driver_transfer(mem::scatter_span<hal::byte const> p_data_out,
                           mem::scatter_span<hal::byte> p_data_in,
                           hal::byte p_filler)
 {
-  // TODO(#211): Block on the transfer complete interrupt through a
-  // hal::notifier instead of polling the status register.
-  m_driver.transfer(p_data_out, p_data_in, p_filler);
+  // Channels are claimed per transfer, so drivers whose requests share a
+  // channel take turns. If another driver holds either one, the transfer
+  // polls instead.
+  auto const requests = requests_for(m_id);
+  auto transmit = dma_channel::try_claim(requests.transmit);
+  auto receive = dma_channel::try_claim(requests.receive);
+  if (transmit && receive) {
+    m_driver.transfer(p_data_out, p_data_in, p_filler, *transmit, *receive);
+  } else {
+    m_driver.transfer(p_data_out, p_data_in, p_filler);
+  }
 }
 }  // namespace hal::stm32f1

@@ -4,6 +4,8 @@ export module hal.arm_mcu.stm32_generic;
 // export import :i2c;
 // export import :pwm;
 // export import :timer;
+export import :dma;
 export import :spi;
 export import :uart;
 import :registers;
+import :scatter_cursor;

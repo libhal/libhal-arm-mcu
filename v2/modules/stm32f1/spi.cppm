@@ -44,6 +44,16 @@ namespace hal::stm32f1 {
  * ```
  *
  * The peripheral's hardware chip select (NSS) is left unused.
+ *
+ * Transfers move their bytes by DMA when they can claim both of the
+ * peripheral's DMA channels: DMA1 channels 3 (transmit) and 2 (receive) for
+ * `spi1`, 5 and 4 for `spi2`, DMA2 channels 2 and 1 for `spi3`. The calling
+ * context then sleeps on its waiter while the bytes move, so a waiter
+ * provider must be installed (see `hal::current_waiter()`) and transfers
+ * can't run inside an interrupt. The channels are claimed for each transfer
+ * and released after it, so other drivers on those channels take turns with
+ * this one. If another driver holds a channel, such as a USART receiving on
+ * it, the transfer polls the peripheral instead, keeping the CPU busy.
  */
 export class spi final : public hal::raw_spi_bus
 {

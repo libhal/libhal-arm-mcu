@@ -17,13 +17,19 @@ module;
 #include <bit>
 
 #include <algorithm>
+#include <chrono>
+#include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <span>
+#include <tuple>
 
 export module hal.arm_mcu.stm32_generic:spi;
 
 import hal;
 import hal.util;
+
+import :dma;
 
 namespace hal::stm32_generic {
 /// stm32 spi peripheral register map
@@ -187,7 +193,7 @@ std::uint16_t select_baud_rate_control(hal::hertz p_peripheral_clock_speed,
   bool const has_remainder = (peripheral_clock % nonzero_request) != 0;
   // Round the divider up, so the bus never runs faster than requested when it
   // can avoid it.
-  auto const divider = has_remainder ? whole_divider + 1U : whole_divider;
+  auto const divider = has_remainder ? (whole_divider + 1U) : whole_divider;
 
   // The prescaler is a power of two from 2 (field value 0) to 256 (field
   // value 7). Pick the smallest one that is at least the divider.
@@ -221,68 +227,6 @@ export hal::hertz achievable_clock_rate(hal::hertz p_peripheral_clock_speed,
 }
 
 /**
- * @brief Sequential, one-element-at-a-time cursor over a `scatter_span`
- *
- * Walks the constituent chunks of a `scatter_span<T>` as if it were one
- * contiguous range, skipping over empty chunks. Used to drive a byte-by-byte
- * spi transfer across a caller-supplied set of discontiguous buffers without
- * requiring random access into the `scatter_span` (which it does not
- * support).
- *
- * @tparam T - element type of the underlying scatter_span. Use a `const`
- * qualified type for a read-only cursor and an unqualified type for a
- * cursor whose `current()` element can be written to.
- */
-template<typename T>
-class scatter_cursor
-{
-public:
-  explicit scatter_cursor(mem::scatter_span<T> p_span)
-    : m_it(p_span.begin())
-    , m_end(p_span.end())
-  {
-    skip_empty_chunks();
-  }
-
-  /// @return true if every element of the scatter_span has been visited
-  [[nodiscard]] bool done() const
-  {
-    return m_it == m_end;
-  }
-
-  /// @return reference to the element at the cursor's current position.
-  /// Calling this when `done()` is true is undefined behavior.
-  [[nodiscard]] T& current()
-  {
-    return (*m_it)[m_offset];
-  }
-
-  /// Move the cursor to the next element, advancing past chunk boundaries
-  /// (including empty chunks) as needed.
-  void advance()
-  {
-    ++m_offset;
-    if (m_offset >= (*m_it).size()) {
-      ++m_it;
-      m_offset = 0;
-      skip_empty_chunks();
-    }
-  }
-
-private:
-  void skip_empty_chunks()
-  {
-    while (m_it != m_end and (*m_it).empty()) {
-      ++m_it;
-    }
-  }
-
-  mem::scatter_span_iterator<T> m_it;
-  mem::scatter_span_iterator<T> m_end;
-  std::size_t m_offset = 0;
-};
-
-/**
  * @brief A generic spi implementation for all stm32f series MCUs
  *
  * This class is meant to only be used by platform libraries or drivers
@@ -290,8 +234,10 @@ private:
  * develop, prefer to use the platform specific drivers instead as they
  * handle all of the initialization for you.
  *
- * This driver is synchronous/blocking. It does not participate in the
- * async::context/coroutine model.
+ * `transfer()` without DMA channels polls the status register, keeping the
+ * CPU busy until the transfer finishes. With DMA channels, the calling
+ * context sleeps on its waiter while the bytes move, so a waiter provider
+ * must be installed (see `hal::current_waiter()`).
  */
 export class spi
 {
@@ -379,10 +325,10 @@ public:
     //
     //   m0: CPOL 0, CPHA 0        m2: CPOL 1, CPHA 0
     //   m1: CPOL 0, CPHA 1        m3: CPOL 1, CPHA 1
-    bool const clock_polarity = p_settings.bus_mode == hal::spi_mode::m2 ||
-                                p_settings.bus_mode == hal::spi_mode::m3;
-    bool const clock_phase = p_settings.bus_mode == hal::spi_mode::m1 ||
-                             p_settings.bus_mode == hal::spi_mode::m3;
+    bool const clock_polarity = (p_settings.bus_mode == hal::spi_mode::m2) or
+                                (p_settings.bus_mode == hal::spi_mode::m3);
+    bool const clock_phase = (p_settings.bus_mode == hal::spi_mode::m1) or
+                             (p_settings.bus_mode == hal::spi_mode::m3);
 
     bit_modify(regs.cr2)
       .clear<control_register2::rx_dma_enable>()
@@ -429,8 +375,6 @@ public:
                 hal::byte p_filler)
   {
     auto& regs = reg();
-    std::size_t const max_length =
-      std::max(p_data_in.length(), p_data_out.length());
 
     // NOTE: This is a paranoid check to determine that there is no bus
     // activity before proceeding
@@ -444,33 +388,12 @@ public:
     // internal enable signal.
     bit_modify(regs.cr1).clear<control_register1::internal_slave_select>();
 
-    scatter_cursor<hal::byte const> out_cursor(p_data_out);
-    scatter_cursor<hal::byte> in_cursor(p_data_in);
-
-    for (std::size_t index = 0; index < max_length; index++) {
-      hal::byte byte = p_filler;
-
-      if (not out_cursor.done()) {
-        byte = out_cursor.current();
-        out_cursor.advance();
-      }
-
-      while (not tx_empty(regs)) {
-        continue;
-      }
-
-      regs.dr = byte;
-
-      while (not rx_not_empty(regs)) {
-        continue;
-      }
-
-      byte = static_cast<std::uint8_t>(regs.dr);
-      if (not in_cursor.done()) {
-        in_cursor.current() = byte;
-        in_cursor.advance();
-      }
-    }
+    mem::for_each_run(p_data_out,
+                      p_data_in,
+                      [&regs, p_filler](std::span<hal::byte const> p_out,
+                                        std::span<hal::byte> p_in) {
+                        poll_run(regs, p_out, p_in, p_filler);
+                      });
 
     bit_modify(regs.cr1).set<control_register1::internal_slave_select>();
 
@@ -501,12 +424,206 @@ public:
              p_filler);
   }
 
+  /**
+   * @brief Perform a transfer operation as defined in `hal::raw_spi_bus`,
+   * moving the bytes by DMA when both channels are given
+   *
+   * With both channels, blocks the calling context, which sleeps on its
+   * waiter until the DMA channels finish. Without them, polls like the
+   * overloads above. The transfer is split into runs that are contiguous in
+   * both the outgoing and the incoming data, and each run is one DMA transfer
+   * in each direction. Filler bytes are sent from `p_filler`, and received
+   * bytes nobody asked for are read into a scratch byte, so neither needs a
+   * buffer.
+   *
+   * @tparam Dma - the platform's DMA channel type
+   * @param p_data_out - outgoing data, possibly spread across multiple
+   * discontiguous chunks
+   * @param p_data_in - incoming data, possibly spread across multiple
+   * discontiguous chunks
+   * @param p_filler - output filler bytes if the outgoing data runs out
+   * before the incoming data.
+   * @param p_transmit - channel serving the peripheral's transmit DMA
+   * request, or `nullptr` to poll
+   * @param p_receive - channel serving the peripheral's receive DMA request,
+   * or `nullptr` to poll
+   * @throws hal::io_error - a DMA transfer failed
+   */
+  template<byte_dma_channel Dma>
+  void transfer(mem::scatter_span<hal::byte const> p_data_out,
+                mem::scatter_span<hal::byte> p_data_in,
+                hal::byte p_filler,
+                Dma* p_transmit,
+                Dma* p_receive)
+  {
+    auto& regs = reg();
+
+    // NOTE: This is a paranoid check to determine that there is no bus
+    // activity before proceeding
+    while (busy(regs)) {
+      continue;
+    }
+
+    // Without both channels, the transfer polls.
+    bool const use_dma = (p_transmit != nullptr) and (p_receive != nullptr);
+    std::optional<hal::notifier::scope<stop_transfer<Dma>>> operation;
+    if (use_dma) {
+      operation.emplace(m_notifier,
+                        stop_transfer<Dma>{ .regs = &regs,
+                                            .transmit = p_transmit,
+                                            .receive = p_receive });
+    }
+
+    // See transfer() above.
+    bit_modify(regs.cr1).clear<control_register1::internal_slave_select>();
+
+    hal::byte discarded = 0;
+    // Moves one run, which is no longer than one DMA transfer
+    auto const move_run = [&](std::span<hal::byte const> p_out,
+                              std::span<hal::byte> p_in) {
+      auto const run = std::max(p_out.size(), p_in.size());
+      if (p_in.empty()) {
+        p_receive->receive_discarding(regs.dr, discarded, run, m_notifier);
+      } else {
+        p_receive->receive(regs.dr, p_in, m_notifier);
+      }
+      if (p_out.empty()) {
+        p_transmit->transmit_repeated(regs.dr, p_filler, run, m_notifier);
+      } else {
+        p_transmit->transmit(regs.dr, p_out, m_notifier);
+      }
+      // Between runs, the transmit request waits for the next run's channel.
+      bit_modify(regs.cr2).set<control_register2::tx_dma_enable>();
+
+      // The last byte received is the last one to move.
+      while (p_receive->remaining() != 0) {
+        if (p_receive->failed() or p_transmit->failed()) {
+          throw hal::io_error(this);
+        }
+        // The receive channel's interrupt normally ends the wait. Checking
+        // again after a while keeps the transfer going even if it doesn't.
+        std::ignore = operation->block_for(recheck_period);
+      }
+    };
+
+    if (use_dma) {
+      // Receive requests are enabled before transmit requests (RM0008
+      // section 25.3.9), so no received byte is missed.
+      bit_modify(regs.cr2).set<control_register2::rx_dma_enable>();
+    }
+    mem::for_each_run(
+      p_data_out,
+      p_data_in,
+      [&](std::span<hal::byte const> p_out, std::span<hal::byte> p_in) {
+        if (not use_dma) {
+          poll_run(regs, p_out, p_in, p_filler);
+          return;
+        }
+        while (not p_out.empty() or not p_in.empty()) {
+          auto const out =
+            p_out.first(std::min(p_out.size(), max_dma_transfer));
+          auto const in = p_in.first(std::min(p_in.size(), max_dma_transfer));
+          move_run(out, in);
+          p_out = p_out.subspan(out.size());
+          p_in = p_in.subspan(in.size());
+        }
+      });
+
+    // Wait for bus activity to cease before leaving the function
+    while (not tx_empty(regs) or busy(regs)) {
+      continue;
+    }
+    bit_modify(regs.cr1).set<control_register1::internal_slave_select>();
+  }
+
+  /**
+   * @brief Perform a DMA transfer over contiguous buffers
+   *
+   * Convenience overload of the DMA `transfer()` for callers that already
+   * have contiguous `std::span` buffers.
+   *
+   * @tparam Dma - the platform's DMA channel type
+   * @param p_data_out - outgoing data
+   * @param p_data_in - incoming data
+   * @param p_filler - output filler bytes if the outgoing data runs out
+   * before the incoming data.
+   * @param p_transmit - channel serving the peripheral's transmit DMA
+   * request, or `nullptr` to poll
+   * @param p_receive - channel serving the peripheral's receive DMA request,
+   * or `nullptr` to poll
+   * @throws hal::io_error - a DMA transfer failed
+   */
+  template<byte_dma_channel Dma>
+  void transfer(std::span<hal::byte const> p_data_out,
+                std::span<hal::byte> p_data_in,
+                hal::byte p_filler,
+                Dma* p_transmit,
+                Dma* p_receive)
+  {
+    transfer(mem::scatter_span<hal::byte const>({ p_data_out }),
+             mem::scatter_span<hal::byte>({ p_data_in }),
+             p_filler,
+             p_transmit,
+             p_receive);
+  }
+
 private:
+  /// Ends a DMA transfer: stops the channels and their requests, so they
+  /// can't wake a transfer that has ended, and deselects the bus.
+  template<class Dma>
+  struct stop_transfer
+  {
+    spi_reg_t* regs;
+    Dma* transmit;
+    Dma* receive;
+
+    void operator()() const noexcept
+    {
+      transmit->stop();
+      receive->stop();
+      bit_modify(regs->cr2)
+        .clear<control_register2::tx_dma_enable>()
+        .clear<control_register2::rx_dma_enable>();
+      bit_modify(regs->cr1).set<control_register1::internal_slave_select>();
+    }
+  };
+
+  /// Moves one run by polling the status register, sending `p_filler` once
+  /// the outgoing data runs out
+  static void poll_run(spi_reg_t& p_regs,
+                       std::span<hal::byte const> p_out,
+                       std::span<hal::byte> p_in,
+                       hal::byte p_filler)
+  {
+    auto const run = std::max(p_out.size(), p_in.size());
+    for (std::size_t index = 0; index < run; index++) {
+      while (not tx_empty(p_regs)) {
+        continue;
+      }
+
+      p_regs.dr = (index < p_out.size()) ? p_out[index] : p_filler;
+
+      while (not rx_not_empty(p_regs)) {
+        continue;
+      }
+
+      auto const byte = static_cast<hal::byte>(p_regs.dr);
+      if (index < p_in.size()) {
+        p_in[index] = byte;
+      }
+    }
+  }
+
+  /// How often a DMA transfer checks its channels if their interrupt hasn't
+  /// woken it
+  static constexpr std::chrono::milliseconds recheck_period{ 10 };
+
   [[nodiscard]] spi_reg_t& reg()
   {
     return *reinterpret_cast<spi_reg_t*>(m_peripheral_address);
   }
 
   void* m_peripheral_address;
+  hal::notifier m_notifier;
 };
 }  // namespace hal::stm32_generic

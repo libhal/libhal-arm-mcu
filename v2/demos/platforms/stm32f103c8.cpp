@@ -112,6 +112,14 @@ hal::static_ref<hal::adc16> adc()
   return channel;
 }
 
+hal::static_ref<hal::i2c> i2c()
+{
+  static hal::no_op_lock single_context;
+  static hal::stm32f1::i2c i2c1(
+    hal::stm32f1::peripheral::i2c1, clock(), single_context);
+  return i2c1;
+}
+
 hal::static_ref<hal::spi_channel> spi_channel()
 {
   using namespace mp_units::si::unit_symbols;

@@ -18,7 +18,6 @@ module;
 
 #include <algorithm>
 #include <chrono>
-#include <concepts>
 #include <cstddef>
 #include <cstdint>
 #include <optional>
@@ -228,55 +227,6 @@ export hal::hertz achievable_clock_rate(hal::hertz p_peripheral_clock_speed,
 }
 
 /**
- * @brief Walk the outgoing and incoming data side by side, one contiguous run
- * at a time
- *
- * Calls `p_function` with the longest pair of spans that starts at the same
- * position and is contiguous in both. Once one side runs out, its span is
- * empty and the run is the rest of the other side's chunk. Empty chunks are
- * skipped.
- *
- * TODO(libhal/scatter_span#19): use `mem::for_each_run()` once libhal
- * requires a scatter_span release that has it.
- */
-template<typename T, typename U, typename Function>
-  requires std::invocable<Function&, std::span<T>, std::span<U>>
-void for_each_run(mem::scatter_span<T> p_first,
-                  mem::scatter_span<U> p_second,
-                  Function&& p_function)
-{
-  auto first_chunks = p_first.begin();
-  auto const first_end = p_first.end();
-  auto second_chunks = p_second.begin();
-  auto const second_end = p_second.end();
-  std::span<T> first_chunk{};
-  std::span<U> second_chunk{};
-
-  while (true) {
-    while (first_chunk.empty() and (first_chunks != first_end)) {
-      first_chunk = *first_chunks++;
-    }
-    while (second_chunk.empty() and (second_chunks != second_end)) {
-      second_chunk = *second_chunks++;
-    }
-    if (first_chunk.empty() and second_chunk.empty()) {
-      return;
-    }
-
-    auto run = std::max(first_chunk.size(), second_chunk.size());
-    if (not first_chunk.empty() and not second_chunk.empty()) {
-      run = std::min(first_chunk.size(), second_chunk.size());
-    }
-    auto const first_run = first_chunk.first(std::min(run, first_chunk.size()));
-    auto const second_run =
-      second_chunk.first(std::min(run, second_chunk.size()));
-    p_function(first_run, second_run);
-    first_chunk = first_chunk.subspan(first_run.size());
-    second_chunk = second_chunk.subspan(second_run.size());
-  }
-}
-
-/**
  * @brief A generic spi implementation for all stm32f series MCUs
  *
  * This class is meant to only be used by platform libraries or drivers
@@ -438,12 +388,12 @@ public:
     // internal enable signal.
     bit_modify(regs.cr1).clear<control_register1::internal_slave_select>();
 
-    for_each_run(p_data_out,
-                 p_data_in,
-                 [&regs, p_filler](std::span<hal::byte const> p_out,
-                                   std::span<hal::byte> p_in) {
-                   poll_run(regs, p_out, p_in, p_filler);
-                 });
+    mem::for_each_run(p_data_out,
+                      p_data_in,
+                      [&regs, p_filler](std::span<hal::byte const> p_out,
+                                        std::span<hal::byte> p_in) {
+                        poll_run(regs, p_out, p_in, p_filler);
+                      });
 
     bit_modify(regs.cr1).set<control_register1::internal_slave_select>();
 
@@ -561,7 +511,7 @@ public:
       // section 25.3.9), so no received byte is missed.
       bit_modify(regs.cr2).set<control_register2::rx_dma_enable>();
     }
-    for_each_run(
+    mem::for_each_run(
       p_data_out,
       p_data_in,
       [&](std::span<hal::byte const> p_out, std::span<hal::byte> p_in) {

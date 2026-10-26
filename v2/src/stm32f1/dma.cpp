@@ -97,7 +97,7 @@ constexpr u8 channel_index(dma_request p_request)
   if (p_index < dma1_channel_count) {
     return static_cast<irq>(hal::value(irq::dma1_channel1) + p_index);
   }
-  return static_cast<irq>(hal::value(irq::dma2_channel1) + p_index -
+  return static_cast<irq>((hal::value(irq::dma2_channel1) + p_index) -
                           dma1_channel_count);
 }
 

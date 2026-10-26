@@ -114,9 +114,7 @@ hal::static_ref<hal::adc16> adc()
 
 hal::static_ref<hal::i2c> i2c()
 {
-  static hal::no_op_lock single_context;
-  static hal::stm32f1::i2c i2c1(
-    hal::stm32f1::peripheral::i2c1, clock(), single_context);
+  static hal::stm32f1::i2c i2c1(hal::stm32f1::peripheral::i2c1, clock());
   return i2c1;
 }
 

@@ -16,7 +16,6 @@ module;
 
 #include <array>
 #include <atomic>
-#include <mutex>
 #include <optional>
 
 module hal.arm_mcu.stm32f1;
@@ -119,14 +118,42 @@ dma_channel* pointer_to(std::optional<dma_channel>& p_channel)
 {
   return p_channel ? &*p_channel : nullptr;
 }
+
+/// Marks the bus busy for its lifetime, and clears the mark even if the
+/// operation throws
+class busy_scope
+{
+public:
+  /// @throws hal::device_or_resource_busy - if another context or an
+  /// interrupt is using the bus. hal::locked_i2c makes contexts take turns
+  /// instead.
+  busy_scope(std::atomic_flag& p_busy, void const* p_instance)
+    : m_busy(p_busy)
+  {
+    if (m_busy.test_and_set(std::memory_order_acquire)) {
+      throw hal::device_or_resource_busy(p_instance);
+    }
+  }
+
+  busy_scope(busy_scope const&) = delete;
+  busy_scope& operator=(busy_scope const&) = delete;
+  busy_scope(busy_scope&&) = delete;
+  busy_scope& operator=(busy_scope&&) = delete;
+
+  ~busy_scope()
+  {
+    m_busy.clear(std::memory_order_release);
+  }
+
+private:
+  std::atomic_flag& m_busy;
+};
 }  // namespace
 
 i2c::i2c(peripheral p_id,
          hal::ref<hal::steady_clock> p_clock,
-         hal::ref<basic_lock> p_lock,
          hal::i2c::settings const& p_settings)
   : m_clock(p_clock)
-  , m_lock(p_lock)
   , m_id(p_id)
   , m_driver(register_address(p_id))  // Rejects unsupported peripherals
 {
@@ -197,8 +224,8 @@ i2c::~i2c()
 
 void i2c::driver_configure(hal::i2c::settings const& p_settings)
 {
-  // Not std::scoped_lock, which libc++ built without threads doesn't provide.
-  std::lock_guard const hold(*m_lock);
+  // Changing the clock rate mid-transaction would corrupt it.
+  busy_scope const busy(m_busy, this);
   m_driver.configure(p_settings, frequency(m_id));
 }
 
@@ -206,24 +233,7 @@ void i2c::driver_transaction(hal::byte p_address,
                              mem::scatter_span<hal::byte const> p_data_out,
                              mem::scatter_span<hal::byte> p_data_in)
 {
-  // Waits while another context is using the bus.
-  std::lock_guard const hold(*m_lock);
-
-  // A lock that blocks keeps other contexts out, so this is only true if a
-  // lock that doesn't block, such as hal::no_op_lock, let this transaction
-  // interrupt another one.
-  if (m_busy.test_and_set(std::memory_order_acquire)) {
-    throw hal::device_or_resource_busy(this);
-  }
-  // Clears the flag even if the transaction throws.
-  struct clear_on_exit
-  {
-    std::atomic_flag& flag;
-    ~clear_on_exit()
-    {
-      flag.clear(std::memory_order_release);
-    }
-  } const guard{ .flag = m_busy };
+  busy_scope const busy(m_busy, this);
 
   // Channels are claimed per transaction, so drivers whose requests share a
   // channel take turns. If another driver holds one, the bytes in that

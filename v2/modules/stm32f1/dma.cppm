@@ -375,6 +375,9 @@ private:
              u32 p_configuration,
              hal::notifier* p_notifier);
 
+  /// The channel's registers, kept so each access doesn't have to work out
+  /// the controller and channel from the index again
+  dma::dma_channel_t* m_registers;
   u8 m_index;
 };
 }  // namespace hal::stm32f1

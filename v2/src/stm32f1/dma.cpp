@@ -78,12 +78,13 @@ constexpr u8 channel_index(dma_request p_request)
 
 [[nodiscard]] dma::dma_t& controller(u8 p_index)
 {
-  return p_index < dma1_channel_count ? *dma::dma1 : *dma::dma2;
+  return (p_index < dma1_channel_count) ? *dma::dma1 : *dma::dma2;
 }
 
 [[nodiscard]] u8 controller_channel(u8 p_index)
 {
-  return p_index < dma1_channel_count ? p_index : p_index - dma1_channel_count;
+  return (p_index < dma1_channel_count) ? p_index
+                                        : (p_index - dma1_channel_count);
 }
 
 [[nodiscard]] dma::dma_channel_t& registers(u8 p_index)
@@ -96,7 +97,7 @@ constexpr u8 channel_index(dma_request p_request)
   if (p_index < dma1_channel_count) {
     return static_cast<irq>(hal::value(irq::dma1_channel1) + p_index);
   }
-  return static_cast<irq>(hal::value(irq::dma2_channel1) + p_index -
+  return static_cast<irq>((hal::value(irq::dma2_channel1) + p_index) -
                           dma1_channel_count);
 }
 
@@ -208,12 +209,14 @@ constexpr auto word_size = hal::bit_value()
 }  // namespace
 
 dma_channel::dma_channel(dma_request p_request)
-  : m_index(channel_index(p_request))
+  : m_registers(&registers(channel_index(p_request)))
+  , m_index(channel_index(p_request))
 {
   if (not claim_channel(m_index)) {
     throw hal::device_or_resource_busy(this);
   }
-  power_on(m_index < dma1_channel_count ? peripheral::dma1 : peripheral::dma2);
+  power_on((m_index < dma1_channel_count) ? peripheral::dma1
+                                          : peripheral::dma2);
   cortex_m::enable_interrupt(interrupt_for(m_index), channel_isrs[m_index]);
 }
 
@@ -238,9 +241,11 @@ std::optional<dma_channel> dma_channel::try_claim_any() noexcept
 }
 
 dma_channel::dma_channel(claimed_key, u8 p_index) noexcept
-  : m_index(p_index)
+  : m_registers(&registers(p_index))
+  , m_index(p_index)
 {
-  power_on(m_index < dma1_channel_count ? peripheral::dma1 : peripheral::dma2);
+  power_on((m_index < dma1_channel_count) ? peripheral::dma1
+                                          : peripheral::dma2);
   cortex_m::enable_interrupt(interrupt_for(m_index), channel_isrs[m_index]);
 }
 
@@ -343,7 +348,7 @@ void dma_channel::start(uptr p_register,
 
   // The other registers can only be written while the channel is disabled.
   stop();
-  auto& channel = registers(m_index);
+  auto& channel = *m_registers;
   channel.peripheral_address = static_cast<u32>(p_register);
   channel.memory_address = static_cast<u32>(p_memory);
   channel.transfer_amount = static_cast<u32>(p_count);
@@ -360,14 +365,14 @@ void dma_channel::start(uptr p_register,
 void dma_channel::stop() noexcept
 {
   // Also disables the channel's interrupts.
-  registers(m_index).configuration = 0;
+  m_registers->configuration = 0;
   clear_flags(m_index);
   notifiers[m_index] = nullptr;
 }
 
 std::size_t dma_channel::remaining() const noexcept
 {
-  auto const count = registers(m_index).transfer_amount;
+  auto const count = m_registers->transfer_amount;
   // Reads of the memory being received into must happen after the channel
   // has written it.
   std::atomic_signal_fence(std::memory_order_seq_cst);
@@ -378,8 +383,8 @@ bool dma_channel::failed() const noexcept
 {
   // The channel disables itself on a transfer error, and stop() disables it.
   // A transfer that finished stays enabled with nothing left to move.
-  auto& channel = registers(m_index);
-  return not hal::bit_extract<dma::enable>(channel.configuration) &&
-         channel.transfer_amount != 0;
+  auto& channel = *m_registers;
+  return not hal::bit_extract<dma::enable>(channel.configuration) and
+         (channel.transfer_amount != 0);
 }
 }  // namespace hal::stm32f1

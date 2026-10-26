@@ -140,10 +140,11 @@ void channel_isr()
 }
 
 template<std::size_t... Index>
-consteval std::array<cortex_m::interrupt_pointer, channel_count> make_isrs(
-  std::index_sequence<Index...>)
+consteval auto make_isrs(std::index_sequence<Index...>)
 {
-  return { &channel_isr<Index>... };
+  return std::array<cortex_m::interrupt_pointer, sizeof...(Index)>{
+    &channel_isr<Index>...
+  };
 }
 
 constexpr auto channel_isrs =

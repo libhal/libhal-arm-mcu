@@ -40,7 +40,6 @@ libhal_add_library(arm-mcu
         modules/cortex_m/terminate_handler.cpp
         modules/stm32_generic/stm32_generic.cppm
         modules/stm32_generic/registers.cppm
-        modules/stm32_generic/scatter_cursor.cppm
         modules/stm32_generic/dma.cppm
         modules/stm32_generic/i2c.cppm
         # modules/stm32_generic/pwm.cppm

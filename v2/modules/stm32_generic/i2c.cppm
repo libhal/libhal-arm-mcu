@@ -15,10 +15,12 @@
 module;
 
 #include <algorithm>
+#include <array>
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <span>
+#include <type_traits>
 
 export module hal.arm_mcu.stm32_generic:i2c;
 
@@ -26,7 +28,6 @@ import hal;
 import hal.util;
 
 import :dma;
-import :scatter_cursor;
 
 namespace hal::stm32_generic {
 /// SPI Control Register 1 (mirrors the field layout, but for i2c cr1)
@@ -733,11 +734,10 @@ private:
 
   static constexpr std::chrono::milliseconds stall_timeout{ stall_timeout_ms };
 
-  /// Store the received byte and move to the next one
-  static void receive(i2c_reg_t& p_regs, scatter_cursor<hal::byte>& p_in)
+  /// @return the byte in the data register
+  static hal::byte received(i2c_reg_t& p_regs)
   {
-    p_in.current() = static_cast<hal::byte>(p_regs.data_reg);
-    p_in.advance();
+    return static_cast<hal::byte>(p_regs.data_reg);
   }
 
   /// Clears ADDR, which reading SR1 and then SR2 does
@@ -747,13 +747,45 @@ private:
     [[maybe_unused]] auto const sr2 = p_regs.sr2;
   }
 
-  /// @return the next contiguous run of the cursor that one DMA transfer can
-  /// move, at most `p_limit` long
-  template<class T>
-  static std::span<T> next_run(scatter_cursor<T>& p_cursor, std::size_t p_limit)
+  /// Calls `p_function` with each contiguous run of the `p_count` elements
+  /// of `p_data` that start at `p_offset`. Each run is short enough for one
+  /// DMA transfer.
+  template<class T, class Function>
+  static void for_each_run(mem::scatter_span<T> p_data,
+                           std::size_t p_offset,
+                           std::size_t p_count,
+                           Function&& p_function)
   {
-    auto const run = p_cursor.contiguous();
-    return run.first(std::min({ run.size(), p_limit, max_dma_transfer }));
+    for (std::span<T> chunk : p_data) {
+      if (p_count == 0) {
+        return;
+      }
+      if (p_offset >= chunk.size()) {
+        p_offset -= chunk.size();
+        continue;
+      }
+      chunk = chunk.subspan(p_offset);
+      p_offset = 0;
+      while (not chunk.empty() && p_count != 0) {
+        auto const run =
+          chunk.first(std::min({ chunk.size(), p_count, max_dma_transfer }));
+        p_function(run);
+        chunk = chunk.subspan(run.size());
+        p_count -= run.size();
+      }
+    }
+  }
+
+  /// Copy `p_bytes` into `p_data`, starting at `p_offset`
+  static void store(mem::scatter_span<hal::byte> p_data,
+                    std::size_t p_offset,
+                    std::span<hal::byte const> p_bytes)
+  {
+    for_each_run(
+      p_data, p_offset, p_bytes.size(), [&p_bytes](std::span<hal::byte> p_run) {
+        std::ranges::copy(p_bytes.first(p_run.size()), p_run.begin());
+        p_bytes = p_bytes.subspan(p_run.size());
+      });
   }
 
   /// Generate a start condition and send the address byte
@@ -788,14 +820,14 @@ private:
       send_address(p_bus, hal::i2c_operation::write);
 
       if (p_transmit != nullptr && p_data_out.length() != 0) {
-        write_by_dma(p_bus, p_data_out, *p_transmit);
+        move_by_dma(p_bus, p_data_out, p_data_out.length(), *p_transmit);
       } else {
         clear_addr(regs);
-        scatter_cursor<hal::byte const> out(p_data_out);
-        while (not out.done()) {
-          p_bus.wait_for(i2c_sr1::tx_empty, wake_on_data);
-          regs.data_reg = out.current();
-          out.advance();
+        for (std::span<hal::byte const> chunk : p_data_out) {
+          for (auto const byte : chunk) {
+            p_bus.wait_for(i2c_sr1::tx_empty, wake_on_data);
+            regs.data_reg = byte;
+          }
         }
       }
       if (p_data_out.length() != 0) {
@@ -815,60 +847,34 @@ private:
     p_bus.spin_until_clear(regs.cr1, i2c_cr1::stop);
   }
 
-  /// Send every byte by DMA, starting with ADDR still set
-  template<class Dma>
-  void write_by_dma(progress<Dma> const& p_bus,
-                    mem::scatter_span<hal::byte const> p_data_out,
-                    Dma& p_dma)
-  {
-    auto& regs = *p_bus.regs;
-    scatter_cursor<hal::byte const> out(p_data_out);
-
-    // The first chunk is ready before ADDR is cleared, so it goes out as soon
-    // as the data register empties. Between chunks, the peripheral holds SCL
-    // low until the next one starts.
-    auto run = next_run(out, max_dma_transfer);
-    p_dma.transmit(regs.data_reg, run, m_notifier);
-    bit_modify(regs.cr2).set(i2c_cr2::dma_en);
-    clear_addr(regs);
-    while (true) {
-      p_bus.wait_for_transfer(p_dma);
-      out.advance(run.size());
-      if (out.done()) {
-        break;
-      }
-      run = next_run(out, max_dma_transfer);
-      p_dma.transmit(regs.data_reg, run, m_notifier);
-    }
-    bit_modify(regs.cr2).clear(i2c_cr2::dma_en);
-  }
-
-  /// Receive the first `p_count` bytes after the address by DMA, starting
-  /// with ADDR still set
-  template<class Dma>
-  void read_by_dma(progress<Dma> const& p_bus,
-                   scatter_cursor<hal::byte>& p_in,
+  /// Send, or receive, the first `p_count` bytes of `p_data` by DMA,
+  /// starting with ADDR still set. Writes send `hal::byte const` data and
+  /// reads receive into `hal::byte` data.
+  template<class Dma, class T>
+  void move_by_dma(progress<Dma> const& p_bus,
+                   mem::scatter_span<T> p_data,
                    std::size_t p_count,
                    Dma& p_dma)
   {
     auto& regs = *p_bus.regs;
-    auto left = p_count;
-    // Between chunks, the received byte waits in the data register and the
-    // peripheral holds SCL low until the next chunk starts.
-    auto run = next_run(p_in, left);
-    p_dma.receive(regs.data_reg, run, m_notifier);
-    bit_modify(regs.cr2).set(i2c_cr2::dma_en);
-    clear_addr(regs);
-    while (true) {
-      p_bus.wait_for_transfer(p_dma);
-      p_in.advance(run.size());
-      left -= run.size();
-      if (left == 0) {
-        break;
+    bool addr_cleared = false;
+    // The first run is ready before ADDR is cleared, so it moves as soon as
+    // the peripheral is. Between runs, the peripheral holds SCL low until the
+    // next one starts: a write waits for its next byte, and a read keeps its
+    // received byte in the data register.
+    for_each_run(p_data, 0, p_count, [&](std::span<T> p_run) {
+      if constexpr (std::is_const_v<T>) {
+        p_dma.transmit(regs.data_reg, p_run, m_notifier);
+      } else {
+        p_dma.receive(regs.data_reg, p_run, m_notifier);
       }
-      run = next_run(p_in, left);
-      p_dma.receive(regs.data_reg, run, m_notifier);
-    }
+      if (not addr_cleared) {
+        bit_modify(regs.cr2).set(i2c_cr2::dma_en);
+        clear_addr(regs);
+        addr_cleared = true;
+      }
+      p_bus.wait_for_transfer(p_dma);
+    });
     bit_modify(regs.cr2).clear(i2c_cr2::dma_en);
   }
 
@@ -881,7 +887,11 @@ private:
             Dma* p_receive)
   {
     auto& regs = *p_bus.regs;
-    scatter_cursor<hal::byte> in(p_data_in);
+    // The ending sequences read into here, then the bytes are stored, so
+    // the steps that must run back to back stay short.
+    std::array<hal::byte, 3> ending{};
+    auto const ending_length = std::min(p_length, ending.size());
+    auto const body_length = p_length - ending_length;
 
     if (p_length == 1) {
       // NACK the only byte, and stop after it.
@@ -892,11 +902,8 @@ private:
         bit_modify(regs.cr1).set(i2c_cr1::stop);
       }
       p_bus.wait_for(i2c_sr1::rx_not_empty, wake_on_data);
-      receive(regs, in);
-      return;
-    }
-
-    if (p_length == 2) {
+      ending[0] = received(regs);
+    } else if (p_length == 2) {
       // POS makes the cleared ACK apply to the second byte.
       bit_modify(regs.cr1).clear(i2c_cr1::ack_enable).set(i2c_cr1::pos);
       clear_addr(regs);
@@ -906,36 +913,39 @@ private:
       {
         interrupt_mask_guard const masked;
         bit_modify(regs.cr1).set(i2c_cr1::stop);
-        receive(regs, in);
+        ending[0] = received(regs);
       }
-      receive(regs, in);
+      ending[1] = received(regs);
       bit_modify(regs.cr1).clear(i2c_cr1::pos);
-      return;
-    }
-
-    constexpr std::size_t ending_length = 3;
-    if (p_receive != nullptr && p_length > ending_length) {
-      read_by_dma(p_bus, in, p_length - ending_length, *p_receive);
     } else {
-      clear_addr(regs);
-      for (std::size_t remaining = p_length; remaining > ending_length;
-           remaining--) {
-        p_bus.wait_for(i2c_sr1::rx_not_empty, wake_on_data);
-        receive(regs, in);
+      if (p_receive != nullptr && body_length != 0) {
+        move_by_dma(p_bus, p_data_in, body_length, *p_receive);
+      } else {
+        clear_addr(regs);
+        for_each_run(p_data_in,
+                     0,
+                     body_length,
+                     [&p_bus, &regs](std::span<hal::byte> p_run) {
+                       for (auto& byte : p_run) {
+                         p_bus.wait_for(i2c_sr1::rx_not_empty, wake_on_data);
+                         byte = received(regs);
+                       }
+                     });
       }
+      // Three bytes left: byte N-2 is in the data register and N-1 in the
+      // shift register. NACK the last one and stop after it.
+      p_bus.wait_for(i2c_sr1::byte_transfered_finish, wake_on_event);
+      bit_modify(regs.cr1).clear(i2c_cr1::ack_enable);
+      {
+        interrupt_mask_guard const masked;
+        ending[0] = received(regs);
+        bit_modify(regs.cr1).set(i2c_cr1::stop);
+        ending[1] = received(regs);
+      }
+      p_bus.wait_for(i2c_sr1::rx_not_empty, wake_on_data);
+      ending[2] = received(regs);
     }
-    // Three bytes left: byte N-2 is in the data register and N-1 in the shift
-    // register. NACK the last one and stop after it.
-    p_bus.wait_for(i2c_sr1::byte_transfered_finish, wake_on_event);
-    bit_modify(regs.cr1).clear(i2c_cr1::ack_enable);
-    {
-      interrupt_mask_guard const masked;
-      receive(regs, in);
-      bit_modify(regs.cr1).set(i2c_cr1::stop);
-      receive(regs, in);
-    }
-    p_bus.wait_for(i2c_sr1::rx_not_empty, wake_on_data);
-    receive(regs, in);
+    store(p_data_in, body_length, std::span(ending).first(ending_length));
   }
 
   /// Stop driving the bus after a failed transaction

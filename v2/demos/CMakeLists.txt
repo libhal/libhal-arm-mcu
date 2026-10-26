@@ -55,6 +55,7 @@ set(DEMOS
     adc
     blank
     blinker
+    dma
     gpio
     spi
     uart

@@ -24,6 +24,7 @@ import hal.arm_mcu.stm32_generic;
 
 import :constants;
 import :pin;
+import :dma;
 
 namespace hal::stm32f1 {
 
@@ -92,7 +93,7 @@ public:
    * heap.
    * @throws hal::device_or_resource_busy - if a serial port acquired from this
    * manager still exists (destroy it before acquiring another), or if another
-   * driver has claimed the TX or RX pin.
+   * driver has claimed the TX or RX pin or the receive DMA channel.
    * @throws hal::operation_not_supported - if `p_buffer` is larger than the
    * DMA controller can address (`max_dma_length`).
    */
@@ -141,7 +142,7 @@ private:
   peripheral m_id;
   pin m_tx{};
   pin m_rx{};
-  u8 m_dma_channel = 0;
+  dma_channel m_receive_dma;
   hal::stm32_generic::uart m_uart;
 };
 }  // namespace hal::stm32f1

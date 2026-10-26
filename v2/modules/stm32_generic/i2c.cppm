@@ -456,7 +456,7 @@ public:
    * outside what the peripheral supports for that mode (2 MHz to 50 MHz, and
    * at least 4 MHz for fast mode).
    */
-  void configure(hal::i2c::settings const& p_settings, hal::hertz p_frequency)
+  void configure(hal::i2c_settings const& p_settings, hal::hertz p_frequency)
   {
     auto const timing = compute_i2c_timing(p_settings.clock_rate, p_frequency);
     auto const frequency_mhz = static_cast<u32>(

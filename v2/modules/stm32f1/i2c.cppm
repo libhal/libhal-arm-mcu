@@ -74,7 +74,9 @@ public:
    * @param p_id - which I2C peripheral to use. Must be `i2c1` or `i2c2`.
    * @param p_clock - times the short waits on the bus that raise no
    * interrupt. It must outlive the controller.
-   * @param p_settings - initial bus settings
+   * @param p_settings - bus settings. The clock rate must be at or below
+   * the limit of every device on the bus, which `hal::i2c_bus_rate()`
+   * computes at compile time. The default, 100 kHz, is safe for any device.
    * @throws hal::operation_not_supported - if `p_id` is not `i2c1` or `i2c2`,
    * or if `p_settings` can't be achieved (see `configure()`).
    * @throws hal::device_or_resource_busy - if another driver has claimed the
@@ -82,7 +84,7 @@ public:
    */
   i2c(peripheral p_id,
       hal::ref<hal::steady_clock> p_clock [[clang::lifetimebound]],
-      hal::i2c::settings const& p_settings = {});
+      hal::i2c_settings const& p_settings = {});
 
   i2c(i2c const&) = delete;
   i2c& operator=(i2c const&) = delete;
@@ -92,13 +94,28 @@ public:
   /// Power off the peripheral and release its pins
   ~i2c();
 
+  /**
+   * @brief Change the bus's clock rate
+   *
+   * @warning Every device on the bus sees the new rate. A device that sees a
+   * rate faster than it supports can misread traffic meant for another
+   * device and corrupt the bus. Keep the rate at or below the slowest
+   * device's limit, and call this only from the application, which knows
+   * every device on the bus. Device drivers take a `hal::i2c`, which has no
+   * way to change the rate.
+   *
+   * The bus never runs faster than requested. A rate above 400 kHz runs at
+   * 400 kHz.
+   *
+   * @param p_settings - the new bus settings
+   * @throws hal::operation_not_supported - if the clock rate is zero or the
+   * bus can't run as slowly as requested.
+   * @throws hal::device_or_resource_busy - if a transaction on this bus is in
+   * progress.
+   */
+  void configure(hal::i2c_settings const& p_settings);
+
 private:
-  /// @throws hal::operation_not_supported - if the clock rate is zero or the
-  /// bus can't run as slowly as requested. A rate above 400 kHz runs at
-  /// 400 kHz.
-  /// @throws hal::device_or_resource_busy - if a transaction on this bus is
-  /// in progress
-  void driver_configure(hal::i2c::settings const& p_settings) override;
   /// @throws hal::device_or_resource_busy - if another transaction on this
   /// bus is in progress
   void driver_transaction(hal::byte p_address,

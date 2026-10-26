@@ -152,7 +152,7 @@ private:
 
 i2c::i2c(peripheral p_id,
          hal::ref<hal::steady_clock> p_clock,
-         hal::i2c::settings const& p_settings)
+         hal::i2c_settings const& p_settings)
   : m_clock(p_clock)
   , m_id(p_id)
   , m_driver(register_address(p_id))  // Rejects unsupported peripherals
@@ -222,7 +222,7 @@ i2c::~i2c()
   release(m_id);
 }
 
-void i2c::driver_configure(hal::i2c::settings const& p_settings)
+void i2c::configure(hal::i2c_settings const& p_settings)
 {
   // Changing the clock rate mid-transaction would corrupt it.
   busy_scope const busy(m_busy, this);

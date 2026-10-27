@@ -26,6 +26,7 @@ export module hal.arm_mcu.stm32_generic:i2c;
 
 import hal;
 import hal.util;
+import hal.arm_mcu.cortex_m;
 
 import :dma;
 
@@ -255,45 +256,6 @@ struct i2c_reg_t
   hal::u32 volatile trise;
   /// Noise filter reg (CH 18.6.10)
   hal::u32 volatile filter;
-};
-
-/**
- * @brief Masks interrupts for the few register accesses that the STM32 I2C
- * needs done back to back, and restores the previous mask when destroyed
- *
- * When receiving the last bytes of a transfer, clearing ADDR, setting STOP
- * and reading the data register must happen before the next byte finishes,
- * or the peripheral clocks out an extra byte (STM32F10xxx errata, I2C
- * section). An interrupt landing in between could delay them.
- */
-class interrupt_mask_guard
-{
-public:
-  interrupt_mask_guard()
-  {
-#if defined(__arm__)
-    asm volatile("mrs %0, primask" : "=r"(m_primask));
-    asm volatile("cpsid i" : : : "memory");
-#endif
-  }
-
-  interrupt_mask_guard(interrupt_mask_guard const&) = delete;
-  interrupt_mask_guard& operator=(interrupt_mask_guard const&) = delete;
-  interrupt_mask_guard(interrupt_mask_guard&&) = delete;
-  interrupt_mask_guard& operator=(interrupt_mask_guard&&) = delete;
-
-  ~interrupt_mask_guard()
-  {
-#if defined(__arm__)
-    if ((m_primask & 1U) == 0) {
-      asm volatile("cpsie i" : : : "memory");
-    }
-#endif
-  }
-
-private:
-  // Only read on Arm, where the inline assembly is compiled in.
-  [[maybe_unused]] hal::u32 m_primask = 0;
 };
 
 /// Clock control and rise time settings for an STM32 I2C bus
@@ -882,6 +844,11 @@ private:
 
   /// Receive the bytes after the address, following the master receiver
   /// sequences in the reference manual (RM0008 section 26.3.3).
+  ///
+  /// When receiving the last bytes, clearing ADDR, setting STOP and reading
+  /// the data register must happen before the next byte finishes, or the
+  /// peripheral clocks out an extra byte (STM32F10xxx errata, I2C section).
+  /// Those steps run with interrupts masked, so one can't delay them.
   template<class Dma>
   void read(progress<Dma> const& p_bus,
             mem::scatter_span<hal::byte> p_data_in,
@@ -899,7 +866,7 @@ private:
       // NACK the only byte, and stop after it.
       bit_modify(regs.cr1).clear(i2c_cr1::ack_enable);
       {
-        interrupt_mask_guard const masked;
+        hal::cortex_m::interrupt_mask_guard const masked;
         clear_addr(regs);
         bit_modify(regs.cr1).set(i2c_cr1::stop);
       }
@@ -913,7 +880,7 @@ private:
       // second in the shift register.
       p_bus.wait_for(i2c_sr1::byte_transfered_finish, wake_on_event);
       {
-        interrupt_mask_guard const masked;
+        hal::cortex_m::interrupt_mask_guard const masked;
         bit_modify(regs.cr1).set(i2c_cr1::stop);
         ending[0] = received(regs);
       }
@@ -939,7 +906,7 @@ private:
       p_bus.wait_for(i2c_sr1::byte_transfered_finish, wake_on_event);
       bit_modify(regs.cr1).clear(i2c_cr1::ack_enable);
       {
-        interrupt_mask_guard const masked;
+        hal::cortex_m::interrupt_mask_guard const masked;
         ending[0] = received(regs);
         bit_modify(regs.cr1).set(i2c_cr1::stop);
         ending[1] = received(regs);

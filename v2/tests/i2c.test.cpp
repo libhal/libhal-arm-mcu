@@ -32,6 +32,7 @@ void i2c_test()
     auto const timing = compute_i2c_timing(100 * kHz, 36 * MHz);
 
     // Verify
+    expect(that % 36 == timing.frequency);
     expect(not timing.fast_mode);
     expect(that % 180 == timing.ccr);
     // 1000 ns at 36 MHz is 36 cycles, plus one.

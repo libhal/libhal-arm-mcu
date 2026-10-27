@@ -261,6 +261,8 @@ struct i2c_reg_t
 /// Clock control and rise time settings for an STM32 I2C bus
 export struct i2c_timing
 {
+  /// CR2 FREQ field: the input clock in whole MHz
+  u32 frequency;
   /// CCR divider field
   u32 ccr;
   /// TRISE field: maximum SCL rise time in peripheral clock cycles, plus one
@@ -271,8 +273,8 @@ export struct i2c_timing
 };
 
 /**
- * @brief Compute the CCR and TRISE settings for an i2c clock rate, without
- * touching any hardware
+ * @brief Compute the FREQ, CCR and TRISE settings for an i2c clock rate,
+ * without touching any hardware
  *
  * The bus never runs faster than `p_clock_rate`. A rate above fast mode's
  * 400 kHz runs at 400 kHz. Otherwise the rate is rounded down to what the
@@ -290,54 +292,56 @@ export struct i2c_timing
 export i2c_timing compute_i2c_timing(hal::hertz p_clock_rate,
                                      hal::hertz p_frequency)
 {
-  constexpr u32 standard_mode_max_rate = 100'000;
-  constexpr u32 fast_mode_max_rate = 400'000;
-  constexpr u32 min_input_clock = 2'000'000;
-  constexpr u32 fast_mode_min_input_clock = 4'000'000;
-  constexpr u32 max_input_clock = 50'000'000;
+  using namespace mp_units::si::unit_symbols;
+  constexpr hal::hertz standard_mode_max_rate = 100 * kHz;
+  constexpr hal::hertz fast_mode_max_rate = 400 * kHz;
+  constexpr hal::hertz min_input_clock = 2 * MHz;
+  constexpr hal::hertz fast_mode_min_input_clock = 4 * MHz;
+  constexpr hal::hertz max_input_clock = 50 * MHz;
   constexpr u32 standard_mode_min_ccr = 4;
   constexpr u32 max_ccr = 0xFFF;
 
-  auto const frequency =
-    static_cast<u32>(p_frequency.numerical_value_in(hal::hertz::unit));
-  auto const requested =
-    static_cast<u32>(p_clock_rate.numerical_value_in(hal::hertz::unit));
-
   // A rate fast mode can't reach runs at fast mode's top rate, which is
   // slower than requested and so safe for the devices on the bus.
-  auto const rate = std::min(requested, fast_mode_max_rate);
+  auto const rate = std::min(p_clock_rate, fast_mode_max_rate);
   bool const fast_mode = rate > standard_mode_max_rate;
   auto const min_supported_input_clock =
     fast_mode ? fast_mode_min_input_clock : min_input_clock;
 
-  if ((rate == 0) or (frequency < min_supported_input_clock) or
-      (frequency > max_input_clock)) {
+  if ((rate == hal::hertz::zero()) or
+      (p_frequency < min_supported_input_clock) or
+      (p_frequency > max_input_clock)) {
     throw hal::operation_not_supported(nullptr);
   }
 
-  // Standard mode: SCL high and low are each CCR cycles, so the rate is
-  // frequency / (2 * CCR). Fast mode with a 1:2 duty cycle: high is CCR and
-  // low is 2 * CCR cycles, so the rate is frequency / (3 * CCR). Rounding
-  // CCR up keeps the bus at or below the requested rate.
+  // Standard mode: SCL high and low are each CCR cycles, so one SCL period
+  // is 2 * CCR cycles. Fast mode with a 1:2 duty cycle: high is CCR and low
+  // is 2 * CCR cycles, so a period is 3 * CCR cycles. Rounding CCR up keeps
+  // the bus at or below the requested rate.
   auto const cycles_per_ccr = fast_mode ? 3U : 2U;
-  auto const divisor = cycles_per_ccr * rate;
-  auto const exact_ccr = frequency / divisor;
-  bool const has_remainder = (frequency % divisor) != 0;
-  auto const rounded_ccr = has_remainder ? (exact_ccr + 1U) : exact_ccr;
-  auto const ccr = fast_mode ? std::max(rounded_ccr, 1U)
-                             : std::max(rounded_ccr, standard_mode_min_ccr);
+  auto const ccr_rate = cycles_per_ccr * rate;
+  auto const rounded_ccr = ((p_frequency + ccr_rate) - (1U * Hz)) / ccr_rate;
+  auto const ccr = std::max(rounded_ccr.numerical_value_in(mp_units::one),
+                            fast_mode ? 1U : standard_mode_min_ccr);
 
   // A larger divider would be needed to go this slowly.
   if (ccr > max_ccr) {
     throw hal::operation_not_supported(nullptr);
   }
 
-  // TRISE is the maximum SCL rise time in peripheral clock cycles, plus
-  // one: 1000 ns for standard mode and 300 ns for fast mode.
-  auto const frequency_mhz = frequency / 1'000'000;
-  auto const rise_time =
-    fast_mode ? (((frequency_mhz * 300U) / 1000U) + 1U) : (frequency_mhz + 1U);
-  return { .ccr = ccr, .rise_time = rise_time, .fast_mode = fast_mode };
+  // FREQ is the input clock in whole MHz. TRISE is the maximum SCL rise time
+  // in cycles of that clock, rounded down, plus one (RM0008 section 26.6.9).
+  auto const frequency = p_frequency.in(MHz, mp_units::truncated);
+  auto const max_rise_time = fast_mode ? (300U * ns) : (1000U * ns);
+  auto const rise_cycles = max_rise_time * frequency;
+
+  return {
+    .frequency = frequency.numerical_value_in(MHz),
+    .ccr = ccr,
+    .rise_time =
+      rise_cycles.numerical_value_in(mp_units::one, mp_units::truncated) + 1U,
+    .fast_mode = fast_mode,
+  };
 }
 
 /**
@@ -423,8 +427,6 @@ public:
   void configure(hal::i2c_settings const& p_settings, hal::hertz p_frequency)
   {
     auto const timing = compute_i2c_timing(p_settings.clock_rate, p_frequency);
-    auto const frequency_mhz = static_cast<u32>(
-      p_frequency.numerical_value_in(hal::hertz::unit) / 1'000'000);
 
     auto& regs = reg();
     // Reset clears a bus left busy by an interrupted transfer. CCR and TRISE
@@ -440,7 +442,7 @@ public:
       .clear(i2c_cr2::error_intr_en)
       .clear(i2c_cr2::dma_en)
       .clear(i2c_cr2::last_dma)
-      .insert<i2c_cr2::apb_frequency>(frequency_mhz);
+      .insert<i2c_cr2::apb_frequency>(timing.frequency);
     bit_modify(regs.ccr)
       .insert<i2c_ccr::i2c_mode_sel>(timing.fast_mode)
       .clear(i2c_ccr::fast_mode_duty)
@@ -512,9 +514,12 @@ public:
                                      .receive = p_receive };
     hal::notifier::scope operation(m_notifier, stop_hardware);
 
-    auto const clock_hz = static_cast<hal::u64>(
-      p_clock.frequency().numerical_value_in(hal::hertz::unit));
-    auto const stall_ticks = ((clock_hz * stall_timeout_ms) / 1000U) + 1U;
+    using namespace mp_units::si::unit_symbols;
+    // In kHz, so the tick count can't overflow for any realistic clock.
+    auto const stall_cycles = p_clock.frequency().in(kHz, mp_units::truncated) *
+                              (stall_timeout_ms * ms);
+    auto const stall_ticks =
+      stall_cycles.numerical_value_in(mp_units::one) + 1U;
     progress<Dma> const bus{ .regs = &regs,
                              .clock = &p_clock,
                              .stall_ticks = stall_ticks,

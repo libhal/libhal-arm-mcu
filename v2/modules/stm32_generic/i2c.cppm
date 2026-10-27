@@ -935,8 +935,7 @@ private:
 
   [[nodiscard]] i2c_reg_t& reg()
   {
-    // NOLINTNEXTLINE(performance-no-int-to-ptr)
-    return *reinterpret_cast<i2c_reg_t*>(m_i2c);
+    return *static_cast<i2c_reg_t*>(m_i2c);
   }
 
   void* m_i2c;

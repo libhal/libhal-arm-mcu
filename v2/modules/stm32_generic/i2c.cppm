@@ -317,21 +317,22 @@ export struct i2c_timing
  * clock divider can do.
  *
  * @param p_clock_rate - requested i2c clock rate
- * @param p_frequency - peripheral operating frequency
+ * @param p_frequency - the peripheral's input clock (PCLK1 on the STM32F1),
+ * not the bus rate
  * @return i2c_timing - the register settings
  * @throws hal::operation_not_supported - if the clock rate is zero, if the
- * bus can't run as slowly as requested, or if the peripheral frequency is
- * outside what the peripheral supports for that mode (2 MHz to 50 MHz, and at
- * least 4 MHz for fast mode).
+ * bus can't run as slowly as requested, or if the peripheral's input clock
+ * is outside what that mode allows: 2 MHz to 50 MHz, and at least 4 MHz for
+ * fast mode (RM0008 section 26.3.3).
  */
 export i2c_timing compute_i2c_timing(hal::hertz p_clock_rate,
                                      hal::hertz p_frequency)
 {
   constexpr u32 standard_mode_max_rate = 100'000;
   constexpr u32 fast_mode_max_rate = 400'000;
-  constexpr u32 min_frequency = 2'000'000;
-  constexpr u32 fast_mode_min_frequency = 4'000'000;
-  constexpr u32 max_frequency = 50'000'000;
+  constexpr u32 min_input_clock = 2'000'000;
+  constexpr u32 fast_mode_min_input_clock = 4'000'000;
+  constexpr u32 max_input_clock = 50'000'000;
   constexpr u32 standard_mode_min_ccr = 4;
   constexpr u32 max_ccr = 0xFFF;
 
@@ -344,11 +345,11 @@ export i2c_timing compute_i2c_timing(hal::hertz p_clock_rate,
   // slower than requested and so safe for the devices on the bus.
   auto const rate = std::min(requested, fast_mode_max_rate);
   bool const fast_mode = rate > standard_mode_max_rate;
-  auto const min_supported_frequency =
-    fast_mode ? fast_mode_min_frequency : min_frequency;
+  auto const min_supported_input_clock =
+    fast_mode ? fast_mode_min_input_clock : min_input_clock;
 
-  if ((rate == 0) or (frequency < min_supported_frequency) or
-      (frequency > max_frequency)) {
+  if ((rate == 0) or (frequency < min_supported_input_clock) or
+      (frequency > max_input_clock)) {
     throw hal::operation_not_supported(nullptr);
   }
 
@@ -443,18 +444,19 @@ public:
    * @brief Configure the i2c peripheral
    *
    * Each stm32 series MCU has its own clock tree, so the caller supplies the
-   * peripheral's clock frequency.
+   * peripheral's input clock.
    *
    * The bus never runs faster than `p_settings.clock_rate`. A rate above fast
    * mode's 400 kHz runs at 400 kHz. Otherwise the rate is rounded down to
    * what the clock divider can do.
    *
    * @param p_settings - i2c settings
-   * @param p_frequency - peripheral operating frequency
+   * @param p_frequency - the peripheral's input clock (PCLK1 on the
+   * STM32F1), not the bus rate
    * @throws hal::operation_not_supported - if the clock rate is zero, if the
-   * bus can't run as slowly as requested, or if the peripheral frequency is
-   * outside what the peripheral supports for that mode (2 MHz to 50 MHz, and
-   * at least 4 MHz for fast mode).
+   * bus can't run as slowly as requested, or if the peripheral's input clock
+   * is outside what that mode allows: 2 MHz to 50 MHz, and at least 4 MHz for
+   * fast mode (RM0008 section 26.3.3).
    */
   void configure(hal::i2c_settings const& p_settings, hal::hertz p_frequency)
   {

@@ -76,10 +76,10 @@ void i2c_test()
     // 36 MHz / (2 * 4 kHz) = 4500, above the largest divider of 4095.
     expect(throws<hal::operation_not_supported>(
       []() { static_cast<void>(compute_i2c_timing(4 * kHz, 36 * MHz)); }));
-    // Fast mode needs at least 4 MHz.
+    // Fast mode needs an input clock of at least 4 MHz.
     expect(throws<hal::operation_not_supported>(
       []() { static_cast<void>(compute_i2c_timing(400 * kHz, 3 * MHz)); }));
-    // The peripheral needs at least 2 MHz.
+    // The peripheral needs an input clock of at least 2 MHz.
     expect(throws<hal::operation_not_supported>(
       []() { static_cast<void>(compute_i2c_timing(100 * kHz, 1 * MHz)); }));
   };

@@ -125,7 +125,7 @@ class busy_scope
 {
 public:
   /// @throws hal::device_or_resource_busy - if another context or an
-  /// interrupt is using the bus. hal::locked_i2c makes contexts take turns
+  /// interrupt is using the bus. hal::thread_safe_i2c makes callers wait
   /// instead.
   busy_scope(std::atomic_flag& p_busy, void const* p_instance)
     : m_busy(p_busy)

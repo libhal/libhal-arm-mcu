@@ -36,8 +36,8 @@ namespace hal::stm32f1 {
  * The controller doesn't lock the bus. Drivers in one context can share it
  * as is. A transaction that starts while another is in progress, from
  * another context or an interrupt, throws `hal::device_or_resource_busy`
- * instead of corrupting it. To share the bus between contexts, such as RTOS
- * threads, wrap it in a `hal::locked_i2c`, which makes them take turns.
+ * instead of corrupting it. To use the bus from several threads or contexts,
+ * wrap it in a `hal::thread_safe_i2c`, which makes callers wait instead.
  *
  * A transaction sleeps the calling context on its waiter while the bus
  * works, so a waiter provider must be installed (see `hal::current_waiter()`)

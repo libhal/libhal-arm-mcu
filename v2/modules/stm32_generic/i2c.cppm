@@ -716,47 +716,6 @@ private:
     [[maybe_unused]] auto const sr2 = p_regs.sr2;
   }
 
-  /// Calls `p_function` with each contiguous run of the `p_count` elements
-  /// of `p_data` that start at `p_offset`. Each run is short enough for one
-  /// DMA transfer.
-  template<class T, class Function>
-  static void for_each_run(mem::scatter_span<T> p_data,
-                           std::size_t p_offset,
-                           std::size_t p_count,
-                           Function&& p_function)
-  {
-    for (std::span<T> chunk : p_data) {
-      if (p_count == 0) {
-        return;
-      }
-      if (p_offset >= chunk.size()) {
-        p_offset -= chunk.size();
-        continue;
-      }
-      chunk = chunk.subspan(p_offset);
-      p_offset = 0;
-      while (not chunk.empty() and (p_count != 0)) {
-        auto const run =
-          chunk.first(std::min({ chunk.size(), p_count, max_dma_transfer }));
-        p_function(run);
-        chunk = chunk.subspan(run.size());
-        p_count -= run.size();
-      }
-    }
-  }
-
-  /// Copy `p_bytes` into `p_data`, starting at `p_offset`
-  static void store(mem::scatter_span<hal::byte> p_data,
-                    std::size_t p_offset,
-                    std::span<hal::byte const> p_bytes)
-  {
-    for_each_run(
-      p_data, p_offset, p_bytes.size(), [&p_bytes](std::span<hal::byte> p_run) {
-        std::ranges::copy(p_bytes.first(p_run.size()), p_run.begin());
-        p_bytes = p_bytes.subspan(p_run.size());
-      });
-  }
-
   /// Generate a start condition and send the address byte
   template<class Dma>
   void send_address(progress<Dma> const& p_bus, hal::i2c_operation p_operation)
@@ -789,7 +748,7 @@ private:
       send_address(p_bus, hal::i2c_operation::write);
 
       if ((p_transmit != nullptr) and (p_data_out.length() != 0)) {
-        move_by_dma(p_bus, p_data_out, p_data_out.length(), *p_transmit);
+        move_by_dma(p_bus, p_data_out, *p_transmit);
       } else {
         clear_addr(regs);
         for (std::span<hal::byte const> chunk : p_data_out) {
@@ -816,34 +775,38 @@ private:
     p_bus.spin_until_clear(regs.cr1, i2c_cr1::stop);
   }
 
-  /// Send, or receive, the first `p_count` bytes of `p_data` by DMA,
-  /// starting with ADDR still set. Writes send `hal::byte const` data and
-  /// reads receive into `hal::byte` data.
+  /// Send, or receive, the bytes of `p_data` by DMA, starting with ADDR
+  /// still set. Writes send `hal::byte const` data and reads receive into
+  /// `hal::byte` data.
   template<class Dma, class T>
   void move_by_dma(progress<Dma> const& p_bus,
                    mem::scatter_span<T> p_data,
-                   std::size_t p_count,
                    Dma& p_dma)
   {
     auto& regs = *p_bus.regs;
     bool addr_cleared = false;
-    // The first run is ready before ADDR is cleared, so it moves as soon as
-    // the peripheral is. Between runs, the peripheral holds SCL low until the
-    // next one starts: a write waits for its next byte, and a read keeps its
-    // received byte in the data register.
-    for_each_run(p_data, 0, p_count, [&](std::span<T> p_run) {
-      if constexpr (std::is_const_v<T>) {
-        p_dma.transmit(regs.data_reg, p_run, m_notifier);
-      } else {
-        p_dma.receive(regs.data_reg, p_run, m_notifier);
+    // The first transfer is ready before ADDR is cleared, so it moves as soon
+    // as the peripheral is. Between transfers, the peripheral holds SCL low
+    // until the next one starts: a write waits for its next byte, and a read
+    // keeps its received byte in the data register.
+    for (std::span<T> chunk : p_data) {
+      while (not chunk.empty()) {
+        // One DMA transfer moves at most `max_dma_transfer` bytes.
+        auto const run = chunk.first(std::min(chunk.size(), max_dma_transfer));
+        if constexpr (std::is_const_v<T>) {
+          p_dma.transmit(regs.data_reg, run, m_notifier);
+        } else {
+          p_dma.receive(regs.data_reg, run, m_notifier);
+        }
+        if (not addr_cleared) {
+          bit_modify(regs.cr2).set(i2c_cr2::dma_en);
+          clear_addr(regs);
+          addr_cleared = true;
+        }
+        p_bus.wait_for_transfer(p_dma);
+        chunk = chunk.subspan(run.size());
       }
-      if (not addr_cleared) {
-        bit_modify(regs.cr2).set(i2c_cr2::dma_en);
-        clear_addr(regs);
-        addr_cleared = true;
-      }
-      p_bus.wait_for_transfer(p_dma);
-    });
+    }
     bit_modify(regs.cr2).clear(i2c_cr2::dma_en);
   }
 
@@ -892,19 +855,17 @@ private:
       ending[1] = received(regs);
       bit_modify(regs.cr1).clear(i2c_cr1::pos);
     } else {
+      auto body = p_data_in.sub_scatter_span({ .count = body_length });
       if ((p_receive != nullptr) and (body_length != 0)) {
-        move_by_dma(p_bus, p_data_in, body_length, *p_receive);
+        move_by_dma(p_bus, body, *p_receive);
       } else {
         clear_addr(regs);
-        for_each_run(p_data_in,
-                     0,
-                     body_length,
-                     [&p_bus, &regs](std::span<hal::byte> p_run) {
-                       for (auto& byte : p_run) {
-                         p_bus.wait_for(i2c_sr1::rx_not_empty, wake_on_data);
-                         byte = received(regs);
-                       }
-                     });
+        for (std::span<hal::byte> chunk : body) {
+          for (auto& byte : chunk) {
+            p_bus.wait_for(i2c_sr1::rx_not_empty, wake_on_data);
+            byte = received(regs);
+          }
+        }
       }
       // Three bytes left: byte N-2 is in the data register and N-1 in the
       // shift register. NACK the last one and stop after it.
@@ -919,7 +880,14 @@ private:
       p_bus.wait_for(i2c_sr1::rx_not_empty, wake_on_data);
       ending[2] = received(regs);
     }
-    store(p_data_in, body_length, std::span(ending).first(ending_length));
+    // Copy the ending into the last bytes of the buffer.
+    std::span<hal::byte const> remaining =
+      std::span(ending).first(ending_length);
+    auto tail = p_data_in.sub_scatter_span({ .offset = body_length });
+    for (std::span<hal::byte> chunk : tail) {
+      std::ranges::copy(remaining.first(chunk.size()), chunk.begin());
+      remaining = remaining.subspan(chunk.size());
+    }
   }
 
   /// Stop driving the bus after a failed transaction

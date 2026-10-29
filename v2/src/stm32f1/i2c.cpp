@@ -16,20 +16,17 @@ module;
 
 #include <array>
 #include <atomic>
-#include <optional>
 
 module hal.arm_mcu.stm32f1;
 
 import hal;
 import hal.util;
 import hal.arm_mcu.stm32_generic;
-import hal.arm_mcu.cortex_m;
 
 import :constants;
 import :pin;
 import :power;
 import :clock;
-import :dma;
 
 namespace hal::stm32f1 {
 namespace {
@@ -77,48 +74,6 @@ void* register_address(peripheral p_id)
   return reinterpret_cast<void*>(peripheral_to_register(p_id));
 }
 
-/// Interrupts and DMA requests of a supported I2C peripheral
-struct i2c_signals
-{
-  std::size_t index;
-  irq event;
-  irq error;
-  dma_request transmit;
-  dma_request receive;
-};
-
-i2c_signals signals_for(peripheral p_id)
-{
-  if (p_id == peripheral::i2c1) {
-    return { .index = 0,
-             .event = irq::i2c1_ev,
-             .error = irq::i2c1_er,
-             .transmit = dma_request::i2c1_tx,
-             .receive = dma_request::i2c1_rx };
-  }
-  return { .index = 1,
-           .event = irq::i2c2_ev,
-           .error = irq::i2c2_er,
-           .transmit = dma_request::i2c2_tx,
-           .receive = dma_request::i2c2_rx };
-}
-
-/// The driver each I2C peripheral's interrupts wake
-constinit std::array<hal::stm32_generic::i2c*, 2> drivers{};
-
-template<std::size_t Index>
-void i2c_isr()
-{
-  if (auto* const driver = drivers[Index]) {
-    driver->handle_interrupt();
-  }
-}
-
-dma_channel* pointer_to(std::optional<dma_channel>& p_channel)
-{
-  return p_channel ? &*p_channel : nullptr;
-}
-
 /// Marks the bus busy for its lifetime, and clears the mark even if the
 /// operation throws
 class busy_scope
@@ -148,21 +103,27 @@ public:
 private:
   std::atomic_flag& m_busy;
 };
-}  // namespace
 
-i2c::i2c(peripheral p_id,
-         hal::ref<hal::steady_clock> p_clock,
-         hal::i2c_settings const& p_settings)
-  : m_clock(p_clock)
-  , m_id(p_id)
-  , m_driver(register_address(p_id))  // Rejects unsupported peripherals
+/**
+ * @brief Claim the peripheral and its pins, power it on and configure it
+ *
+ * If configuring throws, undoes all of it.
+ *
+ * @throws hal::device_or_resource_busy - if another driver has claimed the
+ * peripheral or one of its pins.
+ * @throws hal::operation_not_supported - if `p_settings` can't be achieved.
+ */
+void start_peripheral(peripheral p_id,
+                      hal::stm32_generic::i2c& p_driver,
+                      hal::i2c_settings const& p_settings,
+                      void const* p_instance)
 {
   auto const pins = pins_for(p_id);
 
   // Claim every pin or none: check them all before claiming any.
   for (auto const& selected : std::array{ pins.scl, pins.sda }) {
     if (is_pin_claimed(selected)) {
-      throw hal::device_or_resource_busy(this);
+      throw hal::device_or_resource_busy(p_instance);
     }
   }
   claim(p_id);
@@ -183,74 +144,65 @@ i2c::i2c(peripheral p_id,
   configure_pin(pins.sda, open_drain_alternative_output);
 
   try {
-    m_driver.configure(p_settings, frequency(m_id));
+    p_driver.configure(p_settings, frequency(p_id));
   } catch (...) {
-    // The destructor won't run, so undo what the constructor did.
     for (auto const& selected : std::array{ pins.scl, pins.sda }) {
       reset_pin(selected);
       release_pin(selected);
     }
-    reset_peripheral(m_id);
-    power_off(m_id);
-    release(m_id);
+    reset_peripheral(p_id);
+    power_off(p_id);
+    release(p_id);
     throw;
   }
-
-  auto const signals = signals_for(m_id);
-  drivers[signals.index] = &m_driver;
-  auto* const isr = (signals.index == 0) ? &i2c_isr<0> : &i2c_isr<1>;
-  cortex_m::enable_interrupt(signals.event, isr);
-  cortex_m::enable_interrupt(signals.error, isr);
 }
 
-i2c::~i2c()
+/// Reset and release the pins, then disable, power off and release the
+/// peripheral
+void stop_peripheral(peripheral p_id)
 {
-  auto const signals = signals_for(m_id);
-  cortex_m::disable_interrupt(signals.event);
-  cortex_m::disable_interrupt(signals.error);
-  drivers[signals.index] = nullptr;
-
-  auto const pins = pins_for(m_id);
+  auto const pins = pins_for(p_id);
   for (auto const& selected : std::array{ pins.scl, pins.sda }) {
     reset_pin(selected);
     release_pin(selected);
   }
-  // Disables the peripheral. m_driver doesn't touch the registers when it is
-  // destroyed after this.
-  reset_peripheral(m_id);
-  power_off(m_id);
-  release(m_id);
+  // Disables the peripheral. The generic driver doesn't touch the registers
+  // when it is destroyed after this.
+  reset_peripheral(p_id);
+  power_off(p_id);
+  release(p_id);
+}
+}  // namespace
+
+polled_i2c::polled_i2c(peripheral p_id,
+                       hal::ref<hal::steady_clock> p_clock,
+                       hal::i2c_settings const& p_settings)
+  : m_clock(p_clock)
+  , m_id(p_id)
+  , m_driver(register_address(p_id))  // Rejects unsupported peripherals
+{
+  start_peripheral(m_id, m_driver, p_settings, this);
 }
 
-void i2c::configure(hal::i2c_settings const& p_settings)
+polled_i2c::~polled_i2c()
+{
+  stop_peripheral(m_id);
+}
+
+void polled_i2c::configure(hal::i2c_settings const& p_settings)
 {
   // Changing the clock rate mid-transaction would corrupt it.
   busy_scope const busy(m_busy, this);
   m_driver.configure(p_settings, frequency(m_id));
 }
 
-void i2c::driver_transaction(hal::byte p_address,
-                             mem::scatter_span<hal::byte const> p_data_out,
-                             mem::scatter_span<hal::byte> p_data_in)
+void polled_i2c::driver_transaction(
+  hal::byte p_address,
+  mem::scatter_span<hal::byte const> p_data_out,
+  mem::scatter_span<hal::byte> p_data_in)
 {
   busy_scope const busy(m_busy, this);
-
-  // Channels are claimed per transaction, so drivers whose requests share a
-  // channel take turns. If another driver holds one, the bytes in that
-  // direction move without DMA instead.
-  auto const signals = signals_for(m_id);
-  auto transmit = (p_data_out.length() != 0)
-                    ? dma_channel::try_claim(signals.transmit)
-                    : std::optional<dma_channel>{};
-  auto receive = (p_data_in.length() != 0)
-                   ? dma_channel::try_claim(signals.receive)
-                   : std::optional<dma_channel>{};
-
-  m_driver.transaction(p_address,
-                       p_data_out,
-                       p_data_in,
-                       *m_clock,
-                       pointer_to(transmit),
-                       pointer_to(receive));
+  m_driver.transaction(p_address, p_data_out, p_data_in, *m_clock);
 }
+
 }  // namespace hal::stm32f1

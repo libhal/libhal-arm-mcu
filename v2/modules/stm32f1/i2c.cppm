@@ -25,13 +25,16 @@ import hal.arm_mcu.stm32_generic;
 import :constants;
 
 namespace hal::stm32f1 {
-
 /**
- * @brief STM32F1 I2C controller
+ * @brief STM32F1 I2C controller that polls every byte
  *
  * Owns one of the STM32F1's I2C hardware blocks and its SCL and SDA pins, and
  * keeps it powered for as long as it lives. It is the bus controller (master)
  * only. Only `i2c1` and `i2c2` are supported.
+ *
+ * A transaction spins on the peripheral's status flags until it finishes, so
+ * it needs no interrupts, no DMA channels and no waiter, but keeps the CPU
+ * busy for the whole transaction: about 25 microseconds per byte at 400 kHz.
  *
  * The controller doesn't lock the bus. Drivers in one context can share it
  * as is. A transaction that starts while another is in progress, from
@@ -39,25 +42,15 @@ namespace hal::stm32f1 {
  * instead of corrupting it. To use the bus from several threads or contexts,
  * wrap it in a `hal::thread_safe_i2c`, which makes callers wait instead.
  *
- * A transaction sleeps the calling context on its waiter while the bus
- * works, so a waiter provider must be installed (see `hal::current_waiter()`)
- * and transactions can't run inside an interrupt. The bytes move by DMA when
- * the transaction can claim the peripheral's DMA channels: DMA1 channels 6
- * (transmit) and 7 (receive) for `i2c1`, 4 and 5 for `i2c2`. They are
- * claimed for each transaction and released after it, so other drivers on
- * those channels take turns with this one. If another driver holds a channel,
- * such as a USART receiving on it, the bytes in that direction move without
- * DMA, waking the context once per byte.
- *
  * A transaction throws `hal::timed_out` if the bus makes no progress for
  * 25 ms, for example while a device holds SCL low.
  *
  * ```cpp
- * static hal::stm32f1::i2c i2c1(hal::stm32f1::peripheral::i2c1, clock);
+ * static hal::stm32f1::polled_i2c i2c1(hal::stm32f1::peripheral::i2c1, clock);
  * auto const found = hal::probe(i2c1, 0x68);
  * ```
  */
-export class i2c final : public hal::i2c
+export class polled_i2c final : public hal::i2c
 {
 public:
   /**
@@ -72,8 +65,8 @@ public:
    * released, when the controller is destroyed.
    *
    * @param p_id - which I2C peripheral to use. Must be `i2c1` or `i2c2`.
-   * @param p_clock - times the short waits on the bus that raise no
-   * interrupt. It must outlive the controller.
+   * @param p_clock - bounds how long each wait on the bus can take. It must
+   * outlive the controller.
    * @param p_settings - bus settings. The clock rate must be at or below
    * the limit of every device on the bus, which `hal::i2c_bus_rate()`
    * computes at compile time. The default, 100 kHz, is safe for any device.
@@ -82,17 +75,17 @@ public:
    * @throws hal::device_or_resource_busy - if another driver has claimed the
    * peripheral or one of its pins.
    */
-  i2c(peripheral p_id,
-      hal::ref<hal::steady_clock> p_clock [[clang::lifetimebound]],
-      hal::i2c_settings const& p_settings = {});
+  polled_i2c(peripheral p_id,
+             hal::ref<hal::steady_clock> p_clock [[clang::lifetimebound]],
+             hal::i2c_settings const& p_settings = {});
 
-  i2c(i2c const&) = delete;
-  i2c& operator=(i2c const&) = delete;
-  i2c(i2c&&) = delete;
-  i2c& operator=(i2c&&) = delete;
+  polled_i2c(polled_i2c const&) = delete;
+  polled_i2c& operator=(polled_i2c const&) = delete;
+  polled_i2c(polled_i2c&&) = delete;
+  polled_i2c& operator=(polled_i2c&&) = delete;
 
   /// Power off the peripheral and release its pins
-  ~i2c();
+  ~polled_i2c();
 
   /**
    * @brief Change the bus's clock rate
@@ -128,4 +121,5 @@ private:
   /// Set while a transaction or configure() is in progress
   std::atomic_flag m_busy;
 };
+
 }  // namespace hal::stm32f1

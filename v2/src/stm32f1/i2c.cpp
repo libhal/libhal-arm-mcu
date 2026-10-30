@@ -22,11 +22,13 @@ module hal.arm_mcu.stm32f1;
 import hal;
 import hal.util;
 import hal.arm_mcu.stm32_generic;
+import hal.arm_mcu.cortex_m;
 
 import :constants;
 import :pin;
 import :power;
 import :clock;
+import :dma;
 
 namespace hal::stm32f1 {
 namespace {
@@ -72,6 +74,45 @@ void* register_address(peripheral p_id)
 {
   // NOLINTNEXTLINE(performance-no-int-to-ptr)
   return reinterpret_cast<void*>(peripheral_to_register(p_id));
+}
+
+/// Error interrupt and DMA requests of a supported I2C peripheral
+struct i2c_signals
+{
+  std::size_t index;
+  irq error;
+  dma_request transmit;
+  dma_request receive;
+};
+
+/// @throws hal::operation_not_supported - if `p_id` is not `i2c1` or `i2c2`.
+i2c_signals signals_for(peripheral p_id)
+{
+  switch (p_id) {
+    case peripheral::i2c1:
+      return { .index = 0,
+               .error = irq::i2c1_er,
+               .transmit = dma_request::i2c1_tx,
+               .receive = dma_request::i2c1_rx };
+    case peripheral::i2c2:
+      return { .index = 1,
+               .error = irq::i2c2_er,
+               .transmit = dma_request::i2c2_tx,
+               .receive = dma_request::i2c2_rx };
+    default:
+      throw hal::operation_not_supported(nullptr);
+  }
+}
+
+/// The DMA driver each I2C peripheral's error interrupt wakes
+constinit std::array<hal::stm32_generic::i2c*, 2> dma_drivers{};
+
+template<std::size_t Index>
+void i2c_error_isr()
+{
+  if (auto* const driver = dma_drivers[Index]) {
+    driver->handle_error_interrupt();
+  }
 }
 
 /// Marks the bus busy for its lifetime, and clears the mark even if the
@@ -202,4 +243,42 @@ void polled_i2c::driver_transaction(
   m_driver.transaction(p_address, p_data_out, p_data_in);
 }
 
+dma_i2c::dma_i2c(peripheral p_id, hal::i2c_settings const& p_settings)
+  // signals_for() rejects unsupported peripherals before anything is claimed.
+  : m_transmit(signals_for(p_id).transmit)
+  , m_receive(signals_for(p_id).receive)
+  , m_id(p_id)
+  , m_driver(register_address(p_id))
+{
+  start_peripheral(m_id, m_driver, p_settings, this);
+
+  auto const signals = signals_for(m_id);
+  dma_drivers[signals.index] = &m_driver;
+  auto* const isr =
+    (signals.index == 0) ? &i2c_error_isr<0> : &i2c_error_isr<1>;
+  cortex_m::enable_interrupt(signals.error, isr);
+}
+
+dma_i2c::~dma_i2c()
+{
+  auto const signals = signals_for(m_id);
+  cortex_m::disable_interrupt(signals.error);
+  dma_drivers[signals.index] = nullptr;
+  stop_peripheral(m_id);
+}
+
+void dma_i2c::configure(hal::i2c_settings const& p_settings)
+{
+  // Changing the clock rate mid-transaction would corrupt it.
+  busy_scope const busy(m_busy, this);
+  m_driver.configure(p_settings, frequency(m_id));
+}
+
+void dma_i2c::driver_transaction(hal::byte p_address,
+                                 mem::scatter_span<hal::byte const> p_data_out,
+                                 mem::scatter_span<hal::byte> p_data_in)
+{
+  busy_scope const busy(m_busy, this);
+  m_driver.transaction(p_address, p_data_out, p_data_in, m_transmit, m_receive);
+}
 }  // namespace hal::stm32f1

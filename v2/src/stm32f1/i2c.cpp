@@ -215,11 +215,8 @@ void stop_peripheral(peripheral p_id)
 }
 }  // namespace
 
-polled_i2c::polled_i2c(peripheral p_id,
-                       hal::ref<hal::steady_clock> p_clock,
-                       hal::i2c_settings const& p_settings)
-  : m_clock(p_clock)
-  , m_id(p_id)
+polled_i2c::polled_i2c(peripheral p_id, hal::i2c_settings const& p_settings)
+  : m_id(p_id)
   , m_driver(register_address(p_id))  // Rejects unsupported peripherals
 {
   start_peripheral(m_id, m_driver, p_settings, this);
@@ -243,16 +240,13 @@ void polled_i2c::driver_transaction(
   mem::scatter_span<hal::byte> p_data_in)
 {
   busy_scope const busy(m_busy, this);
-  m_driver.transaction(p_address, p_data_out, p_data_in, *m_clock);
+  m_driver.transaction(p_address, p_data_out, p_data_in);
 }
 
-dma_i2c::dma_i2c(peripheral p_id,
-                 hal::ref<hal::steady_clock> p_clock,
-                 hal::i2c_settings const& p_settings)
+dma_i2c::dma_i2c(peripheral p_id, hal::i2c_settings const& p_settings)
   // signals_for() rejects unsupported peripherals before anything is claimed.
   : m_transmit(signals_for(p_id).transmit)
   , m_receive(signals_for(p_id).receive)
-  , m_clock(p_clock)
   , m_id(p_id)
   , m_driver(register_address(p_id))
 {
@@ -285,7 +279,6 @@ void dma_i2c::driver_transaction(hal::byte p_address,
                                  mem::scatter_span<hal::byte> p_data_in)
 {
   busy_scope const busy(m_busy, this);
-  m_driver.transaction(
-    p_address, p_data_out, p_data_in, *m_clock, m_transmit, m_receive);
+  m_driver.transaction(p_address, p_data_out, p_data_in, m_transmit, m_receive);
 }
 }  // namespace hal::stm32f1

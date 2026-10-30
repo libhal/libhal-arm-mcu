@@ -45,11 +45,14 @@ namespace hal::stm32f1 {
  * instead of corrupting it. To use the bus from several threads or contexts,
  * wrap it in a `hal::thread_safe_i2c`, which makes callers wait instead.
  *
- * A transaction throws `hal::timed_out` if the bus makes no progress for
- * 25 ms, for example while a device holds SCL low.
+ * A transaction throws `hal::timed_out` if the bus makes no progress for at
+ * least 25 ms, for example while a device holds SCL low. The bound is a
+ * number of polls of the peripheral, so it needs no clock. In practice a
+ * poll takes longer than the bound assumes, so a stall takes longer to
+ * detect.
  *
  * ```cpp
- * static hal::stm32f1::polled_i2c i2c1(hal::stm32f1::peripheral::i2c1, clock);
+ * static hal::stm32f1::polled_i2c i2c1(hal::stm32f1::peripheral::i2c1);
  * auto const found = hal::probe(i2c1, 0x68);
  * ```
  */
@@ -68,8 +71,6 @@ public:
    * released, when the controller is destroyed.
    *
    * @param p_id - which I2C peripheral to use. Must be `i2c1` or `i2c2`.
-   * @param p_clock - bounds how long each wait on the bus can take. It must
-   * outlive the controller.
    * @param p_settings - bus settings. The clock rate must be at or below
    * the limit of every device on the bus, which `hal::i2c_bus_rate()`
    * computes at compile time. The default, 100 kHz, is safe for any device.
@@ -78,9 +79,8 @@ public:
    * @throws hal::device_or_resource_busy - if another driver has claimed the
    * peripheral or one of its pins.
    */
-  polled_i2c(peripheral p_id,
-             hal::ref<hal::steady_clock> p_clock [[clang::lifetimebound]],
-             hal::i2c_settings const& p_settings = {});
+  explicit polled_i2c(peripheral p_id,
+                      hal::i2c_settings const& p_settings = {});
 
   polled_i2c(polled_i2c const&) = delete;
   polled_i2c& operator=(polled_i2c const&) = delete;
@@ -118,7 +118,6 @@ private:
                           mem::scatter_span<hal::byte const> p_data_out,
                           mem::scatter_span<hal::byte> p_data_in) override;
 
-  hal::ref<hal::steady_clock> m_clock;
   peripheral m_id;
   hal::stm32_generic::i2c m_driver;
   /// Set while a transaction or configure() is in progress
@@ -142,7 +141,7 @@ private:
  * `hal::stm32f1::polled_i2c` instead.
  *
  * ```cpp
- * static hal::stm32f1::dma_i2c i2c1(hal::stm32f1::peripheral::i2c1, clock);
+ * static hal::stm32f1::dma_i2c i2c1(hal::stm32f1::peripheral::i2c1);
  * auto const found = hal::probe(i2c1, 0x68);
  * ```
  */
@@ -156,17 +155,13 @@ public:
    * See `polled_i2c::polled_i2c()` for the pins and settings.
    *
    * @param p_id - which I2C peripheral to use. Must be `i2c1` or `i2c2`.
-   * @param p_clock - bounds how long each wait on the bus can take. It must
-   * outlive the controller.
    * @param p_settings - bus settings
    * @throws hal::operation_not_supported - if `p_id` is not `i2c1` or `i2c2`,
    * or if `p_settings` can't be achieved (see `configure()`).
    * @throws hal::device_or_resource_busy - if another driver has claimed the
    * peripheral, one of its pins, or one of its DMA channels.
    */
-  dma_i2c(peripheral p_id,
-          hal::ref<hal::steady_clock> p_clock [[clang::lifetimebound]],
-          hal::i2c_settings const& p_settings = {});
+  explicit dma_i2c(peripheral p_id, hal::i2c_settings const& p_settings = {});
 
   dma_i2c(dma_i2c const&) = delete;
   dma_i2c& operator=(dma_i2c const&) = delete;
@@ -200,7 +195,6 @@ private:
   // another driver holds them.
   dma_channel m_transmit;
   dma_channel m_receive;
-  hal::ref<hal::steady_clock> m_clock;
   peripheral m_id;
   hal::stm32_generic::i2c m_driver;
   /// Set while a transaction or configure() is in progress

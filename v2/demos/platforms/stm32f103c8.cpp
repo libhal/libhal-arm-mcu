@@ -112,6 +112,12 @@ hal::static_ref<hal::adc16> adc()
   return channel;
 }
 
+hal::static_ref<hal::i2c> i2c()
+{
+  static hal::stm32f1::polled_i2c i2c1(hal::stm32f1::peripheral::i2c1);
+  return i2c1;
+}
+
 hal::static_ref<hal::spi_channel> spi_channel()
 {
   using namespace mp_units::si::unit_symbols;

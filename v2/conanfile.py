@@ -122,8 +122,11 @@ class libhal_arm_mcu_conan(ConanFile):
     def requirements(self):
         # TODO(#228): drop include_prerelease once libhal 5.0.0 and libhal-util
         # 6.0.0 are released.
-        self.requires("libhal/[>=5.0.0-alpha.13 <6, include_prerelease]")
-        self.requires("libhal-util/[>=6.0.0-alpha.1 <7, include_prerelease]")
+        self.requires("libhal/[>=5.0.0-alpha.14 <6, include_prerelease]")
+        self.requires("libhal-util/[>=6.0.0-alpha.4 <7, include_prerelease]")
+        # 0.1.1 fixes sub_scatter_span() on an already trimmed view, which the
+        # I2C driver relies on. libhal only asks for 0.1.0.
+        self.requires("scatter_span/[>=0.1.1 <1]")
 
     def layout(self):
         build_path = Path("build") / (

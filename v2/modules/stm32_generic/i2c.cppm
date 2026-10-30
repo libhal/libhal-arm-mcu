@@ -254,6 +254,11 @@ struct i2c_reg_t
   hal::u32 volatile filter;
 };
 
+/// How long a transaction waits for the bus to make progress, for example
+/// while a device stretches the clock, before throwing `hal::timed_out`. It
+/// matches the SMBus clock-low timeout.
+constexpr hal::u32 stall_timeout_ms = 25;
+
 /// Clock control and rise time settings for an STM32 I2C bus
 export struct i2c_timing
 {
@@ -266,11 +271,15 @@ export struct i2c_timing
   /// Fast mode (up to 400 kHz) with a 1:2 SCL high:low duty cycle, instead of
   /// standard mode (up to 100 kHz)
   bool fast_mode;
+  /// How many times a wait polls the peripheral before giving up. Each poll
+  /// takes at least two input clock cycles, so this many take at least
+  /// `stall_timeout_ms`.
+  u32 stall_polls;
 };
 
 /**
- * @brief Compute the FREQ, CCR and TRISE settings for an i2c clock rate,
- * without touching any hardware
+ * @brief Compute the FREQ, CCR and TRISE settings for an i2c clock rate, and
+ * the stall bound, without touching any hardware
  *
  * The bus never runs faster than `p_clock_rate`. A rate above fast mode's
  * 400 kHz runs at 400 kHz. Otherwise the rate is rounded down to what the
@@ -331,12 +340,22 @@ export i2c_timing compute_i2c_timing(hal::hertz p_clock_rate,
   auto const max_rise_time = fast_mode ? (300U * ns) : (1000U * ns);
   auto const rise_cycles = max_rise_time * frequency;
 
+  // A poll reads a peripheral register, and every APB read takes at least
+  // two input clock cycles: the protocol's setup and access phases. Polls
+  // that take longer only make the bound longer, never shorter. In kHz, so
+  // the count can't overflow.
+  constexpr u32 min_cycles_per_poll = 2;
+  auto const stall_cycles =
+    p_frequency.in(kHz, mp_units::truncated) * (stall_timeout_ms * ms);
+
   return {
     .frequency = frequency.numerical_value_in(MHz),
     .ccr = ccr,
     .rise_time =
       rise_cycles.numerical_value_in(mp_units::one, mp_units::truncated) + 1U,
     .fast_mode = fast_mode,
+    .stall_polls =
+      stall_cycles.numerical_value_in(mp_units::one) / min_cycles_per_poll,
   };
 }
 
@@ -349,7 +368,8 @@ export i2c_timing compute_i2c_timing(hal::hertz p_clock_rate,
  * they handle proper initialization for you.
  *
  * A transaction polls the peripheral's status flags, so it needs no
- * interrupts, no DMA and no waiter.
+ * interrupts, no DMA, no waiter and no clock. Each wait gives up after a
+ * number of polls that takes at least `stall_timeout_ms`.
  *
  * Only master mode with 7-bit addressing in hardware is supported; a 10-bit
  * address is sent as described in `hal::i2c::transaction()`.
@@ -357,11 +377,6 @@ export i2c_timing compute_i2c_timing(hal::hertz p_clock_rate,
 export class i2c
 {
 public:
-  /// How long a transaction waits for the bus to make progress, for example
-  /// while a device stretches the clock, before throwing `hal::timed_out`.
-  /// It matches the SMBus clock-low timeout.
-  static constexpr hal::u32 stall_timeout_ms = 25;
-
   /**
    * @brief Construct a new i2c object
    *
@@ -438,6 +453,7 @@ public:
       .clear(i2c_ccr::fast_mode_duty)
       .insert<i2c_ccr::ccr>(timing.ccr);
     bit_modify(regs.trise).insert<i2c_trise::rise_time>(timing.rise_time);
+    m_stall_polls = timing.stall_polls;
     bit_modify(regs.cr1)
       .clear(i2c_cr1::smbus_mode)
       .set(i2c_cr1::peripheral_enable);
@@ -455,20 +471,18 @@ public:
    * @param p_data_out - bytes to write, possibly spread across chunks
    * @param p_data_in - buffer for the bytes read, possibly spread across
    * chunks
-   * @param p_clock - bounds how long each wait on the bus can take
    * @throws hal::no_such_device - the device didn't acknowledge its address
    * or a byte written to it.
    * @throws hal::io_error - a misplaced start or stop condition was detected
    * on the bus.
-   * @throws hal::timed_out - the bus made no progress for
+   * @throws hal::timed_out - the bus made no progress for at least
    * `stall_timeout_ms`, for example because a device held SCL low.
    */
   void transaction(hal::byte p_address,
                    mem::scatter_span<hal::byte const> p_data_out,
-                   mem::scatter_span<hal::byte> p_data_in,
-                   hal::steady_clock& p_clock)
+                   mem::scatter_span<hal::byte> p_data_in)
   {
-    run(p_address, p_data_out, p_data_in, p_clock, polled_data{ this });
+    run(p_address, p_data_out, p_data_in, polled_data{ this });
   }
 
 private:
@@ -519,15 +533,8 @@ private:
   void run(hal::byte p_address,
            mem::scatter_span<hal::byte const> p_data_out,
            mem::scatter_span<hal::byte> p_data_in,
-           hal::steady_clock& p_clock,
            Data const& p_data)
   {
-    using namespace mp_units::si::unit_symbols;
-    // In kHz, so the tick count can't overflow for any realistic clock.
-    auto const stall_cycles = p_clock.frequency().in(kHz, mp_units::truncated) *
-                              (stall_timeout_ms * ms);
-    m_clock = &p_clock;
-    m_stall_ticks = stall_cycles.numerical_value_in(mp_units::one) + 1U;
     m_address = p_address;
 
     auto& regs = reg();
@@ -701,17 +708,16 @@ private:
   /**
    * @brief Spin until a status register 1 flag is set
    *
-   * @throws hal::timed_out - the flag wasn't set within the stall timeout
+   * @throws hal::timed_out - the flag wasn't set within the stall bound
    * @throws see `check_errors()`
    */
   void wait_for(hal::bit_mask p_flag)
   {
     auto& regs = reg();
-    auto const deadline = m_clock->uptime() + m_stall_ticks;
-    while (not bit_extract(p_flag, regs.sr1)) {
+    for (auto polls = m_stall_polls; not bit_extract(p_flag, regs.sr1);
+         polls--) {
       check_errors();
-      if ((m_clock->uptime() > deadline) and
-          not bit_extract(p_flag, regs.sr1)) {
+      if (polls == 0) {
         throw hal::timed_out(this);
       }
     }
@@ -720,16 +726,15 @@ private:
   /**
    * @brief Spin until a register bit clears
    *
-   * @throws hal::timed_out - the bit didn't clear within the stall timeout
+   * @throws hal::timed_out - the bit didn't clear within the stall bound
    * @throws see `check_errors()`
    */
   void wait_until_clear(hal::u32 const volatile& p_register,
                         hal::bit_mask p_bit)
   {
-    auto const deadline = m_clock->uptime() + m_stall_ticks;
-    while (bit_extract(p_bit, p_register)) {
+    for (auto polls = m_stall_polls; bit_extract(p_bit, p_register); polls--) {
       check_errors();
-      if (m_clock->uptime() > deadline) {
+      if (polls == 0) {
         throw hal::timed_out(this);
       }
     }
@@ -767,9 +772,9 @@ private:
   }
 
   void* m_i2c;
-  /// The clock, stall bound and address of the transaction in progress
-  hal::steady_clock* m_clock = nullptr;
-  hal::u64 m_stall_ticks = 0;
+  /// Polls each wait makes before giving up, set by `configure()`
+  hal::u32 m_stall_polls = 0;
+  /// Address of the transaction in progress
   hal::byte m_address = 0;
 };
 }  // namespace hal::stm32_generic

@@ -39,6 +39,18 @@ void i2c_test()
     expect(that % 37 == timing.rise_time);
   };
 
+  "the stall bound polls for at least 25 ms"_test = []() {
+    // Exercise
+    // 25 ms at 36 MHz is 900,000 cycles, and a poll takes at least two.
+    auto const timing = compute_i2c_timing(100 * kHz, 36 * MHz);
+    // 25 ms at 8 MHz is 200,000 cycles.
+    auto const slow_timing = compute_i2c_timing(100 * kHz, 8 * MHz);
+
+    // Verify
+    expect(that % 450'000 == timing.stall_polls);
+    expect(that % 100'000 == slow_timing.stall_polls);
+  };
+
   "fast mode uses a 1:2 high:low duty cycle"_test = []() {
     // Exercise
     // 36 MHz / (3 * 400 kHz) = 30

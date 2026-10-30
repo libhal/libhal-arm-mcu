@@ -114,7 +114,7 @@ hal::static_ref<hal::adc16> adc()
 
 hal::static_ref<hal::i2c> i2c()
 {
-  static hal::stm32f1::polled_i2c i2c1(hal::stm32f1::peripheral::i2c1, clock());
+  static hal::stm32f1::polled_i2c i2c1(hal::stm32f1::peripheral::i2c1);
   return i2c1;
 }
 

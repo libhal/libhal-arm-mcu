@@ -489,7 +489,10 @@ public:
    *
    * Spins on the peripheral's status flags until the transaction finishes.
    * Needs no interrupts and no waiter. If another controller wins
-   * arbitration, waits for the bus to be free and starts over.
+   * arbitration, waits for the bus to be free and starts over, until an
+   * attempt wins the bus: its device acknowledges the address. From the
+   * first loss until then, every wait shares one stall bound, so a
+   * transaction that keeps losing throws `hal::timed_out`.
    *
    * @param p_address - 7-bit address of the target device
    * @param p_data_out - bytes to write, possibly spread across chunks
@@ -500,7 +503,8 @@ public:
    * @throws hal::io_error - a misplaced start or stop condition was detected
    * on the bus.
    * @throws hal::timed_out - the bus made no progress for at least
-   * `stall_timeout_ms`, for example because a device held SCL low.
+   * `stall_timeout_ms`, for example because a device held SCL low, or the
+   * transaction didn't win the bus within that long of losing arbitration.
    */
   void transaction(hal::byte p_address,
                    mem::scatter_span<hal::byte const> p_data_out,
@@ -533,7 +537,8 @@ public:
    * @throws hal::io_error - a misplaced start or stop condition was detected
    * on the bus, or a DMA transfer failed.
    * @throws hal::timed_out - the bus made no progress for at least
-   * `stall_timeout_ms`, for example because a device held SCL low.
+   * `stall_timeout_ms`, for example because a device held SCL low, or the
+   * transaction didn't win the bus within that long of losing arbitration.
    */
   template<byte_dma_channel Dma>
   void transaction(hal::byte p_address,
@@ -637,7 +642,8 @@ private:
 
   static constexpr std::chrono::milliseconds stall_timeout{ stall_timeout_ms };
 
-  /// Run attempts until one isn't lost to another controller
+  /// Run attempts until one isn't lost to another controller, or the
+  /// retries' shared stall bound is spent
   template<class Data>
   void run(hal::byte p_address,
            mem::scatter_span<hal::byte const> p_data_out,
@@ -645,6 +651,7 @@ private:
            Data const& p_data)
   {
     m_address = p_address;
+    m_retrying = false;
 
     auto& regs = reg();
     try {
@@ -654,8 +661,13 @@ private:
           return;
         } catch (arbitration_lost const&) {
           // Another controller took the bus. Wait for it to finish, then
-          // start over.
+          // start over. Until an attempt wins the bus, every wait shares one
+          // stall bound, so losing over and over times out.
           p_data.stop();
+          if (not m_retrying) {
+            m_retrying = true;
+            m_retry_polls = m_stall_polls;
+          }
           bit_modify(regs.sr1).clear(i2c_sr1::arbitration_lost);
           wait_until_clear(regs.sr2, i2c_sr2::bus_busy);
         }
@@ -711,6 +723,8 @@ private:
     wait_for(i2c_sr1::start);
     regs.data_reg = hal::to_8_bit_address(m_address, p_operation);
     wait_for(i2c_sr1::addr);
+    // The device acknowledged its address, so this attempt won the bus.
+    m_retrying = false;
   }
 
   /// Receive the bytes after the address, following the master receiver
@@ -906,12 +920,10 @@ private:
   void wait_for(hal::bit_mask p_flag)
   {
     auto& regs = reg();
-    for (auto polls = m_stall_polls; not bit_extract(p_flag, regs.sr1);
-         polls--) {
+    auto polls = m_stall_polls;
+    while (not bit_extract(p_flag, regs.sr1)) {
       check_errors();
-      if (polls == 0) {
-        throw hal::timed_out(this);
-      }
+      spend_poll(polls);
     }
   }
 
@@ -924,12 +936,27 @@ private:
   void wait_until_clear(hal::u32 const volatile& p_register,
                         hal::bit_mask p_bit)
   {
-    for (auto polls = m_stall_polls; bit_extract(p_bit, p_register); polls--) {
+    auto polls = m_stall_polls;
+    while (bit_extract(p_bit, p_register)) {
       check_errors();
-      if (polls == 0) {
-        throw hal::timed_out(this);
-      }
+      spend_poll(polls);
     }
+  }
+
+  /**
+   * @brief Count one poll against a wait's stall bound, or against the bound
+   * the retries share after a lost arbitration
+   *
+   * @param p_polls - the wait's own polls left
+   * @throws hal::timed_out - the bound is spent
+   */
+  void spend_poll(hal::u32& p_polls)
+  {
+    auto& polls = m_retrying ? m_retry_polls : p_polls;
+    if (polls == 0) {
+      throw hal::timed_out(this);
+    }
+    polls--;
   }
 
   /// @return the byte in the data register
@@ -967,7 +994,12 @@ private:
   hal::notifier m_notifier;
   /// Polls each wait makes before giving up, set by `configure()`
   hal::u32 m_stall_polls = 0;
+  /// Polls left of the stall bound every wait shares from a lost arbitration
+  /// until an attempt wins the bus
+  hal::u32 m_retry_polls = 0;
   /// Address of the transaction in progress
   hal::byte m_address = 0;
+  /// Set from a lost arbitration until an attempt wins the bus
+  bool m_retrying = false;
 };
 }  // namespace hal::stm32_generic

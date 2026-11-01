@@ -607,10 +607,8 @@ private:
   /// Receive the bytes after the address, following the master receiver
   /// sequences in the reference manual (RM0008 section 26.3.3).
   ///
-  /// When receiving the last bytes, clearing ADDR, setting STOP and reading
-  /// the data register must happen before the next byte finishes, or the
-  /// peripheral clocks out an extra byte (STM32F10xxx errata, I2C section).
-  /// Those steps run with interrupts masked, so one can't delay them.
+  /// The last steps of each ending run with interrupts masked. The comment
+  /// on the first masked block explains why.
   template<class Data>
   void read(mem::scatter_span<hal::byte> p_data_in, Data const& p_data)
   {
@@ -625,6 +623,15 @@ private:
     if (length == 1) {
       // NACK the only byte, and stop after it.
       bit_modify(regs.cr1).clear(i2c_cr1::ack_enable);
+      // The steps in each masked block must finish before the byte on the
+      // bus does, or the peripheral may receive an extra byte, read the same
+      // byte twice or corrupt the last one. Polling is fast enough, but an
+      // interrupt between the steps could delay them past that point, so
+      // interrupts are masked for these few register accesses. The STM32F1
+      // errata require this. In ES0340 Rev 17 (STM32F103xC/D/E), section
+      // 2.9.1 on page 19 sets the deadline, and workaround 2 of section 2.9.2,
+      // on pages 19 and 20, masks interrupts for the 2-byte and longer
+      // endings.
       {
         hal::cortex_m::interrupt_mask_guard const masked;
         clear_addr();

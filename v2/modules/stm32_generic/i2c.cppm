@@ -755,6 +755,10 @@ private:
       // Both bytes have arrived: the first in the data register and the
       // second in the shift register.
       wait_for(i2c_sr1::byte_transfered_finish);
+      // Masked so an interrupt can't delay reading the first byte until the
+      // STOP is on the bus, which corrupts the second byte (ES0340 Rev 17,
+      // section 2.9.2, workaround 2, sequence 1). See the comment above the
+      // first interrupt_mask_guard in read(), in the 1-byte case.
       {
         hal::cortex_m::interrupt_mask_guard const masked;
         bit_modify(regs.cr1).set(i2c_cr1::stop);
@@ -773,6 +777,10 @@ private:
       // shift register. NACK the last one and stop after it.
       wait_for(i2c_sr1::byte_transfered_finish);
       bit_modify(regs.cr1).clear(i2c_cr1::ack_enable);
+      // Masked so an interrupt can't delay reading bytes N-2 and N-1 until
+      // the STOP is on the bus, which corrupts byte N (ES0340 Rev 17, section
+      // 2.9.2, workaround 2, sequence 2). See the comment above the first
+      // interrupt_mask_guard in read(), in the 1-byte case.
       {
         hal::cortex_m::interrupt_mask_guard const masked;
         ending[0] = received();

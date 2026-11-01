@@ -614,11 +614,19 @@ private:
   {
     auto& regs = reg();
     std::size_t const length = p_data_in.length();
-    // The ending sequences read into here, then the bytes are copied into
-    // the buffer, so the steps that must run back to back stay short.
-    std::array<hal::byte, 3> ending{};
+    // Where each of the last bytes goes, found before the ending sequences
+    // so that the steps that must run back to back store through a pointer
+    // instead of walking the buffer's chunks.
+    std::array<hal::byte*, 3> ending{};
     auto const ending_length = std::min(length, ending.size());
     auto const body_length = length - ending_length;
+    auto destination = ending.begin();
+    for (std::span<hal::byte> chunk :
+         p_data_in.sub_scatter_span({ .offset = body_length })) {
+      for (auto& byte : chunk) {
+        *destination++ = &byte;
+      }
+    }
 
     if (length == 1) {
       // NACK the only byte, and stop after it.
@@ -638,7 +646,7 @@ private:
         bit_modify(regs.cr1).set(i2c_cr1::stop);
       }
       wait_for(i2c_sr1::rx_not_empty);
-      ending[0] = received();
+      *ending[0] = received();
     } else if (length == 2) {
       // POS makes the cleared ACK apply to the second byte.
       bit_modify(regs.cr1).clear(i2c_cr1::ack_enable).set(i2c_cr1::pos);
@@ -653,9 +661,9 @@ private:
       {
         hal::cortex_m::interrupt_mask_guard const masked;
         bit_modify(regs.cr1).set(i2c_cr1::stop);
-        ending[0] = received();
+        *ending[0] = received();
       }
-      ending[1] = received();
+      *ending[1] = received();
       bit_modify(regs.cr1).clear(i2c_cr1::pos);
     } else {
       auto body = p_data_in.sub_scatter_span({ .count = body_length });
@@ -674,21 +682,12 @@ private:
       // interrupt_mask_guard in read(), in the 1-byte case.
       {
         hal::cortex_m::interrupt_mask_guard const masked;
-        ending[0] = received();
+        *ending[0] = received();
         bit_modify(regs.cr1).set(i2c_cr1::stop);
-        ending[1] = received();
+        *ending[1] = received();
       }
       wait_for(i2c_sr1::rx_not_empty);
-      ending[2] = received();
-    }
-
-    // Copy the ending into the last bytes of the buffer.
-    std::span<hal::byte const> remaining =
-      std::span(ending).first(ending_length);
-    auto tail = p_data_in.sub_scatter_span({ .offset = body_length });
-    for (std::span<hal::byte> chunk : tail) {
-      std::ranges::copy(remaining.first(chunk.size()), chunk.begin());
-      remaining = remaining.subspan(chunk.size());
+      *ending[2] = received();
     }
   }
 

@@ -16,6 +16,7 @@ module;
 
 #include <algorithm>
 #include <array>
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <span>
@@ -259,6 +260,10 @@ struct i2c_reg_t
 /// matches the SMBus clock-low timeout.
 constexpr hal::u32 stall_timeout_ms = 25;
 
+/// `stall_timeout_ms` as the bound `hal::timed_out` reports
+constexpr hal::time_duration stall_bound =
+  std::chrono::milliseconds(stall_timeout_ms);
+
 /// Clock control and rise time settings for an STM32 I2C bus
 export struct i2c_timing
 {
@@ -481,6 +486,8 @@ public:
    * @throws hal::timed_out - the bus made no progress for at least
    * `stall_timeout_ms`, for example because a device held SCL low, or the
    * transaction didn't win the bus within that long of losing arbitration.
+   * Its `bound` is `stall_timeout_ms`, and its `progress` is the number of
+   * bytes known to have been transferred, written ones first, then read ones.
    */
   void transaction(hal::byte p_address,
                    mem::scatter_span<hal::byte const> p_data_out,
@@ -497,7 +504,8 @@ private:
 
   /// Moves the data bytes of a transaction by polling the data register.
   /// The transaction takes how the data bytes move as a template parameter,
-  /// so another way, such as DMA, can reuse the rest of it.
+  /// so another way, such as DMA, can reuse the rest of it. Each way adds
+  /// the bytes it moves to `m_progress`.
   struct polled_data
   {
     i2c* bus;
@@ -506,11 +514,10 @@ private:
     void write(mem::scatter_span<hal::byte const> p_data) const
     {
       bus->clear_addr();
-      for (std::span<hal::byte const> chunk : p_data) {
-        for (auto const byte : chunk) {
-          bus->wait_for(i2c_sr1::tx_empty);
-          bus->reg().data_reg = byte;
-        }
+      for (auto const byte : p_data) {
+        bus->wait_for(i2c_sr1::tx_empty);
+        bus->reg().data_reg = byte;
+        bus->m_progress++;
       }
     }
 
@@ -518,11 +525,10 @@ private:
     void read(mem::scatter_span<hal::byte> p_data) const
     {
       bus->clear_addr();
-      for (std::span<hal::byte> chunk : p_data) {
-        for (auto& byte : chunk) {
-          bus->wait_for(i2c_sr1::rx_not_empty);
-          byte = bus->received();
-        }
+      for (auto& byte : p_data) {
+        bus->wait_for(i2c_sr1::rx_not_empty);
+        byte = bus->received();
+        bus->m_progress++;
       }
     }
 
@@ -542,6 +548,8 @@ private:
   {
     m_address = p_address;
     m_retrying = false;
+    m_progress = 0;
+    m_in_flight = 0;
 
     auto& regs = reg();
     try {
@@ -554,6 +562,7 @@ private:
           // start over. Until an attempt wins the bus, every wait shares one
           // stall bound, so losing over and over times out.
           p_data.stop();
+          m_progress = 0;
           if (not m_retrying) {
             m_retrying = true;
             m_retry_polls = m_stall_polls;
@@ -588,8 +597,12 @@ private:
       if (p_data_out.length() == 0) {
         clear_addr();
       } else {
+        // Until BTF, the last two bytes written, in the data and shift
+        // registers, may not have reached the device.
+        m_in_flight = 2;
         p_data.write(p_data_out);
         wait_for(i2c_sr1::byte_transfered_finish);
+        m_in_flight = 0;
       }
 
       if (read_length == 0) {
@@ -602,6 +615,7 @@ private:
     // A repeated start when bytes were written first.
     send_address(hal::i2c_operation::read);
     read(p_data_in, p_data);
+    m_progress = static_cast<hal::u32>(p_data_out.length() + read_length);
     wait_until_clear(regs.cr1, i2c_cr1::stop);
   }
 
@@ -629,16 +643,13 @@ private:
     std::size_t const length = p_data_in.length();
     // Where each of the last bytes goes, found before the ending sequences
     // so that the steps that must run back to back store through a pointer
-    // instead of walking the buffer's chunks.
+    // instead of walking the buffer.
     std::array<hal::byte*, 3> ending{};
     auto const ending_length = std::min(length, ending.size());
     auto const body_length = length - ending_length;
     auto destination = ending.begin();
-    for (std::span<hal::byte> chunk :
-         p_data_in.sub_scatter_span({ .offset = body_length })) {
-      for (auto& byte : chunk) {
-        *destination++ = &byte;
-      }
+    for (auto& byte : p_data_in.sub_scatter_span({ .offset = body_length })) {
+      *destination++ = &byte;
     }
 
     if (length == 1) {
@@ -699,6 +710,7 @@ private:
         bit_modify(regs.cr1).set(i2c_cr1::stop);
         *ending[1] = received();
       }
+      m_progress += 2;
       wait_for(i2c_sr1::rx_not_empty);
       *ending[2] = received();
     }
@@ -775,9 +787,16 @@ private:
   {
     auto& polls = m_retrying ? m_retry_polls : p_polls;
     if (polls == 0) {
-      throw hal::timed_out(this);
+      throw hal::timed_out(this, stall_bound, reported_progress());
     }
     polls--;
+  }
+
+  /// @return the bytes moved so far, less those that may not have reached
+  /// the device yet
+  [[nodiscard]] hal::u32 reported_progress() const
+  {
+    return (m_progress > m_in_flight) ? (m_progress - m_in_flight) : 0;
   }
 
   /// @return the byte in the data register
@@ -817,8 +836,14 @@ private:
   /// Polls left of the stall bound every wait shares from a lost arbitration
   /// until an attempt wins the bus
   hal::u32 m_retry_polls = 0;
+  /// Bytes of the attempt in progress moved through the data register so
+  /// far, written ones first, then read ones
+  hal::u32 m_progress = 0;
   /// Address of the transaction in progress
   hal::byte m_address = 0;
+  /// How many of the bytes in `m_progress` may not have reached the device
+  /// yet
+  hal::u8 m_in_flight = 0;
   /// Set from a lost arbitration until an attempt wins the bus
   bool m_retrying = false;
 };

@@ -46,7 +46,9 @@ namespace hal::stm32f1 {
  * least 25 ms, for example while a device holds SCL low. The bound is a
  * number of polls of the peripheral, so it needs no clock. In practice a
  * poll takes longer than the bound assumes, so a stall takes longer to
- * detect.
+ * detect. The exception's `bound` is 25 ms, and its `progress` is the number
+ * of bytes known to have been transferred, written ones first, then read
+ * ones.
  *
  * ```cpp
  * static hal::stm32f1::polled_i2c i2c1(hal::stm32f1::peripheral::i2c1);

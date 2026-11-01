@@ -184,7 +184,7 @@ public:
   {
     auto& uart_reg = reg();
 
-    for (auto const& chunk : p_data) {
+    for (auto const& chunk : p_data.spans()) {
       for (auto const& byte : chunk) {
         while (not bit_extract<status_reg::transit_empty>(uart_reg.status)) {
           continue;

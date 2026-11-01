@@ -135,6 +135,12 @@ private:
  * can't run inside an interrupt. The start, address and stop steps, and the
  * last three bytes of a read, are polled.
  *
+ * A transaction throws `hal::timed_out` if the bus makes no progress for at
+ * least 25 ms. The polled steps count polls, as `hal::stm32f1::polled_i2c`
+ * does, and the DMA transfers wait on the waiter, which times them. The
+ * exception's `bound` is 25 ms, and its `progress` is the number of bytes
+ * known to have been transferred, written ones first, then read ones.
+ *
  * It claims the peripheral's DMA channels for as long as it lives: DMA1
  * channels 6 (transmit) and 7 (receive) for `i2c1`, 4 and 5 for `i2c2`.
  * Other drivers whose requests use those channels can't use DMA meanwhile:

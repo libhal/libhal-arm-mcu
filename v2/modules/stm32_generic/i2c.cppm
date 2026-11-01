@@ -545,6 +545,8 @@ public:
    * @throws hal::timed_out - the bus made no progress for at least
    * `stall_timeout_ms`, for example because a device held SCL low, or the
    * transaction didn't win the bus within that long of losing arbitration.
+   * Its `bound` is `stall_timeout_ms`, and its `progress` is the number of
+   * bytes known to have been transferred, written ones first, then read ones.
    */
   template<byte_dma_channel Dma>
   void transaction(hal::byte p_address,
@@ -644,8 +646,6 @@ private:
       stop.bus->move_by_dma(p_data, *stop.receive, *operation);
     }
   };
-
-  static constexpr std::chrono::milliseconds stall_timeout{ stall_timeout_ms };
 
   /// Run attempts until one isn't lost to another controller, or the
   /// retries' shared stall bound is spent
@@ -853,7 +853,7 @@ private:
           clear_addr();
           addr_cleared = true;
         }
-        wait_for_transfer(p_dma, p_operation);
+        wait_for_transfer(p_dma, p_operation, run.size());
         chunk = chunk.subspan(run.size());
       }
     }
@@ -861,24 +861,28 @@ private:
   }
 
   /**
-   * @brief Sleep until a DMA transfer finishes
+   * @brief Sleep until a DMA transfer of `p_size` bytes finishes, then add
+   * them to `m_progress`
    *
    * The error interrupt wakes the context if the device stops acknowledging
    * or the bus fails, which stalls the transfer.
    *
    * @throws hal::io_error - the DMA transfer failed
    * @throws hal::timed_out - the transfer moved no bytes within the stall
-   * timeout
+   * bound. Its progress includes the bytes the transfer did move.
    * @throws see `check_errors()`
    */
   template<class Dma>
-  void wait_for_transfer(Dma& p_dma, dma_scope<Dma>& p_operation)
+  void wait_for_transfer(Dma& p_dma,
+                         dma_scope<Dma>& p_operation,
+                         std::size_t p_size)
   {
     auto& regs = reg();
     while (true) {
       check_errors();
       auto const left = p_dma.remaining();
       if (left == 0) {
+        m_progress += static_cast<hal::u32>(p_size);
         return;
       }
       if (p_dma.failed()) {
@@ -886,10 +890,11 @@ private:
       }
       // handle_error_interrupt() masks it again when it fires.
       bit_modify(regs.cr2).set(i2c_cr2::error_intr_en);
-      if (not p_operation.block_for(stall_timeout) and
+      if (not p_operation.block_for(stall_bound) and
           (p_dma.remaining() == left)) {
         check_errors();
-        throw hal::timed_out(this);
+        m_progress += static_cast<hal::u32>(p_size - left);
+        throw hal::timed_out(this, stall_bound, reported_progress());
       }
     }
   }

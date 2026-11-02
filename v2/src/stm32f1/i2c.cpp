@@ -215,9 +215,12 @@ void stop_peripheral(peripheral p_id)
 }
 }  // namespace
 
-polled_i2c::polled_i2c(peripheral p_id, hal::i2c_settings const& p_settings)
+polled_i2c::polled_i2c(peripheral p_id,
+                       hal::i2c_settings const& p_settings,
+                       hal::time_duration p_stall_timeout)
   : m_id(p_id)
-  , m_driver(register_address(p_id))  // Rejects unsupported peripherals
+  // Rejects unsupported peripherals
+  , m_driver(register_address(p_id), p_stall_timeout)
 {
   start_peripheral(m_id, m_driver, p_settings, this);
 }
@@ -243,12 +246,14 @@ void polled_i2c::driver_transaction(
   m_driver.transaction(p_address, p_data_out, p_data_in);
 }
 
-dma_i2c::dma_i2c(peripheral p_id, hal::i2c_settings const& p_settings)
+dma_i2c::dma_i2c(peripheral p_id,
+                 hal::i2c_settings const& p_settings,
+                 hal::time_duration p_stall_timeout)
   // signals_for() rejects unsupported peripherals before anything is claimed.
   : m_transmit(signals_for(p_id).transmit)
   , m_receive(signals_for(p_id).receive)
   , m_id(p_id)
-  , m_driver(register_address(p_id))
+  , m_driver(register_address(p_id), p_stall_timeout)
 {
   start_peripheral(m_id, m_driver, p_settings, this);
 

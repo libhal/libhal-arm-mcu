@@ -19,6 +19,7 @@ module;
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <span>
 
 export module hal.arm_mcu.stm32_generic:i2c;
@@ -256,13 +257,12 @@ struct i2c_reg_t
 };
 
 /// How long a transaction waits for the bus to make progress, for example
-/// while a device stretches the clock, before throwing `hal::timed_out`. It
-/// matches the SMBus clock-low timeout.
-constexpr hal::u32 stall_timeout_ms = 25;
-
-/// `stall_timeout_ms` as the bound `hal::timed_out` reports
-constexpr hal::time_duration stall_bound =
-  std::chrono::milliseconds(stall_timeout_ms);
+/// while a device stretches the clock, before throwing `hal::timed_out`,
+/// unless the application chooses another stall timeout. Long enough for
+/// devices that stretch the clock for tens of milliseconds, such as some
+/// humidity sensors while they measure.
+export constexpr hal::time_duration default_i2c_stall_timeout =
+  std::chrono::milliseconds(100);
 
 /// Clock control and rise time settings for an STM32 I2C bus
 export struct i2c_timing
@@ -276,15 +276,11 @@ export struct i2c_timing
   /// Fast mode (up to 400 kHz) with a 1:2 SCL high:low duty cycle, instead of
   /// standard mode (up to 100 kHz)
   bool fast_mode;
-  /// How many times a wait polls the peripheral before giving up. Each poll
-  /// takes at least two input clock cycles, so this many take at least
-  /// `stall_timeout_ms`.
-  u32 stall_polls;
 };
 
 /**
- * @brief Compute the FREQ, CCR and TRISE settings for an i2c clock rate, and
- * the stall bound, without touching any hardware
+ * @brief Compute the FREQ, CCR and TRISE settings for an i2c clock rate,
+ * without touching any hardware
  *
  * The bus never runs faster than `p_clock_rate`. A rate above fast mode's
  * 400 kHz runs at 400 kHz. Otherwise the rate is rounded down to what the
@@ -345,23 +341,56 @@ export i2c_timing compute_i2c_timing(hal::hertz p_clock_rate,
   auto const max_rise_time = fast_mode ? (300U * ns) : (1000U * ns);
   auto const rise_cycles = max_rise_time * frequency;
 
-  // A poll reads a peripheral register, and every APB read takes at least
-  // two input clock cycles: the protocol's setup and access phases. Polls
-  // that take longer only make the bound longer, never shorter. In kHz, so
-  // the count can't overflow.
-  constexpr u32 min_cycles_per_poll = 2;
-  auto const stall_cycles =
-    p_frequency.in(kHz, mp_units::truncated) * (stall_timeout_ms * ms);
-
   return {
     .frequency = frequency.numerical_value_in(MHz),
     .ccr = ccr,
     .rise_time =
       rise_cycles.numerical_value_in(mp_units::one, mp_units::truncated) + 1U,
     .fast_mode = fast_mode,
-    .stall_polls =
-      stall_cycles.numerical_value_in(mp_units::one) / min_cycles_per_poll,
   };
+}
+
+/**
+ * @brief Compute how many polls of the peripheral take at least a stall
+ * timeout, without touching any hardware
+ *
+ * A poll reads a peripheral register, and every APB read takes at least two
+ * input clock cycles: the protocol's setup and access phases. The count is
+ * rounded up, and polls that take longer only make the wait longer, so the
+ * polls never take less than `p_stall_timeout`.
+ *
+ * @param p_stall_timeout - how long a wait must last before giving up
+ * @param p_frequency - the peripheral's input clock (PCLK1 on the STM32F1)
+ * @return u32 - the number of polls
+ * @throws hal::operation_not_supported - if the stall timeout or the input
+ * clock is zero or negative, or the stall timeout takes more polls than 32
+ * bits can count: over 171 seconds at 50 MHz.
+ */
+export u32 compute_stall_polls(hal::time_duration p_stall_timeout,
+                               hal::hertz p_frequency)
+{
+  using namespace mp_units::si::unit_symbols;
+  constexpr u64 cycles_per_poll = 2;
+  constexpr u64 ns_per_second = 1'000'000'000;
+  // polls = timeout (ns) * frequency (Hz) / (2 cycles * 1e9 ns per second),
+  // rounded up, in integers
+  constexpr u64 ns_hz_per_poll = cycles_per_poll * ns_per_second;
+  constexpr u64 max_polls = std::numeric_limits<u32>::max();
+
+  u64 const frequency = p_frequency.numerical_value_in(Hz);
+  if ((p_stall_timeout <= hal::time_duration::zero()) or (frequency == 0)) {
+    throw hal::operation_not_supported(nullptr);
+  }
+
+  // Checking against the longest countable timeout first also keeps the
+  // product below from overflowing.
+  auto const timeout = static_cast<u64>(p_stall_timeout.count());
+  if (timeout > ((max_polls * ns_hz_per_poll) / frequency)) {
+    throw hal::operation_not_supported(nullptr);
+  }
+
+  return static_cast<u32>(((timeout * frequency) + (ns_hz_per_poll - 1)) /
+                          ns_hz_per_poll);
 }
 
 /**
@@ -374,7 +403,8 @@ export i2c_timing compute_i2c_timing(hal::hertz p_clock_rate,
  *
  * A transaction polls the peripheral's status flags, so it needs no
  * interrupts, no DMA, no waiter and no clock. Each wait gives up after a
- * number of polls that takes at least `stall_timeout_ms`.
+ * number of polls that takes at least the stall timeout given to the
+ * constructor.
  *
  * Only master mode with 7-bit addressing in hardware is supported; a 10-bit
  * address is sent as described in `hal::i2c::transaction()`.
@@ -395,9 +425,13 @@ public:
    * Accessing the registers of a peripheral that isn't powered faults.
    *
    * @param p_i2c - i2c peripheral address
+   * @param p_stall_timeout - how long a transaction waits for the bus to make
+   * progress before throwing `hal::timed_out`. `configure()` checks it.
    */
-  explicit i2c(void* p_i2c)
+  explicit i2c(void* p_i2c,
+               hal::time_duration p_stall_timeout = default_i2c_stall_timeout)
     : m_i2c(p_i2c)
+    , m_stall_timeout(p_stall_timeout)
   {
   }
 
@@ -432,11 +466,13 @@ public:
    * @throws hal::operation_not_supported - if the clock rate is zero, if the
    * bus can't run as slowly as requested, or if the peripheral's input clock
    * is outside what that mode allows: 2 MHz to 50 MHz, and at least 4 MHz for
-   * fast mode (RM0008 section 26.3.3).
+   * fast mode (RM0008 section 26.3.3). Also if the stall timeout given to the
+   * constructor can't be counted (see `compute_stall_polls()`).
    */
   void configure(hal::i2c_settings const& p_settings, hal::hertz p_frequency)
   {
     auto const timing = compute_i2c_timing(p_settings.clock_rate, p_frequency);
+    auto const stall_polls = compute_stall_polls(m_stall_timeout, p_frequency);
 
     auto& regs = reg();
     // Reset clears a bus left busy by an interrupted transfer. CCR and TRISE
@@ -458,7 +494,7 @@ public:
       .clear(i2c_ccr::fast_mode_duty)
       .insert<i2c_ccr::ccr>(timing.ccr);
     bit_modify(regs.trise).insert<i2c_trise::rise_time>(timing.rise_time);
-    m_stall_polls = timing.stall_polls;
+    m_stall_polls = stall_polls;
     bit_modify(regs.cr1)
       .clear(i2c_cr1::smbus_mode)
       .set(i2c_cr1::peripheral_enable);
@@ -483,11 +519,11 @@ public:
    * or a byte written to it.
    * @throws hal::io_error - a misplaced start or stop condition was detected
    * on the bus.
-   * @throws hal::timed_out - the bus made no progress for at least
-   * `stall_timeout_ms`, for example because a device held SCL low, or the
-   * transaction didn't win the bus within that long of losing arbitration.
-   * Its `bound` is `stall_timeout_ms`, and its `progress` is the number of
-   * bytes known to have been transferred, written ones first, then read ones.
+   * @throws hal::timed_out - the bus made no progress for at least the stall
+   * timeout, for example because a device held SCL low, or the transaction
+   * didn't win the bus within that long of losing arbitration. Its
+   * `progress` is the number of bytes known to have been transferred,
+   * written ones first, then read ones.
    */
   void transaction(hal::byte p_address,
                    mem::scatter_span<hal::byte const> p_data_out,
@@ -787,7 +823,7 @@ private:
   {
     auto& polls = m_retrying ? m_retry_polls : p_polls;
     if (polls == 0) {
-      throw hal::timed_out(this, stall_bound, reported_progress());
+      throw hal::timed_out(this, reported_progress());
     }
     polls--;
   }
@@ -831,6 +867,8 @@ private:
   }
 
   void* m_i2c;
+  /// How long a wait lasts before giving up
+  hal::time_duration m_stall_timeout;
   /// Polls each wait makes before giving up, set by `configure()`
   hal::u32 m_stall_polls = 0;
   /// Polls left of the stall bound every wait shares from a lost arbitration

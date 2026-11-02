@@ -43,12 +43,12 @@ namespace hal::stm32f1 {
  * wrap it in a `hal::thread_safe_i2c`, which makes callers wait instead.
  *
  * A transaction throws `hal::timed_out` if the bus makes no progress for at
- * least 25 ms, for example while a device holds SCL low. The bound is a
- * number of polls of the peripheral, so it needs no clock. In practice a
- * poll takes longer than the bound assumes, so a stall takes longer to
- * detect. The exception's `bound` is 25 ms, and its `progress` is the number
- * of bytes known to have been transferred, written ones first, then read
- * ones.
+ * least the stall timeout, 100 ms unless the constructor is given another,
+ * for example while a device holds SCL low. The timeout is counted in polls
+ * of the peripheral, so it needs no clock. In practice a poll takes longer
+ * than the count assumes, so a stall takes longer to detect. The exception's
+ * `progress` is the number of bytes known to have been transferred, written
+ * ones first, then read ones.
  *
  * ```cpp
  * static hal::stm32f1::polled_i2c i2c1(hal::stm32f1::peripheral::i2c1);
@@ -73,13 +73,21 @@ public:
    * @param p_settings - bus settings. The clock rate must be at or below
    * the limit of every device on the bus, which `hal::i2c_bus_rate()`
    * computes at compile time. The default, 100 kHz, is safe for any device.
+   * @param p_stall_timeout - how long a transaction waits for the bus to make
+   * progress before throwing `hal::timed_out`. It must be longer than any
+   * device on the bus stretches the clock. It is counted in polls, rounded
+   * up, so a transaction never gives up sooner.
    * @throws hal::operation_not_supported - if `p_id` is not `i2c1` or `i2c2`,
-   * or if `p_settings` can't be achieved (see `configure()`).
+   * if `p_settings` can't be achieved (see `configure()`), or if
+   * `p_stall_timeout` isn't positive or is too long to count: over about 4
+   * minutes with PCLK1 at its 36 MHz maximum.
    * @throws hal::device_or_resource_busy - if another driver has claimed the
    * peripheral or one of its pins.
    */
   explicit polled_i2c(peripheral p_id,
-                      hal::i2c_settings const& p_settings = {});
+                      hal::i2c_settings const& p_settings = {},
+                      hal::time_duration p_stall_timeout =
+                        hal::stm32_generic::default_i2c_stall_timeout);
 
   polled_i2c(polled_i2c const&) = delete;
   polled_i2c& operator=(polled_i2c const&) = delete;

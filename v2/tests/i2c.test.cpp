@@ -12,7 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// compute_i2c_timing() is pure arithmetic, so it runs on the host.
+// compute_i2c_timing() and compute_stall_polls() are pure arithmetic, so they
+// run on the host.
+
+#include <chrono>
 
 #include <boost/ut.hpp>
 
@@ -24,7 +27,9 @@ void i2c_test()
 {
   using namespace boost::ut;
   using namespace mp_units::si::unit_symbols;
+  using namespace std::chrono_literals;
   using hal::stm32_generic::compute_i2c_timing;
+  using hal::stm32_generic::compute_stall_polls;
 
   "standard mode divides the clock into equal high and low halves"_test = []() {
     // Exercise
@@ -39,16 +44,42 @@ void i2c_test()
     expect(that % 37 == timing.rise_time);
   };
 
-  "the stall bound polls for at least 25 ms"_test = []() {
+  "the stall timeout is counted in polls of at least two cycles"_test = []() {
     // Exercise
-    // 25 ms at 36 MHz is 900,000 cycles, and a poll takes at least two.
-    auto const timing = compute_i2c_timing(100 * kHz, 36 * MHz);
+    // 100 ms at 36 MHz is 3,600,000 cycles, and a poll takes at least two.
+    auto const polls = compute_stall_polls(100ms, 36 * MHz);
     // 25 ms at 8 MHz is 200,000 cycles.
-    auto const slow_timing = compute_i2c_timing(100 * kHz, 8 * MHz);
+    auto const slow_polls = compute_stall_polls(25ms, 8 * MHz);
 
     // Verify
-    expect(that % 450'000 == timing.stall_polls);
-    expect(that % 100'000 == slow_timing.stall_polls);
+    expect(that % 1'800'000 == polls);
+    expect(that % 100'000 == slow_polls);
+  };
+
+  "the stall poll count rounds up, so a wait is never shorter"_test = []() {
+    // Exercise
+    // 1 ns at 8 MHz is 0.008 cycles: less than one poll.
+    auto const tiny_polls = compute_stall_polls(1ns, 8 * MHz);
+    // 1,001 ns at 8 MHz is 8.008 cycles: 4.004 polls.
+    auto const odd_polls = compute_stall_polls(1'001ns, 8 * MHz);
+
+    // Verify
+    expect(that % 1 == tiny_polls);
+    expect(that % 5 == odd_polls);
+  };
+
+  "a stall timeout that can't be counted is rejected"_test = []() {
+    // Exercise + Verify
+    expect(throws<hal::operation_not_supported>(
+      []() { static_cast<void>(compute_stall_polls(0ms, 36 * MHz)); }));
+    expect(throws<hal::operation_not_supported>(
+      []() { static_cast<void>(compute_stall_polls(-1ms, 36 * MHz)); }));
+    expect(throws<hal::operation_not_supported>(
+      []() { static_cast<void>(compute_stall_polls(100ms, 0 * Hz)); }));
+    // 4,294,967,295 polls at 50 MHz take about 171.8 seconds.
+    expect(throws<hal::operation_not_supported>(
+      []() { static_cast<void>(compute_stall_polls(172s, 50 * MHz)); }));
+    expect(that % 4'275'000'000U == compute_stall_polls(171s, 50 * MHz));
   };
 
   "fast mode uses a 1:2 high:low duty cycle"_test = []() {

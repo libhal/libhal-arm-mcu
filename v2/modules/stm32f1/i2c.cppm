@@ -50,6 +50,10 @@ namespace hal::stm32f1 {
  * `progress` is the number of bytes known to have been transferred, written
  * ones first, then read ones.
  *
+ * A transaction throws `hal::resource_unavailable_try_again` if the bus is busy
+ * when it starts, or if another controller wins arbitration. It never waits for
+ * the bus or retries: see "A busy bus or lost arbitration" in `hal::i2c`.
+ *
  * ```cpp
  * static hal::stm32f1::polled_i2c i2c1(hal::stm32f1::peripheral::i2c1);
  * auto const found = hal::probe(i2c1, 0x68);

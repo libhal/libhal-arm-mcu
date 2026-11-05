@@ -505,11 +505,8 @@ public:
    * moving every byte by polling
    *
    * Spins on the peripheral's status flags until the transaction finishes.
-   * Needs no interrupts and no waiter. If another controller wins
-   * arbitration, waits for the bus to be free and starts over, until an
-   * attempt wins the bus: its device acknowledges the address. From the
-   * first loss until then, every wait shares one stall bound, so a
-   * transaction that keeps losing throws `hal::timed_out`.
+   * Needs no interrupts and no waiter. It never waits for a busy bus and never
+   * retries: the caller decides what to do about a bus it can't have.
    *
    * If both `p_data_out` and `p_data_in` are empty, this returns without
    * touching the peripheral.
@@ -528,10 +525,12 @@ public:
    * @throws hal::io_error - a misplaced start or stop condition was detected
    * on the bus.
    * @throws hal::timed_out - the bus made no progress for at least the stall
-   * timeout, for example because a device held SCL low, or the transaction
-   * didn't win the bus within that long of losing arbitration. Its
-   * `progress` is the number of bytes known to have been transferred,
-   * written ones first, then read ones.
+   * timeout after the start condition went out, for example because a device
+   * held SCL low. Its `progress` is the number of bytes known to have been
+   * transferred, written ones first, then read ones.
+   * @throws hal::resource_unavailable_try_again - the bus was busy when this
+   * call started, the start condition didn't go out within the stall timeout,
+   * or another controller won arbitration.
    */
   void transaction(hal::byte p_address,
                    mem::scatter_span<hal::byte const> p_data_out,
@@ -544,11 +543,6 @@ public:
   }
 
 private:
-  /// Thrown internally when another controller wins arbitration. It never
-  /// leaves `transaction()`.
-  struct arbitration_lost
-  {};
-
   /// Moves the data bytes of a transaction by polling the data register.
   /// The transaction takes how the data bytes move as a template parameter,
   /// so another way, such as DMA, can reuse the rest of it. Each way adds
@@ -578,46 +572,27 @@ private:
         bus->m_progress++;
       }
     }
-
-    /// Nothing to stop
-    void stop() const noexcept
-    {
-    }
   };
 
-  /// Run attempts until one isn't lost to another controller, or the
-  /// retries' shared stall bound is spent
+  /// Run a transaction, and release the bus if it fails
   template<class Data>
   void run(hal::byte p_address,
            mem::scatter_span<hal::byte const> p_data_out,
            mem::scatter_span<hal::byte> p_data_in,
            Data const& p_data)
   {
+    // Left alone, the peripheral would wait for the bus to be free. Whether to
+    // wait is the caller's decision.
+    if (bit_extract<i2c_sr2::bus_busy>(reg().sr2)) {
+      throw_bus_taken();
+    }
+
     m_address = p_address;
-    m_retrying = false;
     m_progress = 0;
     m_in_flight = 0;
 
-    auto& regs = reg();
     try {
-      while (true) {
-        try {
-          attempt(p_data_out, p_data_in, p_data);
-          return;
-        } catch (arbitration_lost const&) {
-          // Another controller took the bus. Wait for it to finish, then
-          // start over. Until an attempt wins the bus, every wait shares one
-          // stall bound, so losing over and over times out.
-          p_data.stop();
-          m_progress = 0;
-          if (not m_retrying) {
-            m_retrying = true;
-            m_retry_polls = m_stall_polls;
-          }
-          bit_modify(regs.sr1).clear(i2c_sr1::arbitration_lost);
-          wait_until_clear(regs.sr2, i2c_sr2::bus_busy);
-        }
-      }
+      transfer(p_data_out, p_data_in, p_data);
     } catch (...) {
       release_bus();
       throw;
@@ -625,9 +600,9 @@ private:
   }
 
   template<class Data>
-  void attempt(mem::scatter_span<hal::byte const> p_data_out,
-               mem::scatter_span<hal::byte> p_data_in,
-               Data const& p_data)
+  void transfer(mem::scatter_span<hal::byte const> p_data_out,
+                mem::scatter_span<hal::byte> p_data_in,
+                Data const& p_data)
   {
     auto& regs = reg();
     std::size_t const read_length = p_data_in.length();
@@ -665,11 +640,9 @@ private:
   {
     auto& regs = reg();
     bit_modify(regs.cr1).set(i2c_cr1::start);
-    wait_for(i2c_sr1::start);
+    wait_for_start();
     regs.data_reg = hal::to_8_bit_address(m_address, p_operation);
     wait_for(i2c_sr1::addr);
-    // The device acknowledged its address, so this attempt won the bus.
-    m_retrying = false;
   }
 
   /// Receive the bytes after the address, following the master receiver
@@ -763,7 +736,8 @@ private:
    * @throws hal::no_such_device - see `throw_not_acknowledged()`
    * @throws hal::broken_pipe - see `throw_not_acknowledged()`
    * @throws hal::io_error - bus error or overrun
-   * @throws arbitration_lost - another controller won the bus
+   * @throws hal::resource_unavailable_try_again - another controller won the
+   * bus
    */
   void check_errors()
   {
@@ -782,8 +756,15 @@ private:
       throw hal::io_error(this);
     }
     if (bit_extract<i2c_sr1::arbitration_lost>(status)) {
-      throw arbitration_lost{};
+      bit_modify(regs.sr1).clear(i2c_sr1::arbitration_lost);
+      throw_bus_taken();
     }
+  }
+
+  /// @throws hal::resource_unavailable_try_again - always
+  [[noreturn]] void throw_bus_taken() const
+  {
+    throw hal::resource_unavailable_try_again(this);
   }
 
   /**
@@ -821,6 +802,32 @@ private:
   }
 
   /**
+   * @brief Spin until a start condition goes out
+   *
+   * The peripheral sends the transaction's first start condition once the bus
+   * is free, so until then the bus belongs to something else. A repeated start
+   * comes after bytes this transaction sent, while it holds the bus.
+   *
+   * @throws hal::resource_unavailable_try_again - the first start condition
+   * didn't go out within the stall bound
+   * @throws hal::timed_out - a repeated start didn't go out within the stall
+   * bound
+   * @throws see `check_errors()`
+   */
+  void wait_for_start()
+  {
+    auto& regs = reg();
+    auto polls = m_stall_polls;
+    while (not bit_extract<i2c_sr1::start>(regs.sr1)) {
+      check_errors();
+      if ((polls == 0) and (m_progress == 0)) {
+        throw_bus_taken();
+      }
+      spend_poll(polls);
+    }
+  }
+
+  /**
    * @brief Spin until a status register 1 flag is set
    *
    * @throws hal::timed_out - the flag wasn't set within the stall bound
@@ -853,19 +860,17 @@ private:
   }
 
   /**
-   * @brief Count one poll against a wait's stall bound, or against the bound
-   * the retries share after a lost arbitration
+   * @brief Count one poll against a wait's stall bound
    *
-   * @param p_polls - the wait's own polls left
+   * @param p_polls - the wait's polls left
    * @throws hal::timed_out - the bound is spent
    */
   void spend_poll(hal::u32& p_polls)
   {
-    auto& polls = m_retrying ? m_retry_polls : p_polls;
-    if (polls == 0) {
+    if (p_polls == 0) {
       throw hal::timed_out(this, reported_progress());
     }
-    polls--;
+    p_polls--;
   }
 
   /// @return the bytes moved so far, less those that may not have reached
@@ -889,16 +894,32 @@ private:
     [[maybe_unused]] auto const sr2 = regs.sr2;
   }
 
-  /// Stop driving the bus after a failed transaction
+  /**
+   * @brief Stop driving the bus after a failed transaction
+   *
+   * Waits for the stop condition to go out, so that the next transaction
+   * doesn't find the bus busy because of this one. CR1 must not be written
+   * until then either, and PE must not be cleared before the end of the
+   * communication (RM0008 section 26.6.1). A stuck bus can't send a stop
+   * condition, so the wait gives up after the stall bound.
+   */
   void release_bus()
   {
     auto& regs = reg();
-    if (bit_extract<i2c_sr2::master>(regs.sr2)) {
+    if (bit_extract<i2c_sr2::master>(regs.sr2) and
+        not bit_extract<i2c_cr1::stop>(regs.cr1)) {
       bit_modify(regs.cr1).set(i2c_cr1::stop);
     }
-    // Disabling the peripheral resets its state machine. The next
-    // transaction enables it again.
-    bit_modify(regs.cr1).clear(i2c_cr1::peripheral_enable);
+    auto polls = m_stall_polls;
+    while (bit_extract<i2c_cr1::stop>(regs.cr1) and (polls != 0)) {
+      polls--;
+    }
+    // Disabling the peripheral resets its state machine, and clearing START
+    // drops a start condition still waiting for the bus. The next transaction
+    // enables the peripheral again.
+    bit_modify(regs.cr1)
+      .clear(i2c_cr1::start)
+      .clear(i2c_cr1::peripheral_enable);
   }
 
   [[nodiscard]] i2c_reg_t& reg()
@@ -911,10 +932,7 @@ private:
   hal::time_duration m_stall_timeout;
   /// Polls each wait makes before giving up, set by `configure()`
   hal::u32 m_stall_polls = 0;
-  /// Polls left of the stall bound every wait shares from a lost arbitration
-  /// until an attempt wins the bus
-  hal::u32 m_retry_polls = 0;
-  /// Bytes of the attempt in progress moved through the data register so
+  /// Bytes of the transaction in progress moved through the data register so
   /// far, written ones first, then read ones
   hal::u32 m_progress = 0;
   /// Address of the transaction in progress
@@ -922,7 +940,5 @@ private:
   /// How many of the bytes in `m_progress` may not have reached the device
   /// yet
   hal::u8 m_in_flight = 0;
-  /// Set from a lost arbitration until an attempt wins the bus
-  bool m_retrying = false;
 };
 }  // namespace hal::stm32_generic

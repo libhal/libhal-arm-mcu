@@ -30,7 +30,11 @@ constexpr hal::u32 sr1_start = 0x0001;
 constexpr hal::u32 sr1_addr = 0x0002;
 constexpr hal::u32 sr1_byte_finished = 0x0004;
 constexpr hal::u32 sr1_tx_empty = 0x0080;
+constexpr hal::u32 sr1_arbitration_lost = 0x0200;
 constexpr hal::u32 sr1_ack_failure = 0x0400;
+constexpr hal::u32 sr2_busy = 0x0002;
+constexpr hal::u32 cr1_enable = 0x0001;
+constexpr hal::u32 cr1_start = 0x0100;
 constexpr hal::u32 cr1_stop = 0x0200;
 constexpr hal::byte address = 0x50;
 constexpr hal::byte ten_bit_address = 0b111'1011;
@@ -60,6 +64,11 @@ struct fake_bus
   hal::u32& sr1()
   {
     return registers[5];
+  }
+
+  hal::u32& sr2()
+  {
+    return registers[6];
   }
 
   std::array<hal::u32, 16> registers{};
@@ -172,6 +181,78 @@ void i2c_transaction_test()
 
     // Verify
     expect(that % 3 == progress);
+  };
+
+  "a busy bus throws try_again at once, without touching it"_test = []() {
+    // Setup
+    fake_bus fake(0);
+    fake.sr2() = sr2_busy;
+    auto const cr1 = fake.cr1();
+
+    // Exercise + Verify
+    expect(throws<hal::resource_unavailable_try_again>(
+      [&]() { fake.bus.transaction(address, { three_bytes }, {}); }));
+    expect(that % cr1 == fake.cr1());
+  };
+
+  "a lost arbitration throws try_again, without a retry"_test = []() {
+    // Setup
+    fake_bus fake(sr1_start | sr1_arbitration_lost);
+
+    // Exercise + Verify
+    // A retry would find the flag cleared and ADDR never set, and time out.
+    expect(throws<hal::resource_unavailable_try_again>(
+      [&]() { fake.bus.transaction(address, { three_bytes }, {}); }));
+    expect(that % 0 == (fake.sr1() & sr1_arbitration_lost));
+    expect(that % 0 == (fake.cr1() & cr1_enable));
+  };
+
+  "a start condition that never goes out throws try_again"_test = []() {
+    // Setup
+    fake_bus fake(0);
+
+    // Exercise + Verify
+    expect(throws<hal::resource_unavailable_try_again>(
+      [&]() { fake.bus.transaction(address, { three_bytes }, {}); }));
+    // It must not go out later, once the bus is free.
+    expect(that % 0 == (fake.cr1() & cr1_start));
+  };
+
+  "a stall after the start condition throws timed_out"_test = []() {
+    // Setup
+    fake_bus fake(sr1_start);
+
+    // Exercise + Verify
+    expect(throws<hal::timed_out>(
+      [&]() { fake.bus.transaction(address, { three_bytes }, {}); }));
+  };
+
+  "a stall while writing counts only bytes known to have arrived"_test = []() {
+    // Setup
+    fake_bus fake(sr1_start | sr1_addr | sr1_tx_empty);
+    hal::u32 progress = 0;
+
+    // Exercise
+    try {
+      fake.bus.transaction(address, { three_bytes }, {});
+    } catch (hal::timed_out const& p_error) {
+      progress = p_error.progress;
+    }
+
+    // Verify
+    // All three moved, but the last two may not have reached the device.
+    expect(that % 1 == progress);
+  };
+
+  "a stop condition that can't go out doesn't hang a failure"_test = []() {
+    // Setup
+    // Nothing clears STOP here, as on a bus with a line stuck low.
+    fake_bus fake(sr1_start | sr1_ack_failure);
+
+    // Exercise + Verify
+    expect(throws<hal::no_such_device>(
+      [&]() { fake.bus.transaction(address, { three_bytes }, {}); }));
+    expect(that % 0 == (fake.cr1() & cr1_enable));
   };
 }
 

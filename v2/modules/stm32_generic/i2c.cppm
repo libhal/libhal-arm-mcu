@@ -533,12 +533,20 @@ public:
    * first loss until then, every wait shares one stall bound, so a
    * transaction that keeps losing throws `hal::timed_out`.
    *
+   * If both `p_data_out` and `p_data_in` are empty, this returns without
+   * touching the peripheral.
+   *
    * @param p_address - 7-bit address of the target device
    * @param p_data_out - bytes to write, possibly spread across chunks
    * @param p_data_in - buffer for the bytes read, possibly spread across
    * chunks
-   * @throws hal::no_such_device - the device didn't acknowledge its address
-   * or a byte written to it.
+   * @throws hal::no_such_device - the device didn't acknowledge its address.
+   * With a 10-bit address, this includes the address's low byte, the first
+   * byte of `p_data_out`.
+   * @throws hal::broken_pipe - the device acknowledged its address, then didn't
+   * acknowledge a byte of `p_data_out` or the read address of a
+   * write-then-read. Its `progress` is the number of bytes of `p_data_out` the
+   * device acknowledged.
    * @throws hal::io_error - a misplaced start or stop condition was detected
    * on the bus.
    * @throws hal::timed_out - the bus made no progress for at least the stall
@@ -551,6 +559,9 @@ public:
                    mem::scatter_span<hal::byte const> p_data_out,
                    mem::scatter_span<hal::byte> p_data_in)
   {
+    if ((p_data_out.length() == 0) and (p_data_in.length() == 0)) {
+      return;
+    }
     run(p_address, p_data_out, p_data_in, polled_data{ this });
   }
 
@@ -734,20 +745,14 @@ private:
       .clear(i2c_cr1::pos)
       .clear(i2c_cr1::stop);
 
-    // A transaction with nothing to read still addresses the device, as a
-    // write with no data.
-    if ((p_data_out.length() != 0) or (read_length == 0)) {
+    if (p_data_out.length() != 0) {
       send_address(hal::i2c_operation::write);
-      if (p_data_out.length() == 0) {
-        clear_addr();
-      } else {
-        // Until BTF, the last two bytes written, in the data and shift
-        // registers, may not have reached the device.
-        m_in_flight = 2;
-        p_data.write(p_data_out);
-        wait_for(i2c_sr1::byte_transfered_finish);
-        m_in_flight = 0;
-      }
+      // Until BTF, the last two bytes written, in the data and shift
+      // registers, may not have reached the device.
+      m_in_flight = 2;
+      p_data.write(p_data_out);
+      wait_for(i2c_sr1::byte_transfered_finish);
+      m_in_flight = 0;
 
       if (read_length == 0) {
         bit_modify(regs.cr1).set(i2c_cr1::stop);
@@ -937,7 +942,8 @@ private:
   /**
    * @brief Throw if the peripheral reports an error
    *
-   * @throws hal::no_such_device - acknowledge failure
+   * @throws hal::no_such_device - see `throw_not_acknowledged()`
+   * @throws hal::broken_pipe - see `throw_not_acknowledged()`
    * @throws hal::io_error - bus error or overrun
    * @throws arbitration_lost - another controller won the bus
    */
@@ -948,7 +954,7 @@ private:
     if (bit_extract<i2c_sr1::ack_failure>(status)) {
       bit_modify(regs.sr1).clear(i2c_sr1::ack_failure);
       bit_modify(regs.cr1).set(i2c_cr1::stop);
-      throw hal::no_such_device(m_address, this);
+      throw_not_acknowledged(status);
     }
     if (bit_extract<i2c_sr1::bus_error>(status) or
         bit_extract<i2c_sr1::over_under_run>(status)) {
@@ -960,6 +966,40 @@ private:
     if (bit_extract<i2c_sr1::arbitration_lost>(status)) {
       throw arbitration_lost{};
     }
+  }
+
+  /**
+   * @brief Throw the exception for a NACK
+   *
+   * A device refuses a byte once it is in the shift register. That byte, and
+   * the next one if it is waiting in the data register, have moved but
+   * weren't acknowledged. TxE tells the two cases apart, since it isn't set
+   * after a NACK (RM0008 section 26.6.6).
+   *
+   * @param p_status - status register 1, from before the stop condition, which
+   * clears TxE
+   * @throws hal::no_such_device - the device never answered: nothing has moved
+   * yet, or the only byte it refused was the low byte of a 10-bit address
+   * @throws hal::broken_pipe - the device answered, then refused a byte or the
+   * read address of a write-then-read
+   */
+  [[noreturn]] void throw_not_acknowledged(hal::u32 p_status) const
+  {
+    hal::u32 unacknowledged = 0;
+    if (m_in_flight != 0) {
+      unacknowledged = bit_extract<i2c_sr1::tx_empty>(p_status) ? 1U : 2U;
+    }
+    hal::u32 const acknowledged =
+      (m_progress > unacknowledged) ? (m_progress - unacknowledged) : 0U;
+
+    // A 10-bit address is sent as 0b11110XX, then its low byte as the first
+    // byte written.
+    constexpr auto ten_bit_marker = hal::bit_mask::from<6, 2>();
+    bool const ten_bit = (bit_extract<ten_bit_marker>(m_address) == 0b1'1110U);
+    if ((m_progress == 0) or (ten_bit and (acknowledged == 0))) {
+      throw hal::no_such_device(m_address, this);
+    }
+    throw hal::broken_pipe(this, acknowledged);
   }
 
   /**

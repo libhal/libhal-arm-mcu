@@ -60,6 +60,7 @@ hal::static_ref<hal::output_pin> status_led();
 hal::static_ref<hal::input_pin> input_pin();
 hal::static_ref<hal::serial> console();
 hal::static_ref<hal::adc16> adc();
+hal::static_ref<hal::i2c> i2c();
 hal::static_ref<hal::spi_channel> spi_channel();
 hal::static_ref<memory_copier> copier();
 

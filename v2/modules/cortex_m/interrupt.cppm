@@ -53,7 +53,8 @@ concept irq_enum =
  *
  * All core IRQs are enabled by default.
  */
-export enum class irq : irq_t {
+export enum class irq : irq_t
+{
   top_of_stack = -16,
   reset = -15,
   non_maskable_interrupt = -14,
@@ -595,6 +596,47 @@ void initialize_interrupts()
 {
   initialize_interrupts<static_cast<irq_t>(max_possible_irq)>();
 }
+
+/**
+ * @brief Masks all interrupts for as long as it lives, then restores the
+ * previous mask
+ *
+ * For the few register accesses that must run back to back, where an
+ * interrupt landing in between could delay them, for example a peripheral
+ * sequence that must finish before the next byte arrives. Keep its scope as
+ * short as possible: every interrupt waits until it ends.
+ *
+ * Interrupts that were already masked when it was created stay masked when
+ * it is destroyed, so guards can nest.
+ */
+export class interrupt_mask_guard
+{
+public:
+  interrupt_mask_guard()
+  {
+#if defined(__arm__)
+    asm volatile("mrs %0, primask" : "=r"(m_primask));
+#endif
+    disable_all_interrupts();
+  }
+
+  interrupt_mask_guard(interrupt_mask_guard const&) = delete;
+  interrupt_mask_guard& operator=(interrupt_mask_guard const&) = delete;
+  interrupt_mask_guard(interrupt_mask_guard&&) = delete;
+  interrupt_mask_guard& operator=(interrupt_mask_guard&&) = delete;
+
+  ~interrupt_mask_guard()
+  {
+    if ((m_primask & 1U) == 0) {
+      enable_all_interrupts();
+    }
+  }
+
+private:
+  /// PRIMASK when the guard was created. Bit 0 set means interrupts were
+  /// already masked.
+  u32 m_primask = 0;
+};
 }  // namespace hal::cortex_m
 
 // Single version for ALL Cortex-M processors

@@ -46,7 +46,7 @@ namespace hal::stm32f1 {
  * wrap it in a `hal::thread_safe_i2c`, which makes callers wait instead.
  *
  * A transaction throws `hal::timed_out` if the bus makes no progress for at
- * least the stall timeout, 100 ms unless the constructor is given another,
+ * least the stall timeout, 25 ms unless the constructor is given another,
  * for example while a device holds SCL low. The timeout is counted in polls
  * of the peripheral, so it needs no clock. In practice a poll takes longer
  * than the count assumes, so a stall takes longer to detect. The exception's
@@ -148,7 +148,7 @@ private:
  * last three bytes of a read, are polled.
  *
  * A transaction throws `hal::timed_out` if the bus makes no progress for at
- * least the stall timeout, 100 ms unless the constructor is given another.
+ * least the stall timeout, 25 ms unless the constructor is given another.
  * The polled steps count polls, as `hal::stm32f1::polled_i2c` does, and the
  * DMA transfers wait on the waiter, which times them to the waiter
  * provider's granularity. The exception's `progress` is the number of bytes

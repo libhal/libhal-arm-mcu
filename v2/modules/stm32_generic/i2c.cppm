@@ -258,11 +258,12 @@ struct i2c_reg_t
 
 /// How long a transaction waits for the bus to make progress, for example
 /// while a device stretches the clock, before throwing `hal::timed_out`,
-/// unless the application chooses another stall timeout. Long enough for
-/// devices that stretch the clock for tens of milliseconds, such as some
-/// humidity sensors while they measure.
+/// unless the application chooses another stall timeout. Matches the SMBus
+/// clock-low timeout. A device that stretches the clock for longer needs a
+/// longer one. The Sensirion SHT21, for example, can hold SCL low while it
+/// measures temperature, which takes up to 85 ms.
 export constexpr hal::time_duration default_i2c_stall_timeout =
-  std::chrono::milliseconds(100);
+  std::chrono::milliseconds(25);
 
 /// Clock control and rise time settings for an STM32 I2C bus
 export struct i2c_timing
@@ -406,8 +407,10 @@ export u32 compute_stall_polls(hal::time_duration p_stall_timeout,
  * number of polls that takes at least the stall timeout given to the
  * constructor.
  *
- * Only master mode with 7-bit addressing in hardware is supported; a 10-bit
- * address is sent as described in `hal::i2c::transaction()`.
+ * Only master mode with 7-bit addressing is supported. After an address of
+ * `0b111'10XX`, the peripheral waits for a second address byte (RM0008 section
+ * 26.3.3), which this driver doesn't send, so a device that acknowledges such
+ * an address causes `hal::timed_out`.
  */
 export class i2c
 {
@@ -516,8 +519,6 @@ public:
    * @param p_data_in - buffer for the bytes read, possibly spread across
    * chunks
    * @throws hal::no_such_device - the device didn't acknowledge its address.
-   * With a 10-bit address, this includes the address's low byte, the first
-   * byte of `p_data_out`.
    * @throws hal::broken_pipe - the device acknowledged its address, then didn't
    * acknowledge a byte of `p_data_out` or the read address of a
    * write-then-read. Its `progress` is the number of bytes of `p_data_out` the
@@ -778,26 +779,22 @@ private:
    * @param p_status - status register 1, from before the stop condition, which
    * clears TxE
    * @throws hal::no_such_device - the device never answered: nothing has moved
-   * yet, or the only byte it refused was the low byte of a 10-bit address
+   * yet
    * @throws hal::broken_pipe - the device answered, then refused a byte or the
    * read address of a write-then-read
    */
   [[noreturn]] void throw_not_acknowledged(hal::u32 p_status) const
   {
+    if (m_progress == 0) {
+      throw hal::no_such_device(m_address, this);
+    }
+
     hal::u32 unacknowledged = 0;
     if (m_in_flight != 0) {
       unacknowledged = bit_extract<i2c_sr1::tx_empty>(p_status) ? 1U : 2U;
     }
     hal::u32 const acknowledged =
       (m_progress > unacknowledged) ? (m_progress - unacknowledged) : 0U;
-
-    // A 10-bit address is sent as 0b11110XX, then its low byte as the first
-    // byte written.
-    constexpr auto ten_bit_marker = hal::bit_mask::from<6, 2>();
-    bool const ten_bit = (bit_extract<ten_bit_marker>(m_address) == 0b1'1110U);
-    if ((m_progress == 0) or (ten_bit and (acknowledged == 0))) {
-      throw hal::no_such_device(m_address, this);
-    }
     throw hal::broken_pipe(this, acknowledged);
   }
 

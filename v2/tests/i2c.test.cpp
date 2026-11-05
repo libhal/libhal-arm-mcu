@@ -37,7 +37,6 @@ constexpr hal::u32 cr1_enable = 0x0001;
 constexpr hal::u32 cr1_start = 0x0100;
 constexpr hal::u32 cr1_stop = 0x0200;
 constexpr hal::byte address = 0x50;
-constexpr hal::byte ten_bit_address = 0b111'1011;
 
 /// Plain memory laid out like the peripheral's registers, and a bus that uses
 /// it, with status register 1 set to `p_sr1` once the bus is configured
@@ -131,39 +130,22 @@ void i2c_transaction_test()
     expect(that % cr1_stop == (fake.cr1() & cr1_stop));
   };
 
-  "a NACK on the first written byte is still broken_pipe"_test = []() {
-    // Setup
-    fake_bus fake(sr1_start | sr1_addr | sr1_tx_empty | sr1_ack_failure);
+  "a NACK on the first written byte is broken_pipe with no progress"_test =
+    []() {
+      // Setup
+      fake_bus fake(sr1_start | sr1_addr | sr1_tx_empty | sr1_ack_failure);
+      hal::u32 progress = 1;
 
-    // Exercise + Verify
-    expect(throws<hal::broken_pipe>(
-      [&]() { fake.bus.transaction(address, { one_byte }, {}); }));
-  };
+      // Exercise
+      try {
+        fake.bus.transaction(address, { one_byte }, {});
+      } catch (hal::broken_pipe const& p_error) {
+        progress = p_error.progress;
+      }
 
-  "a NACK on a 10-bit address's low byte throws no_such_device"_test = []() {
-    // Setup
-    fake_bus fake(sr1_start | sr1_addr | sr1_tx_empty | sr1_ack_failure);
-
-    // Exercise + Verify
-    expect(throws<hal::no_such_device>(
-      [&]() { fake.bus.transaction(ten_bit_address, { one_byte }, {}); }));
-  };
-
-  "a NACK after a 10-bit address's low byte throws broken_pipe"_test = []() {
-    // Setup
-    fake_bus fake(sr1_start | sr1_addr | sr1_tx_empty | sr1_ack_failure);
-    hal::u32 progress = 0;
-
-    // Exercise
-    try {
-      fake.bus.transaction(ten_bit_address, { three_bytes }, {});
-    } catch (hal::broken_pipe const& p_error) {
-      progress = p_error.progress;
-    }
-
-    // Verify
-    expect(that % 2 == progress);
-  };
+      // Verify
+      expect(that % 0 == progress);
+    };
 
   "a NACK after a whole write counts every written byte"_test = []() {
     // Setup

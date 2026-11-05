@@ -576,6 +576,9 @@ public:
    * installed. The peripheral's error interrupt must be routed to
    * `handle_error_interrupt()`.
    *
+   * If both `p_data_out` and `p_data_in` are empty, this returns without
+   * touching the peripheral or needing a waiter.
+   *
    * @tparam Dma - the platform's DMA channel type
    * @param p_address - 7-bit address of the target device
    * @param p_data_out - bytes to write, possibly spread across chunks
@@ -584,8 +587,13 @@ public:
    * @param p_transmit - channel serving the peripheral's transmit DMA
    * request
    * @param p_receive - channel serving the peripheral's receive DMA request
-   * @throws hal::no_such_device - the device didn't acknowledge its address
-   * or a byte written to it.
+   * @throws hal::no_such_device - the device didn't acknowledge its address.
+   * With a 10-bit address, this includes the address's low byte, the first
+   * byte of `p_data_out`.
+   * @throws hal::broken_pipe - the device acknowledged its address, then didn't
+   * acknowledge a byte of `p_data_out` or the read address of a
+   * write-then-read. Its `progress` is the number of bytes of `p_data_out` the
+   * device acknowledged.
    * @throws hal::io_error - a misplaced start or stop condition was detected
    * on the bus, or a DMA transfer failed.
    * @throws hal::timed_out - the bus made no progress for at least the stall
@@ -601,6 +609,9 @@ public:
                    Dma& p_transmit,
                    Dma& p_receive)
   {
+    if ((p_data_out.length() == 0) and (p_data_in.length() == 0)) {
+      return;
+    }
     dma_stop<Dma> const stop{ .bus = this,
                               .transmit = &p_transmit,
                               .receive = &p_receive };
@@ -910,7 +921,7 @@ private:
    * @throws hal::io_error - the DMA transfer failed
    * @throws hal::timed_out - the transfer moved no bytes within the stall
    * timeout. Its progress includes the bytes the transfer did move.
-   * @throws see `check_errors()`
+   * @throws see `check_transfer_errors()`
    */
   template<class Dma>
   void wait_for_transfer(Dma& p_dma,
@@ -919,7 +930,7 @@ private:
   {
     auto& regs = reg();
     while (true) {
-      check_errors();
+      check_transfer_errors(p_dma, p_size);
       auto const left = p_dma.remaining();
       if (left == 0) {
         m_progress += static_cast<hal::u32>(p_size);
@@ -932,11 +943,31 @@ private:
       bit_modify(regs.cr2).set(i2c_cr2::error_intr_en);
       if (not p_operation.block_for(m_stall_timeout) and
           (p_dma.remaining() == left)) {
-        check_errors();
+        check_transfer_errors(p_dma, p_size);
         m_progress += static_cast<hal::u32>(p_size - left);
         throw hal::timed_out(this, reported_progress());
       }
     }
+  }
+
+  /**
+   * @brief Throw if the peripheral reports an error during a DMA transfer
+   *
+   * A NACK counts the bytes the transfer has moved. The DMA requests stop
+   * first, so that this count and the TxE flag that `check_errors()` reads
+   * describe the same moment.
+   *
+   * @throws see `check_errors()`
+   */
+  template<class Dma>
+  void check_transfer_errors(Dma& p_dma, std::size_t p_size)
+  {
+    auto& regs = reg();
+    if (bit_extract<i2c_sr1::ack_failure>(regs.sr1)) {
+      bit_modify(regs.cr2).clear(i2c_cr2::dma_en);
+      m_progress += static_cast<hal::u32>(p_size - p_dma.remaining());
+    }
+    check_errors();
   }
 
   /**

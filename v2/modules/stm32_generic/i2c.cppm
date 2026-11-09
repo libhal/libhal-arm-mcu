@@ -19,7 +19,6 @@ module;
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
-#include <optional>
 #include <span>
 #include <type_traits>
 
@@ -436,16 +435,16 @@ public:
    * bus can't run as slowly as requested, or if the peripheral's input clock
    * is outside what that mode allows: 2 MHz to 50 MHz, and at least 4 MHz for
    * fast mode (RM0008 section 26.3.3). Also if the stall timeout given to the
-   * constructor isn't positive, or takes more polls than 32 bits can count:
-   * over 171 seconds at 50 MHz.
+   * constructor isn't positive.
    */
   void configure(hal::i2c_settings const& p_settings, hal::hertz p_frequency)
   {
     auto const timing = compute_i2c_timing(p_settings.clock_rate, p_frequency);
+    // Only a timeout that isn't positive gives zero polls, which would time
+    // out at once.
     auto const stall_polls =
       hal::cortex_m::apb_polls_for(p_frequency, m_stall_timeout);
-    if ((m_stall_timeout <= hal::time_duration::zero()) or
-        not stall_polls.has_value()) {
+    if (stall_polls == 0) {
       throw hal::operation_not_supported(this);
     }
 
@@ -469,7 +468,7 @@ public:
       .clear(i2c_ccr::fast_mode_duty)
       .insert<i2c_ccr::ccr>(timing.ccr);
     bit_modify(regs.trise).insert<i2c_trise::rise_time>(timing.rise_time);
-    m_stall_polls = *stall_polls;
+    m_stall_polls = stall_polls;
     bit_modify(regs.cr1)
       .clear(i2c_cr1::smbus_mode)
       .set(i2c_cr1::peripheral_enable);

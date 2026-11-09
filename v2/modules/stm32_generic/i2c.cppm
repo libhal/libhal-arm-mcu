@@ -669,7 +669,7 @@ private:
     // Left alone, the peripheral would wait for the bus to be free. Whether to
     // wait is the caller's decision.
     if (bit_extract<i2c_sr2::bus_busy>(regs.sr2)) {
-      throw hal::resource_unavailable_try_again(this);
+      throw_bus_taken();
     }
 
     m_address = p_address;
@@ -750,7 +750,7 @@ private:
     while (not bit_extract<i2c_sr1::start>(regs.sr1)) {
       check_errors();
       if ((polls == 0) and (m_progress == 0)) {
-        throw hal::resource_unavailable_try_again(this);
+        throw_bus_taken();
       }
       spend_poll(polls);
     }
@@ -981,8 +981,20 @@ private:
     }
     if (bit_extract<i2c_sr1::arbitration_lost>(status)) {
       bit_modify(regs.sr1).clear(i2c_sr1::arbitration_lost);
-      throw hal::resource_unavailable_try_again(this);
+      throw_bus_taken();
     }
+  }
+
+  /**
+   * @brief Throw the exception for a bus that something else holds
+   *
+   * Three places throw it, and calling this is smaller than throwing at each.
+   *
+   * @throws hal::resource_unavailable_try_again - always
+   */
+  [[noreturn]] void throw_bus_taken() const
+  {
+    throw hal::resource_unavailable_try_again(this);
   }
 
   /**

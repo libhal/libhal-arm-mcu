@@ -86,7 +86,7 @@ struct i2c_signals
 };
 
 /// @throws hal::operation_not_supported - if `p_id` is not `i2c1` or `i2c2`.
-i2c_signals signals_for(peripheral p_id)
+constexpr i2c_signals signals_for(peripheral p_id)
 {
   switch (p_id) {
     case peripheral::i2c1:
@@ -110,7 +110,7 @@ constinit std::array<hal::stm32_generic::i2c*, 2> dma_drivers{};
 template<std::size_t Index>
 void i2c_error_isr()
 {
-  if (auto* const driver = dma_drivers[Index]) {
+  if (auto* const driver = dma_drivers[Index]; driver != nullptr) {
     driver->handle_error_interrupt();
   }
 }

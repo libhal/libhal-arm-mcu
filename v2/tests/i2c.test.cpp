@@ -266,11 +266,11 @@ void i2c_test()
     auto const slow_polls = hal::cortex_m::apb_polls_for(8 * MHz, 25ms);
 
     // Verify
-    expect(that % 1'800'000 == polls.value());
-    expect(that % 100'000 == slow_polls.value());
+    expect(that % 1'800'000 == polls);
+    expect(that % 100'000 == slow_polls);
   };
 
-  "configure rejects a stall timeout it can't count"_test = []() {
+  "configure rejects a stall timeout that isn't positive"_test = []() {
     // Setup
     std::array<hal::u32, 16> registers{};
     auto const configure_with = [&](hal::time_duration p_stall_timeout) {
@@ -283,10 +283,10 @@ void i2c_test()
       throws<hal::operation_not_supported>([&]() { configure_with(0ms); }));
     expect(
       throws<hal::operation_not_supported>([&]() { configure_with(-1ms); }));
-    // 4,294,967,295 polls at 50 MHz take about 171.8 seconds.
-    expect(
-      throws<hal::operation_not_supported>([&]() { configure_with(172s); }));
-    expect(nothrow([&]() { configure_with(171s); }));
+    expect(nothrow([&]() { configure_with(1ns); }));
+    // Over 4,294,967,295 polls, about 171.8 seconds at 50 MHz, the count stops
+    // at that many polls.
+    expect(nothrow([&]() { configure_with(1h); }));
   };
 
   "fast mode uses a 1:2 high:low duty cycle"_test = []() {

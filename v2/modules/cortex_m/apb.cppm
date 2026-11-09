@@ -12,10 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-module;
-
-#include <optional>
-
 export module hal.arm_mcu.cortex_m:apb;
 
 import hal;
@@ -44,10 +40,9 @@ export constexpr hal::u32 apb_cycles_per_transfer = 2;
  * @param p_apb_clock - the clock of the APB bus the peripheral is on, which
  * isn't always the peripheral's own clock
  * @param p_duration - how long the polls must take at least
- * @return std::optional<hal::u32> - the number of polls, as
- * `hal::polls_for()` returns it
+ * @return hal::u32 - the number of polls, as `hal::polls_for()` returns it
  */
-export [[nodiscard]] constexpr std::optional<hal::u32> apb_polls_for(
+export [[nodiscard]] constexpr hal::u32 apb_polls_for(
   hal::hertz p_apb_clock,
   hal::time_duration p_duration)
 {

@@ -76,11 +76,12 @@ public:
    * @param p_stall_timeout - how long a transaction waits for the bus to make
    * progress before throwing `hal::timed_out`. It must be longer than any
    * device on the bus stretches the clock. It is counted in polls, rounded
-   * up, so a transaction never gives up sooner.
+   * up, so a transaction never gives up sooner, except that the count stops
+   * at 2^32 polls: about 4 minutes with PCLK1 at its 36 MHz maximum, before
+   * the extra cycles each poll takes.
    * @throws hal::operation_not_supported - if `p_id` is not `i2c1` or `i2c2`,
    * if `p_settings` can't be achieved (see `configure()`), or if
-   * `p_stall_timeout` isn't positive or is too long to count: over about 4
-   * minutes with PCLK1 at its 36 MHz maximum.
+   * `p_stall_timeout` isn't positive.
    * @throws hal::device_or_resource_busy - if another driver has claimed the
    * peripheral or one of its pins.
    */

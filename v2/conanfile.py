@@ -125,7 +125,8 @@ class libhal_arm_mcu_conan(ConanFile):
         # alpha.18 adds hal::broken_pipe and the progress of hal::timed_out,
         # which the I2C drivers report.
         self.requires("libhal/[>=5.0.0-alpha.18 <6, include_prerelease]")
-        self.requires("libhal-util/[>=6.0.0-alpha.4 <7, include_prerelease]")
+        # alpha.6 adds hal::polls_for, which counts the I2C stall timeout.
+        self.requires("libhal-util/[>=6.0.0-alpha.6 <7, include_prerelease]")
         # 0.2.0 iterates a scatter_span by element, which the I2C driver uses,
         # and by chunk with spans(). It also has 0.1.1's fix for
         # sub_scatter_span() on an already trimmed view, which the I2C driver

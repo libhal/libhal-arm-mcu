@@ -19,7 +19,7 @@ module;
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
-#include <limits>
+#include <optional>
 #include <span>
 #include <type_traits>
 
@@ -355,49 +355,6 @@ export i2c_timing compute_i2c_timing(hal::hertz p_clock_rate,
 }
 
 /**
- * @brief Compute how many polls of the peripheral take at least a stall
- * timeout, without touching any hardware
- *
- * A poll reads a peripheral register, and every APB read takes at least two
- * input clock cycles: the protocol's setup and access phases. The count is
- * rounded up, and polls that take longer only make the wait longer, so the
- * polls never take less than `p_stall_timeout`.
- *
- * @param p_stall_timeout - how long a wait must last before giving up
- * @param p_frequency - the peripheral's input clock (PCLK1 on the STM32F1)
- * @return u32 - the number of polls
- * @throws hal::operation_not_supported - if the stall timeout or the input
- * clock is zero or negative, or the stall timeout takes more polls than 32
- * bits can count: over 171 seconds at 50 MHz.
- */
-export u32 compute_stall_polls(hal::time_duration p_stall_timeout,
-                               hal::hertz p_frequency)
-{
-  using namespace mp_units::si::unit_symbols;
-  constexpr u64 cycles_per_poll = 2;
-  constexpr u64 ns_per_second = 1'000'000'000;
-  // polls = timeout (ns) * frequency (Hz) / (2 cycles * 1e9 ns per second),
-  // rounded up, in integers
-  constexpr u64 ns_hz_per_poll = cycles_per_poll * ns_per_second;
-  constexpr u64 max_polls = std::numeric_limits<u32>::max();
-
-  u64 const frequency = p_frequency.numerical_value_in(Hz);
-  if ((p_stall_timeout <= hal::time_duration::zero()) or (frequency == 0)) {
-    throw hal::operation_not_supported(nullptr);
-  }
-
-  // Checking against the longest countable timeout first also keeps the
-  // product below from overflowing.
-  auto const timeout = static_cast<u64>(p_stall_timeout.count());
-  if (timeout > ((max_polls * ns_hz_per_poll) / frequency)) {
-    throw hal::operation_not_supported(nullptr);
-  }
-
-  return static_cast<u32>(((timeout * frequency) + (ns_hz_per_poll - 1)) /
-                          ns_hz_per_poll);
-}
-
-/**
  * @brief A generic i2c implementation for all stm32 series MCUs
  *
  * This class is meant to only be used by platform libraries or drivers
@@ -473,17 +430,24 @@ public:
    *
    * @param p_settings - i2c settings
    * @param p_frequency - the peripheral's input clock (PCLK1 on the
-   * STM32F1), not the bus rate
+   * STM32F1), not the bus rate. It is also the clock of the APB bus the
+   * peripheral is on, which times the polls that count the stall timeout.
    * @throws hal::operation_not_supported - if the clock rate is zero, if the
    * bus can't run as slowly as requested, or if the peripheral's input clock
    * is outside what that mode allows: 2 MHz to 50 MHz, and at least 4 MHz for
    * fast mode (RM0008 section 26.3.3). Also if the stall timeout given to the
-   * constructor can't be counted (see `compute_stall_polls()`).
+   * constructor isn't positive, or takes more polls than 32 bits can count:
+   * over 171 seconds at 50 MHz.
    */
   void configure(hal::i2c_settings const& p_settings, hal::hertz p_frequency)
   {
     auto const timing = compute_i2c_timing(p_settings.clock_rate, p_frequency);
-    auto const stall_polls = compute_stall_polls(m_stall_timeout, p_frequency);
+    auto const stall_polls =
+      hal::cortex_m::apb_polls_for(p_frequency, m_stall_timeout);
+    if ((m_stall_timeout <= hal::time_duration::zero()) or
+        not stall_polls.has_value()) {
+      throw hal::operation_not_supported(this);
+    }
 
     auto& regs = reg();
     // Reset clears a bus left busy by an interrupted transfer. CCR and TRISE
@@ -505,7 +469,7 @@ public:
       .clear(i2c_ccr::fast_mode_duty)
       .insert<i2c_ccr::ccr>(timing.ccr);
     bit_modify(regs.trise).insert<i2c_trise::rise_time>(timing.rise_time);
-    m_stall_polls = stall_polls;
+    m_stall_polls = *stall_polls;
     bit_modify(regs.cr1)
       .clear(i2c_cr1::smbus_mode)
       .set(i2c_cr1::peripheral_enable);
@@ -648,7 +612,7 @@ private:
       bus->clear_addr();
       for (auto& byte : p_data) {
         bus->wait_for(i2c_sr1::rx_not_empty);
-        byte = bus->received();
+        byte = static_cast<hal::byte>(bus->reg().data_reg);
         bus->m_progress++;
       }
     }
@@ -701,10 +665,11 @@ private:
            mem::scatter_span<hal::byte> p_data_in,
            Data const& p_data)
   {
+    auto& regs = reg();
     // Left alone, the peripheral would wait for the bus to be free. Whether to
     // wait is the caller's decision.
-    if (bit_extract<i2c_sr2::bus_busy>(reg().sr2)) {
-      throw_bus_taken();
+    if (bit_extract<i2c_sr2::bus_busy>(regs.sr2)) {
+      throw hal::resource_unavailable_try_again(this);
     }
 
     m_address = p_address;
@@ -712,55 +677,83 @@ private:
     m_in_flight = 0;
 
     try {
-      transfer(p_data_out, p_data_in, p_data);
+      std::size_t const read_length = p_data_in.length();
+      bit_modify(regs.cr1)
+        .set(i2c_cr1::peripheral_enable)
+        .set(i2c_cr1::ack_enable)
+        .clear(i2c_cr1::pos)
+        .clear(i2c_cr1::stop);
+
+      if (p_data_out.length() != 0) {
+        send_address(hal::i2c_operation::write);
+        // Until BTF, the last two bytes written, in the data and shift
+        // registers, may not have reached the device.
+        m_in_flight = 2;
+        p_data.write(p_data_out);
+        wait_for(i2c_sr1::byte_transfered_finish);
+        m_in_flight = 0;
+
+        if (read_length == 0) {
+          bit_modify(regs.cr1).set(i2c_cr1::stop);
+          wait_until_clear(regs.cr1, i2c_cr1::stop);
+          return;
+        }
+      }
+
+      // A repeated start when bytes were written first.
+      send_address(hal::i2c_operation::read);
+      read(p_data_in, p_data);
+      m_progress = static_cast<hal::u32>(p_data_out.length() + read_length);
+      wait_until_clear(regs.cr1, i2c_cr1::stop);
     } catch (...) {
-      release_bus();
+      // Wait for the stop condition to go out, so that the next transaction
+      // doesn't find the bus busy because of this one. CR1 must not be
+      // written until then either, and PE must not be cleared before the end
+      // of the communication (RM0008 section 26.6.1). A stuck bus can't send
+      // a stop condition, so the wait gives up after the stall bound.
+      if (bit_extract<i2c_sr2::master>(regs.sr2) and
+          not bit_extract<i2c_cr1::stop>(regs.cr1)) {
+        bit_modify(regs.cr1).set(i2c_cr1::stop);
+      }
+      auto polls = m_stall_polls;
+      while (bit_extract<i2c_cr1::stop>(regs.cr1) and (polls != 0)) {
+        polls--;
+      }
+      // Disabling the peripheral resets its state machine, and clearing START
+      // drops a start condition still waiting for the bus. The next
+      // transaction enables the peripheral again.
+      bit_modify(regs.cr1)
+        .clear(i2c_cr1::start)
+        .clear(i2c_cr1::peripheral_enable);
       throw;
     }
   }
 
-  template<class Data>
-  void transfer(mem::scatter_span<hal::byte const> p_data_out,
-                mem::scatter_span<hal::byte> p_data_in,
-                Data const& p_data)
-  {
-    auto& regs = reg();
-    std::size_t const read_length = p_data_in.length();
-    bit_modify(regs.cr1)
-      .set(i2c_cr1::peripheral_enable)
-      .set(i2c_cr1::ack_enable)
-      .clear(i2c_cr1::pos)
-      .clear(i2c_cr1::stop);
-
-    if (p_data_out.length() != 0) {
-      send_address(hal::i2c_operation::write);
-      // Until BTF, the last two bytes written, in the data and shift
-      // registers, may not have reached the device.
-      m_in_flight = 2;
-      p_data.write(p_data_out);
-      wait_for(i2c_sr1::byte_transfered_finish);
-      m_in_flight = 0;
-
-      if (read_length == 0) {
-        bit_modify(regs.cr1).set(i2c_cr1::stop);
-        wait_until_clear(regs.cr1, i2c_cr1::stop);
-        return;
-      }
-    }
-
-    // A repeated start when bytes were written first.
-    send_address(hal::i2c_operation::read);
-    read(p_data_in, p_data);
-    m_progress = static_cast<hal::u32>(p_data_out.length() + read_length);
-    wait_until_clear(regs.cr1, i2c_cr1::stop);
-  }
-
-  /// Generate a start condition and send the address byte
+  /**
+   * @brief Generate a start condition and send the address byte
+   *
+   * The peripheral sends the transaction's first start condition once the bus
+   * is free, so until then the bus belongs to something else. A repeated start
+   * comes after bytes this transaction sent, while it holds the bus.
+   *
+   * @throws hal::resource_unavailable_try_again - the first start condition
+   * didn't go out within the stall bound
+   * @throws hal::timed_out - a repeated start, or the address, didn't go out
+   * within the stall bound
+   * @throws see `check_errors()`
+   */
   void send_address(hal::i2c_operation p_operation)
   {
     auto& regs = reg();
     bit_modify(regs.cr1).set(i2c_cr1::start);
-    wait_for_start();
+    auto polls = m_stall_polls;
+    while (not bit_extract<i2c_sr1::start>(regs.sr1)) {
+      check_errors();
+      if ((polls == 0) and (m_progress == 0)) {
+        throw hal::resource_unavailable_try_again(this);
+      }
+      spend_poll(polls);
+    }
     regs.data_reg = hal::to_8_bit_address(m_address, p_operation);
     wait_for(i2c_sr1::addr);
   }
@@ -804,7 +797,7 @@ private:
         bit_modify(regs.cr1).set(i2c_cr1::stop);
       }
       wait_for(i2c_sr1::rx_not_empty);
-      *ending[0] = received();
+      *ending[0] = static_cast<hal::byte>(regs.data_reg);
     } else if (length == 2) {
       // POS makes the cleared ACK apply to the second byte.
       bit_modify(regs.cr1).clear(i2c_cr1::ack_enable).set(i2c_cr1::pos);
@@ -819,9 +812,9 @@ private:
       {
         hal::cortex_m::interrupt_mask_guard const masked;
         bit_modify(regs.cr1).set(i2c_cr1::stop);
-        *ending[0] = received();
+        *ending[0] = static_cast<hal::byte>(regs.data_reg);
       }
-      *ending[1] = received();
+      *ending[1] = static_cast<hal::byte>(regs.data_reg);
       bit_modify(regs.cr1).clear(i2c_cr1::pos);
     } else {
       auto body = p_data_in.sub_scatter_span({ .count = body_length });
@@ -840,13 +833,13 @@ private:
       // interrupt_mask_guard in read(), in the 1-byte case.
       {
         hal::cortex_m::interrupt_mask_guard const masked;
-        *ending[0] = received();
+        *ending[0] = static_cast<hal::byte>(regs.data_reg);
         bit_modify(regs.cr1).set(i2c_cr1::stop);
-        *ending[1] = received();
+        *ending[1] = static_cast<hal::byte>(regs.data_reg);
       }
       m_progress += 2;
       wait_for(i2c_sr1::rx_not_empty);
-      *ending[2] = received();
+      *ending[2] = static_cast<hal::byte>(regs.data_reg);
     }
   }
 
@@ -947,8 +940,16 @@ private:
   /**
    * @brief Throw if the peripheral reports an error
    *
-   * @throws hal::no_such_device - see `throw_not_acknowledged()`
-   * @throws hal::broken_pipe - see `throw_not_acknowledged()`
+   * A device refuses a byte once it is in the shift register. That byte, and
+   * the next one if it is waiting in the data register, have moved but
+   * weren't acknowledged. TxE tells the two cases apart, since it isn't set
+   * after a NACK (RM0008 section 26.6.6). It is read before the stop
+   * condition, which clears it.
+   *
+   * @throws hal::no_such_device - a NACK before the device answered: nothing
+   * has moved yet
+   * @throws hal::broken_pipe - a NACK after the device answered, on a byte or
+   * the read address of a write-then-read
    * @throws hal::io_error - bus error or overrun
    * @throws hal::resource_unavailable_try_again - another controller won the
    * bus
@@ -960,7 +961,16 @@ private:
     if (bit_extract<i2c_sr1::ack_failure>(status)) {
       bit_modify(regs.sr1).clear(i2c_sr1::ack_failure);
       bit_modify(regs.cr1).set(i2c_cr1::stop);
-      throw_not_acknowledged(status);
+      if (m_progress == 0) {
+        throw hal::no_such_device(m_address, this);
+      }
+      hal::u32 unacknowledged = 0;
+      if (m_in_flight != 0) {
+        unacknowledged = bit_extract<i2c_sr1::tx_empty>(status) ? 1U : 2U;
+      }
+      hal::u32 const acknowledged =
+        (m_progress > unacknowledged) ? (m_progress - unacknowledged) : 0U;
+      throw hal::broken_pipe(this, acknowledged);
     }
     if (bit_extract<i2c_sr1::bus_error>(status) or
         bit_extract<i2c_sr1::over_under_run>(status)) {
@@ -971,69 +981,7 @@ private:
     }
     if (bit_extract<i2c_sr1::arbitration_lost>(status)) {
       bit_modify(regs.sr1).clear(i2c_sr1::arbitration_lost);
-      throw_bus_taken();
-    }
-  }
-
-  /// @throws hal::resource_unavailable_try_again - always
-  [[noreturn]] void throw_bus_taken() const
-  {
-    throw hal::resource_unavailable_try_again(this);
-  }
-
-  /**
-   * @brief Throw the exception for a NACK
-   *
-   * A device refuses a byte once it is in the shift register. That byte, and
-   * the next one if it is waiting in the data register, have moved but
-   * weren't acknowledged. TxE tells the two cases apart, since it isn't set
-   * after a NACK (RM0008 section 26.6.6).
-   *
-   * @param p_status - status register 1, from before the stop condition, which
-   * clears TxE
-   * @throws hal::no_such_device - the device never answered: nothing has moved
-   * yet
-   * @throws hal::broken_pipe - the device answered, then refused a byte or the
-   * read address of a write-then-read
-   */
-  [[noreturn]] void throw_not_acknowledged(hal::u32 p_status) const
-  {
-    if (m_progress == 0) {
-      throw hal::no_such_device(m_address, this);
-    }
-
-    hal::u32 unacknowledged = 0;
-    if (m_in_flight != 0) {
-      unacknowledged = bit_extract<i2c_sr1::tx_empty>(p_status) ? 1U : 2U;
-    }
-    hal::u32 const acknowledged =
-      (m_progress > unacknowledged) ? (m_progress - unacknowledged) : 0U;
-    throw hal::broken_pipe(this, acknowledged);
-  }
-
-  /**
-   * @brief Spin until a start condition goes out
-   *
-   * The peripheral sends the transaction's first start condition once the bus
-   * is free, so until then the bus belongs to something else. A repeated start
-   * comes after bytes this transaction sent, while it holds the bus.
-   *
-   * @throws hal::resource_unavailable_try_again - the first start condition
-   * didn't go out within the stall bound
-   * @throws hal::timed_out - a repeated start didn't go out within the stall
-   * bound
-   * @throws see `check_errors()`
-   */
-  void wait_for_start()
-  {
-    auto& regs = reg();
-    auto polls = m_stall_polls;
-    while (not bit_extract<i2c_sr1::start>(regs.sr1)) {
-      check_errors();
-      if ((polls == 0) and (m_progress == 0)) {
-        throw_bus_taken();
-      }
-      spend_poll(polls);
+      throw hal::resource_unavailable_try_again(this);
     }
   }
 
@@ -1090,46 +1038,12 @@ private:
     return (m_progress > m_in_flight) ? (m_progress - m_in_flight) : 0;
   }
 
-  /// @return the byte in the data register
-  hal::byte received()
-  {
-    return static_cast<hal::byte>(reg().data_reg);
-  }
-
   /// Clears ADDR, which reading SR1 and then SR2 does
   void clear_addr()
   {
     auto& regs = reg();
     [[maybe_unused]] auto const sr1 = regs.sr1;
     [[maybe_unused]] auto const sr2 = regs.sr2;
-  }
-
-  /**
-   * @brief Stop driving the bus after a failed transaction
-   *
-   * Waits for the stop condition to go out, so that the next transaction
-   * doesn't find the bus busy because of this one. CR1 must not be written
-   * until then either, and PE must not be cleared before the end of the
-   * communication (RM0008 section 26.6.1). A stuck bus can't send a stop
-   * condition, so the wait gives up after the stall bound.
-   */
-  void release_bus()
-  {
-    auto& regs = reg();
-    if (bit_extract<i2c_sr2::master>(regs.sr2) and
-        not bit_extract<i2c_cr1::stop>(regs.cr1)) {
-      bit_modify(regs.cr1).set(i2c_cr1::stop);
-    }
-    auto polls = m_stall_polls;
-    while (bit_extract<i2c_cr1::stop>(regs.cr1) and (polls != 0)) {
-      polls--;
-    }
-    // Disabling the peripheral resets its state machine, and clearing START
-    // drops a start condition still waiting for the bus. The next transaction
-    // enables the peripheral again.
-    bit_modify(regs.cr1)
-      .clear(i2c_cr1::start)
-      .clear(i2c_cr1::peripheral_enable);
   }
 
   [[nodiscard]] i2c_reg_t& reg()

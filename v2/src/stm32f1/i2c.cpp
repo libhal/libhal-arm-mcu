@@ -40,7 +40,7 @@ struct i2c_pins
 };
 
 /// @throws hal::operation_not_supported - if `p_id` is not `i2c1` or `i2c2`.
-uptr peripheral_to_register(peripheral p_id)
+constexpr uptr peripheral_to_register(peripheral p_id)
 {
   // See Chapter 3.3 "Memory map" in RM0008 for these magic numbers
   switch (p_id) {
@@ -54,7 +54,7 @@ uptr peripheral_to_register(peripheral p_id)
 }
 
 /// @throws hal::operation_not_supported - if `p_id` is not `i2c1` or `i2c2`.
-i2c_pins pins_for(peripheral p_id)
+constexpr i2c_pins pins_for(peripheral p_id)
 {
   // See the pin definitions table in the STM32F103 datasheets (DS5319,
   // DS5792). I2C1 uses its default pins; its PB8/PB9 remap isn't supported.

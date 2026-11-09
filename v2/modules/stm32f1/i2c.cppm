@@ -179,7 +179,7 @@ public:
    * progress before throwing `hal::timed_out`
    * @throws hal::operation_not_supported - if `p_id` is not `i2c1` or `i2c2`,
    * if `p_settings` can't be achieved (see `configure()`), or if
-   * `p_stall_timeout` can't be counted (see `polled_i2c::polled_i2c()`).
+   * `p_stall_timeout` isn't positive.
    * @throws hal::device_or_resource_busy - if another driver has claimed the
    * peripheral, one of its pins, or one of its DMA channels.
    */

@@ -12,10 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-module;
-
-#include <atomic>
-
 export module hal.arm_mcu.stm32f1:i2c;
 
 import hal;
@@ -36,11 +32,11 @@ namespace hal::stm32f1 {
  * it needs no interrupts, no DMA channels and no waiter, but keeps the CPU
  * busy for the whole transaction: about 25 microseconds per byte at 400 kHz.
  *
- * The controller doesn't lock the bus. Drivers in one context can share it
- * as is. A transaction that starts while another is in progress, from
- * another context or an interrupt, throws `hal::device_or_resource_busy`
- * instead of corrupting it. To use the bus from several threads or contexts,
- * wrap it in a `hal::thread_safe_i2c`, which makes callers wait instead.
+ * The controller doesn't lock the bus or check for a transaction in progress.
+ * Drivers in one context can share it as is. To use the bus from several
+ * threads or contexts, wrap it in a `hal::thread_safe_i2c`, which makes them
+ * take turns. Without one, a transaction that starts while another is in
+ * progress, from another context or an interrupt, corrupts both.
  *
  * A transaction throws `hal::timed_out` if the bus makes no progress for at
  * least the stall timeout, 25 ms unless the constructor is given another,
@@ -114,25 +110,21 @@ public:
    * The bus never runs faster than requested. A rate above 400 kHz runs at
    * 400 kHz.
    *
+   * Don't call it while a transaction is in progress, which it would corrupt.
+   *
    * @param p_settings - the new bus settings
    * @throws hal::operation_not_supported - if the clock rate is zero or the
    * bus can't run as slowly as requested.
-   * @throws hal::device_or_resource_busy - if a transaction on this bus is in
-   * progress.
    */
   void configure(hal::i2c_settings const& p_settings);
 
 private:
-  /// @throws hal::device_or_resource_busy - if another transaction on this
-  /// bus is in progress
   void driver_transaction(hal::byte p_address,
                           mem::scatter_span<hal::byte const> p_data_out,
                           mem::scatter_span<hal::byte> p_data_in) override;
 
   peripheral m_id;
   hal::stm32_generic::i2c m_driver;
-  /// Set while a transaction or configure() is in progress
-  std::atomic_flag m_busy;
 };
 
 }  // namespace hal::stm32f1

@@ -186,7 +186,14 @@ public:
   systick_timer& operator=(systick_timer&&) = delete;
 
 private:
+  /// The largest reload value the 24-bit counter holds
   static constexpr u32 maximum = 0x00FF'FFFF;
+  /// The most cycles one count takes. The counter counts from its reload
+  /// value down to 0, so a reload value of N takes N + 1 cycles.
+  static constexpr u64 max_count = u64{ maximum } + 1;
+  /// The fewest cycles one count takes. A reload value of 0 never fires,
+  /// since the interrupt fires when the count falls from 1 to 0.
+  static constexpr u64 min_count = 2;
 
   static void isr()
   {
@@ -221,13 +228,14 @@ private:
   }
 
   /// Load the counter with the next chunk of m_remaining_counts and start it.
+  /// A chunk of 1 cycle, which the counter can't count, runs as 2.
   void load_next_count()
   {
-    auto const count = std::min(m_remaining_counts, u64{ maximum });
-    m_remaining_counts -= count;
+    auto const count = std::clamp(m_remaining_counts, min_count, max_count);
+    m_remaining_counts -= std::min(count, m_remaining_counts);
     sys_tick->current_value = 0;
-    // NOTE: Safe to cast without narrowing: count is at most `maximum`.
-    sys_tick->reload = static_cast<std::uint32_t>(count);
+    // NOTE: Safe to cast without narrowing: count - 1 is at most `maximum`.
+    sys_tick->reload = static_cast<std::uint32_t>(count - 1);
     systick_start();
   }
 
@@ -249,10 +257,9 @@ private:
   {
     systick_stop();
 
-    auto cycle_count = hal::cycles_per(m_frequency, p_delay);
-    if (cycle_count < 1) {
-      cycle_count = 1;
-    }
+    // Rounds up, so the delay is never shorter than asked. A delay that isn't
+    // positive gives 0, which load_next_count() runs as its shortest count.
+    auto const cycle_count = hal::cycles_per(m_frequency, p_delay);
 
     m_mode = p_mode;
     m_period_counts = cycle_count;

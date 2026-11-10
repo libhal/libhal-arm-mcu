@@ -123,7 +123,9 @@ class libhal_arm_mcu_conan(ConanFile):
         # TODO(#228): drop include_prerelease once libhal 5.0.0 and libhal-util
         # 6.0.0 are released.
         self.requires("libhal/[>=5.0.0-alpha.13 <6, include_prerelease]")
-        self.requires("libhal-util/[>=6.0.0-alpha.1 <7, include_prerelease]")
+        # alpha.6 makes hal::cycles_per round up, which the SysTick timer needs
+        # so that a delay is never shorter than asked.
+        self.requires("libhal-util/[>=6.0.0-alpha.6 <7, include_prerelease]")
 
     def layout(self):
         build_path = Path("build") / (

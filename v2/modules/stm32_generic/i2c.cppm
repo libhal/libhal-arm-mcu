@@ -1034,7 +1034,7 @@ private:
    * @param p_polls - the wait's polls left
    * @throws hal::timed_out - the bound is spent
    */
-  void spend_poll(hal::u32& p_polls)
+  void spend_poll(hal::u64& p_polls)
   {
     if (p_polls == 0) {
       throw hal::timed_out(this, reported_progress());
@@ -1067,7 +1067,7 @@ private:
   hal::time_duration m_stall_timeout;
   hal::notifier m_notifier;
   /// Polls each wait makes before giving up, set by `configure()`
-  hal::u32 m_stall_polls = 0;
+  hal::u64 m_stall_polls = 0;
   /// Bytes of the transaction in progress moved through the data register so
   /// far, written ones first, then read ones
   hal::u32 m_progress = 0;

@@ -461,8 +461,7 @@ void i2c_test()
     expect(
       throws<hal::operation_not_supported>([&]() { configure_with(-1ms); }));
     expect(nothrow([&]() { configure_with(1ns); }));
-    // Over 4,294,967,295 polls, about 171.8 seconds at 50 MHz, the count stops
-    // at that many polls.
+    // An hour at 50 MHz is 90,000,000,000 polls, past 32 bits.
     expect(nothrow([&]() { configure_with(1h); }));
   };
 

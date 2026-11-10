@@ -12,10 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// compute_i2c_timing() and the stall poll count are pure arithmetic, so they
-// run on the host. Transactions run against plain memory standing in for the
-// registers: status register 1 keeps the flags a test sets, so a wait for a set
-// flag passes at once and a wait for any other flag finds the NACK.
+// compute_i2c_timing() is pure arithmetic, so it runs on the host.
+// Transactions run against plain memory standing in for the registers: status
+// register 1 keeps the flags a test sets, so a wait for a set flag passes at
+// once and a wait for any other flag finds the NACK. A fake steady clock moves
+// one tick each time it is read, so a wait that never ends runs out of time
+// after a known number of reads.
 
 #include <array>
 #include <chrono>
@@ -38,15 +40,37 @@ constexpr hal::u32 cr1_start = 0x0100;
 constexpr hal::u32 cr1_stop = 0x0200;
 constexpr hal::byte address = 0x50;
 
+/// A 1 MHz steady clock that moves one tick each time it is read
+class fake_clock : public hal::steady_clock
+{
+public:
+  hal::u64 now = 0;
+  hal::hertz frequency = 1'000'000 * mp_units::si::hertz;
+
+private:
+  hal::hertz driver_frequency() override
+  {
+    return frequency;
+  }
+
+  hal::u64 driver_uptime() override
+  {
+    return now++;
+  }
+};
+
 /// Plain memory laid out like the peripheral's registers, and a bus that uses
 /// it, with status register 1 set to `p_sr1` once the bus is configured
+///
+/// With an 8 MHz input clock, the default 100 kHz bus has a 10 microsecond
+/// SCL period: 10 ticks of the fake clock.
 struct fake_bus
 {
-  explicit fake_bus(hal::u32 p_sr1)
-    : bus(registers.data())
+  explicit fake_bus(hal::u32 p_sr1, hal::i2c_settings const& p_settings = {})
+    : bus(registers.data(), clock)
   {
     using namespace mp_units::si::unit_symbols;
-    bus.configure(hal::i2c_settings{}, 8 * MHz);
+    bus.configure(p_settings, 8 * MHz);
     sr1() = p_sr1;
   }
 
@@ -71,12 +95,14 @@ struct fake_bus
   }
 
   std::array<hal::u32, 16> registers{};
+  fake_clock clock;
   hal::stm32_generic::i2c bus;
 };
 
 void i2c_transaction_test()
 {
   using namespace boost::ut;
+  using namespace std::chrono_literals;
 
   static constexpr std::array<hal::byte, 3> three_bytes{ 0x11, 0x22, 0x33 };
   static constexpr std::array<hal::byte, 1> one_byte{ 0x11 };
@@ -226,6 +252,69 @@ void i2c_transaction_test()
     expect(that % 1 == progress);
   };
 
+  // Writing 3 bytes is 38 clock cycles: 9 for each byte with the address,
+  // plus a start and a stop. Twice that, at 10 ticks a cycle, plus 1,001 ticks
+  // for the default 1 ms of slack with the tick in progress, is 1,761 ticks.
+  // A stalled wait reads the clock once a poll, and gives up on the read that
+  // reaches the limit. The stop that follows reads it a few more times.
+
+  "a stall times out at its time limit, not sooner"_test = []() {
+    // Setup
+    // The start condition goes out, then the address never does.
+    fake_bus fake(sr1_start);
+
+    // Exercise
+    expect(throws<hal::timed_out>(
+      [&]() { fake.bus.transaction(address, { three_bytes }, {}); }));
+
+    // Verify
+    expect(that % fake.clock.now > 1'761);
+    expect(that % fake.clock.now < 1'771);
+  };
+
+  "a longer transaction has a longer time limit"_test = []() {
+    // Setup
+    fake_bus fake(sr1_start);
+    std::array<hal::byte, 30> const thirty_bytes{};
+
+    // Exercise
+    expect(throws<hal::timed_out>(
+      [&]() { fake.bus.transaction(address, { thirty_bytes }, {}); }));
+
+    // Verify
+    // 281 clock cycles, doubled at 10 ticks each, plus the slack: 6,621 ticks
+    expect(that % fake.clock.now > 6'621);
+    expect(that % fake.clock.now < 6'631);
+  };
+
+  "the slack in the settings lengthens the time limit"_test = []() {
+    // Setup
+    fake_bus fake(sr1_start, { .slack = 5ms });
+
+    // Exercise
+    expect(throws<hal::timed_out>(
+      [&]() { fake.bus.transaction(address, { three_bytes }, {}); }));
+
+    // Verify
+    // 760 ticks for the transaction, plus 5,001 for the slack
+    expect(that % fake.clock.now > 5'761);
+    expect(that % fake.clock.now < 5'771);
+  };
+
+  "a slack that isn't positive counts as none"_test = []() {
+    // Setup
+    fake_bus fake(sr1_start, { .slack = -1ms });
+
+    // Exercise
+    expect(throws<hal::timed_out>(
+      [&]() { fake.bus.transaction(address, { three_bytes }, {}); }));
+
+    // Verify
+    // 760 ticks for the transaction, plus the tick in progress
+    expect(that % fake.clock.now > 761);
+    expect(that % fake.clock.now < 771);
+  };
+
   "a stop condition that can't go out doesn't hang a failure"_test = []() {
     // Setup
     // Nothing clears STOP here, as on a bus with a line stuck low.
@@ -258,34 +347,16 @@ void i2c_test()
     expect(that % 37 == timing.rise_time);
   };
 
-  "a poll of a peripheral on APB takes at least two cycles"_test = []() {
-    // Exercise
-    // 100 ms at 36 MHz is 3,600,000 cycles.
-    auto const polls = hal::cortex_m::apb_polls_for(36 * MHz, 100ms);
-    // 25 ms at 8 MHz is 200,000 cycles.
-    auto const slow_polls = hal::cortex_m::apb_polls_for(8 * MHz, 25ms);
-
-    // Verify
-    expect(that % 1'800'000 == polls);
-    expect(that % 100'000 == slow_polls);
-  };
-
-  "configure rejects a stall timeout that isn't positive"_test = []() {
+  "configure rejects a steady clock with no frequency"_test = []() {
     // Setup
     std::array<hal::u32, 16> registers{};
-    auto const configure_with = [&](hal::time_duration p_stall_timeout) {
-      hal::stm32_generic::i2c bus(registers.data(), p_stall_timeout);
-      bus.configure(hal::i2c_settings{}, 50 * MHz);
-    };
+    fake_clock clock;
+    clock.frequency = 0 * Hz;
+    hal::stm32_generic::i2c bus(registers.data(), clock);
 
     // Exercise + Verify
-    expect(
-      throws<hal::operation_not_supported>([&]() { configure_with(0ms); }));
-    expect(
-      throws<hal::operation_not_supported>([&]() { configure_with(-1ms); }));
-    expect(nothrow([&]() { configure_with(1ns); }));
-    // An hour at 50 MHz is 90,000,000,000 polls, past 32 bits.
-    expect(nothrow([&]() { configure_with(1h); }));
+    expect(throws<hal::operation_not_supported>(
+      [&]() { bus.configure(hal::i2c_settings{}, 8 * MHz); }));
   };
 
   "fast mode uses a 1:2 high:low duty cycle"_test = []() {

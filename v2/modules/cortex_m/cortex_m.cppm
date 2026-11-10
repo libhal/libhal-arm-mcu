@@ -1,7 +1,6 @@
 
 export module hal.arm_mcu.cortex_m;
 
-export import :apb;
 export import :dwt_counter;
 export import :interrupt;
 export import :startup;

@@ -122,10 +122,12 @@ class libhal_arm_mcu_conan(ConanFile):
     def requirements(self):
         # TODO(#228): drop include_prerelease once libhal 5.0.0 and libhal-util
         # 6.0.0 are released.
-        # alpha.18 adds hal::broken_pipe and the progress of hal::timed_out,
-        # which the I2C drivers report.
-        self.requires("libhal/[>=5.0.0-alpha.18 <6, include_prerelease]")
-        # alpha.6 adds hal::polls_for, which counts the I2C stall timeout.
+        # alpha.19 adds the slack in hal::i2c_settings, which sets the I2C
+        # time limit. alpha.18 added hal::broken_pipe and the progress of
+        # hal::timed_out, which the I2C drivers report.
+        self.requires("libhal/[>=5.0.0-alpha.19 <6, include_prerelease]")
+        # alpha.6 adds hal::deadline_ticks and hal::i2c_transaction_clocks,
+        # which measure the I2C time limit.
         self.requires("libhal-util/[>=6.0.0-alpha.6 <7, include_prerelease]")
         # 0.2.0 iterates a scatter_span by element, which the I2C driver uses,
         # and by chunk with spans(). It also has 0.1.1's fix for

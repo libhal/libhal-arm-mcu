@@ -38,20 +38,18 @@ namespace hal::stm32f1 {
  * take turns. Without one, a transaction that starts while another is in
  * progress, from another context or an interrupt, corrupts both.
  *
- * A transaction throws `hal::timed_out` if the bus makes no progress for at
- * least the stall timeout, 25 ms unless the constructor is given another,
- * for example while a device holds SCL low. The timeout is counted in polls
- * of the peripheral, so it needs no clock. In practice a poll takes longer
- * than the count assumes, so a stall takes longer to detect. The exception's
- * `progress` is the number of bytes known to have been transferred, written
- * ones first, then read ones.
+ * A transaction throws `hal::timed_out` if it takes longer than twice its own
+ * length at the bus's clock rate, plus the slack in its settings, for example
+ * while a device holds SCL low. See "Timeout" in `hal::i2c`. A steady clock
+ * measures the limit. The exception's `progress` is the number of bytes known
+ * to have been transferred, written ones first, then read ones.
  *
  * A transaction throws `hal::resource_unavailable_try_again` if the bus is busy
  * when it starts, or if another controller wins arbitration. It never waits for
  * the bus or retries: see "A busy bus or lost arbitration" in `hal::i2c`.
  *
  * ```cpp
- * static hal::stm32f1::polled_i2c i2c1(hal::stm32f1::peripheral::i2c1);
+ * static hal::stm32f1::polled_i2c i2c1(hal::stm32f1::peripheral::i2c1, clock);
  * auto const found = hal::probe(i2c1, 0x68);
  * ```
  */
@@ -70,23 +68,21 @@ public:
    * released, when the controller is destroyed.
    *
    * @param p_id - which I2C peripheral to use. Must be `i2c1` or `i2c2`.
+   * @param p_clock - the steady clock that measures each transaction's time
+   * limit. It must outlive the controller.
    * @param p_settings - bus settings. The clock rate must be at or below
    * the limit of every device on the bus, which `hal::i2c_bus_rate()`
    * computes at compile time. The default, 100 kHz, is safe for any device.
-   * @param p_stall_timeout - how long a transaction waits for the bus to make
-   * progress before throwing `hal::timed_out`. It must be longer than any
-   * device on the bus stretches the clock. It is counted in polls, rounded
-   * up, so a transaction never gives up sooner.
+   * The slack must cover the longest any device on the bus stretches the
+   * clock, which `hal::i2c_bus_slack()` computes at compile time.
    * @throws hal::operation_not_supported - if `p_id` is not `i2c1` or `i2c2`,
-   * if `p_settings` can't be achieved (see `configure()`), or if
-   * `p_stall_timeout` isn't positive.
+   * or if `p_settings` can't be achieved (see `configure()`).
    * @throws hal::device_or_resource_busy - if another driver has claimed the
    * peripheral or one of its pins.
    */
-  explicit polled_i2c(peripheral p_id,
-                      hal::i2c_settings const& p_settings = {},
-                      hal::time_duration p_stall_timeout =
-                        hal::stm32_generic::default_i2c_stall_timeout);
+  polled_i2c(peripheral p_id,
+             hal::steady_clock& p_clock [[clang::lifetimebound]],
+             hal::i2c_settings const& p_settings = {});
 
   polled_i2c(polled_i2c const&) = delete;
   polled_i2c& operator=(polled_i2c const&) = delete;
@@ -97,7 +93,7 @@ public:
   ~polled_i2c();
 
   /**
-   * @brief Change the bus's clock rate
+   * @brief Change the bus's clock rate and slack
    *
    * @warning Every device on the bus sees the new rate. A device that sees a
    * rate faster than it supports can misread traffic meant for another
@@ -112,8 +108,9 @@ public:
    * Don't call it while a transaction is in progress, which it would corrupt.
    *
    * @param p_settings - the new bus settings
-   * @throws hal::operation_not_supported - if the clock rate is zero or the
-   * bus can't run as slowly as requested.
+   * @throws hal::operation_not_supported - if the clock rate is zero, the
+   * bus can't run as slowly as requested, or the steady clock's frequency is
+   * zero.
    */
   void configure(hal::i2c_settings const& p_settings);
 

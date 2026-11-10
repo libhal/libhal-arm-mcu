@@ -31,7 +31,6 @@ libhal_add_library(arm-mcu
     MODULES
         modules/arm_mcu.cppm
         modules/cortex_m/cortex_m.cppm
-        modules/cortex_m/apb.cppm
         modules/cortex_m/dwt_counter.cppm
         modules/cortex_m/interrupt.cppm
         modules/cortex_m/startup.cppm

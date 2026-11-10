@@ -19,6 +19,7 @@ module;
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <span>
 #include <type_traits>
 
@@ -258,15 +259,6 @@ struct i2c_reg_t
   hal::u32 volatile filter;
 };
 
-/// How long a transaction waits for the bus to make progress, for example
-/// while a device stretches the clock, before throwing `hal::timed_out`,
-/// unless the application chooses another stall timeout. Matches the SMBus
-/// clock-low timeout. A device that stretches the clock for longer needs a
-/// longer one. The Sensirion SHT21, for example, can hold SCL low while it
-/// measures temperature, which takes up to 85 ms.
-export constexpr hal::time_duration default_i2c_stall_timeout =
-  std::chrono::milliseconds(25);
-
 /// Clock control and rise time settings for an STM32 I2C bus
 export struct i2c_timing
 {
@@ -363,10 +355,9 @@ export i2c_timing compute_i2c_timing(hal::hertz p_clock_rate,
  *
  * There are two transactions. One polls every byte and needs nothing else.
  * The other moves the data bytes by DMA, sleeping on the calling context's
- * waiter while they move, and polls the rest. Neither needs a clock: a
- * polled wait gives up after a number of polls that takes at least the
- * stall timeout given to the constructor, and a DMA wait after that long
- * without progress, as timed by the waiter.
+ * waiter while they move, and polls the rest. Both have the time limit
+ * described in "Timeout" in `hal::i2c`, measured with the steady clock given
+ * to the constructor.
  *
  * Only master mode with 7-bit addressing is supported. After an address of
  * `0b111'10XX`, the peripheral waits for a second address byte (RM0008 section
@@ -392,13 +383,12 @@ public:
    * Accessing the registers of a peripheral that isn't powered faults.
    *
    * @param p_i2c - i2c peripheral address
-   * @param p_stall_timeout - how long a transaction waits for the bus to make
-   * progress before throwing `hal::timed_out`. `configure()` checks it.
+   * @param p_clock - the steady clock that measures each transaction's time
+   * limit. It must outlive this object.
    */
-  explicit i2c(void* p_i2c,
-               hal::time_duration p_stall_timeout = default_i2c_stall_timeout)
+  explicit i2c(void* p_i2c, hal::steady_clock& p_clock [[clang::lifetimebound]])
     : m_i2c(p_i2c)
-    , m_stall_timeout(p_stall_timeout)
+    , m_clock(p_clock)
   {
   }
 
@@ -427,26 +417,39 @@ public:
    * mode's 400 kHz runs at 400 kHz. Otherwise the rate is rounded down to
    * what the clock divider can do.
    *
+   * A transaction's time limit is twice its own length at the rate the bus
+   * actually runs, plus `p_settings.slack`, as "Timeout" in `hal::i2c`
+   * describes. A slack that isn't positive counts as none.
+   *
    * @param p_settings - i2c settings
    * @param p_frequency - the peripheral's input clock (PCLK1 on the
-   * STM32F1), not the bus rate. It is also the clock of the APB bus the
-   * peripheral is on, which times the polls that count the stall timeout.
+   * STM32F1), not the bus rate
    * @throws hal::operation_not_supported - if the clock rate is zero, if the
    * bus can't run as slowly as requested, or if the peripheral's input clock
    * is outside what that mode allows: 2 MHz to 50 MHz, and at least 4 MHz for
-   * fast mode (RM0008 section 26.3.3). Also if the stall timeout given to the
-   * constructor isn't positive.
+   * fast mode (RM0008 section 26.3.3). Also if the steady clock's frequency is
+   * zero, since it couldn't measure the time limit.
    */
   void configure(hal::i2c_settings const& p_settings, hal::hertz p_frequency)
   {
+    constexpr hal::u64 max_ticks = std::numeric_limits<hal::u64>::max();
     auto const timing = compute_i2c_timing(p_settings.clock_rate, p_frequency);
-    // Only a timeout that isn't positive gives zero polls, which would time
-    // out at once.
-    auto const stall_polls =
-      hal::cortex_m::apb_polls_for(p_frequency, m_stall_timeout);
-    if (stall_polls == 0) {
+    auto const clock_rate = m_clock->frequency();
+    hal::u64 const clock_hz =
+      clock_rate.numerical_value_in(mp_units::si::hertz);
+    if (clock_hz == 0) {
       throw hal::operation_not_supported(this);
     }
+    // One SCL period is 2 * CCR input clock cycles in standard mode and
+    // 3 * CCR in fast mode (see compute_i2c_timing()). TRISE keeps it there
+    // for rise times within the I2C specification (RM0008 section 26.6.9).
+    hal::u64 const input_hz =
+      p_frequency.numerical_value_in(mp_units::si::hertz);
+    hal::u64 const period_cycles =
+      hal::u64{ timing.ccr } * (timing.fast_mode ? 3U : 2U);
+    // The steady clock's ticks in one SCL period, rounded up
+    hal::u64 const period_ticks =
+      ((clock_hz * period_cycles) + (input_hz - 1)) / input_hz;
 
     auto& regs = reg();
     // Reset clears a bus left busy by an interrupted transfer. CCR and TRISE
@@ -468,7 +471,12 @@ public:
       .clear(i2c_ccr::fast_mode_duty)
       .insert<i2c_ccr::ccr>(timing.ccr);
     bit_modify(regs.trise).insert<i2c_trise::rise_time>(timing.rise_time);
-    m_stall_polls = stall_polls;
+    // A transaction may take twice its own length.
+    m_clock_ticks = 2 * period_ticks;
+    // Capped at half the range, so adding a transaction's length can't
+    // overflow. That is still centuries for any clock.
+    m_slack_ticks = std::min(hal::deadline_ticks(clock_rate, p_settings.slack),
+                             max_ticks / 2);
     bit_modify(regs.cr1)
       .clear(i2c_cr1::smbus_mode)
       .set(i2c_cr1::peripheral_enable);
@@ -510,12 +518,12 @@ public:
    * device acknowledged.
    * @throws hal::io_error - a misplaced start or stop condition was detected
    * on the bus.
-   * @throws hal::timed_out - the bus made no progress for at least the stall
-   * timeout after the start condition went out, for example because a device
-   * held SCL low. Its `progress` is the number of bytes known to have been
-   * transferred, written ones first, then read ones.
+   * @throws hal::timed_out - the start condition went out, then the
+   * transaction didn't finish within its time limit, for example because a
+   * device held SCL low. Its `progress` is the number of bytes known to have
+   * been transferred, written ones first, then read ones.
    * @throws hal::resource_unavailable_try_again - the bus was busy when this
-   * call started, the start condition didn't go out within the stall timeout,
+   * call started, the start condition didn't go out within the time limit,
    * or another controller won arbitration.
    */
   void transaction(hal::byte p_address,
@@ -557,12 +565,12 @@ public:
    * device acknowledged.
    * @throws hal::io_error - a misplaced start or stop condition was detected
    * on the bus, or a DMA transfer failed.
-   * @throws hal::timed_out - the bus made no progress for at least the stall
-   * timeout after the start condition went out, for example because a device
-   * held SCL low. Its `progress` is the number of bytes known to have been
-   * transferred, written ones first, then read ones.
+   * @throws hal::timed_out - the start condition went out, then the
+   * transaction didn't finish within its time limit, for example because a
+   * device held SCL low. Its `progress` is the number of bytes known to have
+   * been transferred, written ones first, then read ones.
    * @throws hal::resource_unavailable_try_again - the bus was busy when this
-   * call started, the start condition didn't go out within the stall timeout,
+   * call started, the start condition didn't go out within the time limit,
    * or another controller won arbitration.
    */
   template<byte_dma_channel Dma>
@@ -671,19 +679,24 @@ private:
       throw_bus_taken();
     }
 
+    // Counting a scatter_span's length walks its chunks, so count each once.
+    std::size_t const write_length = p_data_out.length();
+    std::size_t const read_length = p_data_in.length();
+    start_timer(
+      (hal::i2c_transaction_clocks(write_length, read_length) * m_clock_ticks) +
+      m_slack_ticks);
     m_address = p_address;
     m_progress = 0;
     m_in_flight = 0;
 
     try {
-      std::size_t const read_length = p_data_in.length();
       bit_modify(regs.cr1)
         .set(i2c_cr1::peripheral_enable)
         .set(i2c_cr1::ack_enable)
         .clear(i2c_cr1::pos)
         .clear(i2c_cr1::stop);
 
-      if (p_data_out.length() != 0) {
+      if (write_length != 0) {
         send_address(hal::i2c_operation::write);
         // Until BTF, the last two bytes written, in the data and shift
         // registers, may not have reached the device.
@@ -702,21 +715,25 @@ private:
       // A repeated start when bytes were written first.
       send_address(hal::i2c_operation::read);
       read(p_data_in, p_data);
-      m_progress = static_cast<hal::u32>(p_data_out.length() + read_length);
+      m_progress = static_cast<hal::u32>(write_length + read_length);
       wait_until_clear(regs.cr1, i2c_cr1::stop);
     } catch (...) {
       // Wait for the stop condition to go out, so that the next transaction
       // doesn't find the bus busy because of this one. CR1 must not be
       // written until then either, and PE must not be cleared before the end
       // of the communication (RM0008 section 26.6.1). A stuck bus can't send
-      // a stop condition, so the wait gives up after the stall bound.
+      // a stop condition, so the wait gives up after the limit for a
+      // transaction of one clock cycle: twice that cycle, plus the slack.
       if (bit_extract<i2c_sr2::master>(regs.sr2) and
           not bit_extract<i2c_cr1::stop>(regs.cr1)) {
         bit_modify(regs.cr1).set(i2c_cr1::stop);
       }
-      auto polls = m_stall_polls;
-      while (bit_extract<i2c_cr1::stop>(regs.cr1) and (polls != 0)) {
-        polls--;
+      start_timer(m_clock_ticks + m_slack_ticks);
+      while (true) {
+        auto const now = m_clock->uptime();
+        if (not bit_extract<i2c_cr1::stop>(regs.cr1) or (now >= m_deadline)) {
+          break;
+        }
       }
       // Disabling the peripheral resets its state machine, and clearing START
       // drops a start condition still waiting for the bus. The next
@@ -736,22 +753,25 @@ private:
    * comes after bytes this transaction sent, while it holds the bus.
    *
    * @throws hal::resource_unavailable_try_again - the first start condition
-   * didn't go out within the stall bound
+   * didn't go out within the time limit
    * @throws hal::timed_out - a repeated start, or the address, didn't go out
-   * within the stall bound
+   * within the time limit
    * @throws see `check_errors()`
    */
   void send_address(hal::i2c_operation p_operation)
   {
     auto& regs = reg();
     bit_modify(regs.cr1).set(i2c_cr1::start);
-    auto polls = m_stall_polls;
-    while (not bit_extract<i2c_sr1::start>(regs.sr1)) {
+    while (true) {
+      auto const now = m_clock->uptime();
+      if (bit_extract<i2c_sr1::start>(regs.sr1)) {
+        break;
+      }
       check_errors();
-      if ((polls == 0) and (m_progress == 0)) {
+      if ((now >= m_deadline) and (m_progress == 0)) {
         throw_bus_taken();
       }
-      spend_poll(polls);
+      check_deadline(now);
     }
     regs.data_reg = hal::to_8_bit_address(m_address, p_operation);
     wait_for(i2c_sr1::addr);
@@ -881,12 +901,13 @@ private:
    * @brief Sleep until a DMA transfer of `p_size` bytes finishes, then add
    * them to `m_progress`
    *
-   * The error interrupt wakes the context if the device stops acknowledging
-   * or the bus fails, which stalls the transfer.
+   * The context sleeps until the transfer finishes or the transaction's time
+   * limit ends. The error interrupt also wakes it if the device stops
+   * acknowledging or the bus fails, which stalls the transfer.
    *
    * @throws hal::io_error - the DMA transfer failed
-   * @throws hal::timed_out - the transfer moved no bytes within the stall
-   * timeout. Its progress includes the bytes the transfer did move.
+   * @throws hal::timed_out - the transfer didn't finish within the time
+   * limit. Its progress includes the bytes the transfer did move.
    * @throws see `check_transfer_errors()`
    */
   template<class Dma>
@@ -894,8 +915,12 @@ private:
                          dma_scope<Dma>& p_operation,
                          std::size_t p_size)
   {
+    constexpr hal::u64 nanoseconds_per_second = 1'000'000'000;
+    constexpr hal::u64 max_sleep_seconds = std::numeric_limits<hal::u32>::max();
     auto& regs = reg();
     while (true) {
+      // Reads the clock before the transfer, as wait_for() does.
+      auto const now = m_clock->uptime();
       check_transfer_errors(p_dma, p_size);
       auto const left = p_dma.remaining();
       if (left == 0) {
@@ -905,14 +930,24 @@ private:
       if (p_dma.failed()) {
         throw hal::io_error(this);
       }
-      // handle_error_interrupt() masks it again when it fires.
-      bit_modify(regs.cr2).set(i2c_cr2::error_intr_en);
-      if (not p_operation.block_for(m_stall_timeout) and
-          (p_dma.remaining() == left)) {
-        check_transfer_errors(p_dma, p_size);
+      if (now >= m_deadline) {
         m_progress += static_cast<hal::u32>(p_size - left);
         throw hal::timed_out(this, reported_progress());
       }
+      // handle_error_interrupt() masks it again when it fires.
+      bit_modify(regs.cr2).set(i2c_cr2::error_intr_en);
+      // Sleep until the deadline, rounded up. Waking sooner only loops again,
+      // so a very long sleep is cut to 2^32 seconds, which can't overflow.
+      hal::u64 const clock_hz = std::max<hal::u64>(
+        m_clock->frequency().numerical_value_in(mp_units::si::hertz), 1);
+      auto const ticks = m_deadline - now;
+      auto const seconds = std::min(ticks / clock_hz, max_sleep_seconds);
+      auto const rest_nanoseconds =
+        (((ticks % clock_hz) * nanoseconds_per_second) + (clock_hz - 1)) /
+        clock_hz;
+      auto const sleep = std::chrono::seconds(seconds) +
+                         std::chrono::nanoseconds(rest_nanoseconds);
+      static_cast<void>(p_operation.block_for(sleep));
     }
   }
 
@@ -999,47 +1034,69 @@ private:
   /**
    * @brief Spin until a status register 1 flag is set
    *
-   * @throws hal::timed_out - the flag wasn't set within the stall bound
+   * Each poll reads the clock before the flag, so a flag that is still clear
+   * after the deadline really is late, even if an interrupt ran in between.
+   *
+   * @throws hal::timed_out - the flag wasn't set within the time limit
    * @throws see `check_errors()`
    */
   void wait_for(hal::bit_mask p_flag)
   {
     auto& regs = reg();
-    auto polls = m_stall_polls;
-    while (not bit_extract(p_flag, regs.sr1)) {
+    while (true) {
+      auto const now = m_clock->uptime();
+      if (bit_extract(p_flag, regs.sr1)) {
+        return;
+      }
       check_errors();
-      spend_poll(polls);
+      check_deadline(now);
     }
   }
 
   /**
    * @brief Spin until a register bit clears
    *
-   * @throws hal::timed_out - the bit didn't clear within the stall bound
+   * Reads the clock before the bit, as `wait_for()` does.
+   *
+   * @throws hal::timed_out - the bit didn't clear within the time limit
    * @throws see `check_errors()`
    */
   void wait_until_clear(hal::u32 const volatile& p_register,
                         hal::bit_mask p_bit)
   {
-    auto polls = m_stall_polls;
-    while (bit_extract(p_bit, p_register)) {
+    while (true) {
+      auto const now = m_clock->uptime();
+      if (not bit_extract(p_bit, p_register)) {
+        return;
+      }
       check_errors();
-      spend_poll(polls);
+      check_deadline(now);
     }
   }
 
   /**
-   * @brief Count one poll against a wait's stall bound
+   * @brief Start a time limit of `p_ticks` ticks of the steady clock
    *
-   * @param p_polls - the wait's polls left
-   * @throws hal::timed_out - the bound is spent
+   * A limit past what 64 bits can count never ends.
    */
-  void spend_poll(hal::u64& p_polls)
+  void start_timer(hal::u64 p_ticks)
   {
-    if (p_polls == 0) {
+    constexpr hal::u64 max_ticks = std::numeric_limits<hal::u64>::max();
+    auto const now = m_clock->uptime();
+    m_deadline = (p_ticks > (max_ticks - now)) ? max_ticks : (now + p_ticks);
+  }
+
+  /**
+   * @brief Throw if the time limit has passed
+   *
+   * @param p_now - the steady clock's uptime, read before the hardware
+   * @throws hal::timed_out - the limit has passed
+   */
+  void check_deadline(hal::u64 p_now) const
+  {
+    if (p_now >= m_deadline) {
       throw hal::timed_out(this, reported_progress());
     }
-    p_polls--;
   }
 
   /// @return the bytes moved so far, less those that may not have reached
@@ -1063,11 +1120,17 @@ private:
   }
 
   void* m_i2c;
-  /// How long a wait lasts before giving up
-  hal::time_duration m_stall_timeout;
+  /// Measures each transaction's time limit
+  hal::ref<hal::steady_clock> m_clock;
   hal::notifier m_notifier;
-  /// Polls each wait makes before giving up, set by `configure()`
-  hal::u64 m_stall_polls = 0;
+  /// The steady clock's ticks in two SCL periods: a transaction may take
+  /// twice its own length. Set by `configure()`.
+  hal::u64 m_clock_ticks = 0;
+  /// The slack in steady clock ticks, set by `configure()`
+  hal::u64 m_slack_ticks = 0;
+  /// When the time limit of the transaction in progress ends, in steady clock
+  /// ticks
+  hal::u64 m_deadline = 0;
   /// Bytes of the transaction in progress moved through the data register so
   /// far, written ones first, then read ones
   hal::u32 m_progress = 0;

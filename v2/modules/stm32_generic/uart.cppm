@@ -184,14 +184,12 @@ public:
   {
     auto& uart_reg = reg();
 
-    for (auto const& chunk : p_data) {
-      for (auto const& byte : chunk) {
-        while (not bit_extract<status_reg::transit_empty>(uart_reg.status)) {
-          continue;
-        }
-        // Load the next byte into the data register
-        uart_reg.data = byte;
+    for (auto const byte : p_data) {
+      while (not bit_extract<status_reg::transit_empty>(uart_reg.status)) {
+        continue;
       }
+      // Load the next byte into the data register
+      uart_reg.data = byte;
     }
   }
 

@@ -122,7 +122,9 @@ class libhal_arm_mcu_conan(ConanFile):
     def requirements(self):
         # TODO(#228): drop include_prerelease once libhal 5.0.0 and libhal-util
         # 6.0.0 are released.
-        self.requires("libhal/[>=5.0.0-alpha.13 <6, include_prerelease]")
+        # alpha.16 is the first to require scatter_span 0.2.0, which iterates
+        # a scatter_span by element.
+        self.requires("libhal/[>=5.0.0-alpha.16 <6, include_prerelease]")
         self.requires("libhal-util/[>=6.0.0-alpha.1 <7, include_prerelease]")
 
     def layout(self):

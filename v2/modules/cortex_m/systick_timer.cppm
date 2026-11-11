@@ -87,6 +87,11 @@ void systick_stop()
  * Available in all ARM Cortex M series processors. Provides a generic and
  * simple timer for every platform using these processor.
  *
+ * The 24-bit counter reloads itself each time it reaches 0, so a periodic
+ * timer keeps its period exactly, without software restarting the counter. A
+ * delay longer than the counter runs as several equal counts. Each count
+ * rounds up, so such a delay runs less than one cycle per count longer than
+ * asked: a minute at 72 MHz runs 258 counts and 246 cycles long.
  */
 export class systick_timer final : public hal::timed_interrupt
 {
@@ -204,17 +209,19 @@ private:
 
     auto& active = *s_active;
 
-    // Delays longer than the 24-bit counter run as several full counts
-    // followed by the remainder.
-    if (active.m_remaining_counts > 0) {
-      active.load_next_count();
+    // The counter has already reloaded itself and is counting the next count.
+    // cancel() leaves no counts, so an interrupt still pending after it wraps
+    // the count here and returns too.
+    active.m_counts_left--;
+    if (active.m_counts_left > 0) {
       return;
     }
 
-    // Time is up. Re-arm or stop before calling the callback, so the
-    // callback is free to schedule() or cancel() the timer itself.
+    // Time is up. A periodic timer counts its next period, and a one-shot
+    // timer stops, before the callback, so the callback is free to schedule()
+    // or cancel() the timer itself.
     if (active.m_mode == timer_mode::periodic) {
-      active.start(active.m_period_counts);
+      active.m_counts_left = active.m_counts;
     } else {
       systick_stop();
       active.m_armed = false;
@@ -225,27 +232,6 @@ private:
     if (callback != nullptr) {
       callback->callback();
     }
-  }
-
-  /// Load the counter with the next chunk of m_remaining_counts and start it.
-  /// A chunk of 1 cycle, which the counter can't count, runs as 2.
-  void load_next_count()
-  {
-    // NOTE: Safe to cast without narrowing: the clamp is at most `max_count`.
-    auto const count = static_cast<u32>(
-      std::clamp<u64>(m_remaining_counts, min_count, max_count));
-    m_remaining_counts -= std::min<u64>(count, m_remaining_counts);
-    sys_tick->current_value = 0;
-    sys_tick->reload = count - 1;
-    systick_start();
-  }
-
-  /// Start counting down p_counts cycles, then fire the interrupt.
-  void start(u64 p_counts)
-  {
-    systick_stop();
-    m_remaining_counts = p_counts;
-    load_next_count();
   }
 
   bool driver_scheduled() override
@@ -259,25 +245,42 @@ private:
     systick_stop();
 
     // Rounds up, so the delay is never shorter than asked. A delay that isn't
-    // positive gives 0, which load_next_count() runs as its shortest count.
-    auto const cycle_count = hal::cycles_per(m_frequency, p_delay);
+    // positive gives 0, which runs as the shortest count.
+    auto const cycles = hal::cycles_per(m_frequency, p_delay);
+
+    // The fewest equal counts that fit the counter, each rounded up. With two
+    // or more, each is over half the counter, so the interrupt always has
+    // time to run before the next one ends.
+    u64 counts = 1;
+    u64 count = cycles;
+    if (cycles > max_count) {
+      counts = (cycles / max_count) + u64{ (cycles % max_count) != 0 };
+      count = (cycles / counts) + u64{ (cycles % counts) != 0 };
+    }
 
     m_mode = p_mode;
-    m_period_counts = cycle_count;
+    m_counts = counts;
+    m_counts_left = counts;
     m_armed = true;
     s_active = this;
 
     // Enable interrupt service routine for SysTick and use this callback as
     // the handler
     enable_interrupt(irq::systick, &isr);
-    start(cycle_count);
+
+    sys_tick->current_value = 0;
+    // NOTE: Safe to cast without narrowing: the clamp is at most `max_count`.
+    // A count of 1 cycle, which the counter can't count, runs as 2.
+    sys_tick->reload =
+      static_cast<u32>(std::clamp<u64>(count, min_count, max_count)) - 1;
+    systick_start();
   }
 
   void driver_cancel() noexcept override
   {
     systick_stop();
     m_armed = false;
-    m_remaining_counts = 0;
+    m_counts_left = 0;
   }
 
   void driver_on_expire(hal::timed_callback& p_callback) override
@@ -299,8 +302,10 @@ private:
   hertz m_frequency{ 1 * mp_units::si::unit_symbols::MHz };
   hal::timed_callback* m_callback = nullptr;
   timer_mode m_mode = timer_mode::one_shot;
-  u64 m_period_counts = 0;
-  u64 m_remaining_counts = 0;
+  /// How many counts the delay or period takes
+  u64 m_counts = 0;
+  /// How many counts are left until the timer expires
+  u64 m_counts_left = 0;
   bool m_armed = false;
 };
 }  // namespace hal::cortex_m

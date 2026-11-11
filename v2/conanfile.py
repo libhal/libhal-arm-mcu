@@ -131,9 +131,8 @@ class libhal_arm_mcu_conan(ConanFile):
         self.requires("libhal-util/[>=6.0.0-alpha.6 <7, include_prerelease]")
         # 0.3.0 adds scatter_span::empty(), which the I2C driver checks for an
         # empty transaction. From 0.2.0, a scatter_span iterates by element,
-        # which the I2C driver uses, and by chunk with spans(). 0.1.1 fixed
-        # sub_scatter_span() on an already trimmed view, which the I2C driver
-        # relies on.
+        # which the I2C and UART drivers use. 0.1.1 fixed sub_scatter_span()
+        # on an already trimmed view, which the I2C driver relies on.
         self.requires("scatter_span/[>=0.3.0 <1]")
 
     def layout(self):

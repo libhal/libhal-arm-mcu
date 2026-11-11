@@ -583,7 +583,7 @@ public:
                    Dma& p_transmit,
                    Dma& p_receive)
   {
-    if ((p_data_out.length() == 0) and (p_data_in.length() == 0)) {
+    if (p_data_out.empty() and p_data_in.empty()) {
       return;
     }
     dma_stop<Dma> const stop{ .bus = this,

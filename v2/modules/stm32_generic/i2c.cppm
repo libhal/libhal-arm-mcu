@@ -472,7 +472,10 @@ public:
       .insert<i2c_ccr::ccr>(timing.ccr);
     bit_modify(regs.trise).insert<i2c_trise::rise_time>(timing.rise_time);
     // A transaction may take twice its own length.
-    m_clock_ticks = 2 * period_ticks;
+    // NOTE: Safe to cast without narrowing: CCR is at most 0xFFF and the input
+    // clock at least 2 MHz, or 4 MHz in fast mode, so two periods are at most
+    // about 35 million ticks of a steady clock as fast as 2^32 Hz.
+    m_clock_ticks = static_cast<hal::u32>(2 * period_ticks);
     // Capped at half the range, so adding a transaction's length can't
     // overflow. That is still centuries for any clock.
     m_slack_ticks = std::min(hal::deadline_ticks(clock_rate, p_settings.slack),
@@ -530,7 +533,7 @@ public:
                    mem::scatter_span<hal::byte const> p_data_out,
                    mem::scatter_span<hal::byte> p_data_in)
   {
-    if ((p_data_out.length() == 0) and (p_data_in.length() == 0)) {
+    if (p_data_out.empty() and p_data_in.empty()) {
       return;
     }
     run(p_address, p_data_out, p_data_in, polled_data{ this });
@@ -682,9 +685,10 @@ private:
     // Counting a scatter_span's length walks its chunks, so count each once.
     std::size_t const write_length = p_data_out.length();
     std::size_t const read_length = p_data_in.length();
-    start_timer(
-      (hal::i2c_transaction_clocks(write_length, read_length) * m_clock_ticks) +
-      m_slack_ticks);
+    // Counted in 32 bits, which holds transactions of up to 477 million bytes.
+    auto const clocks =
+      hal::i2c_transaction_clocks<hal::u32>(write_length, read_length);
+    start_timer((hal::u64{ clocks } * m_clock_ticks) + m_slack_ticks);
     m_address = p_address;
     m_progress = 0;
     m_in_flight = 0;
@@ -1125,7 +1129,7 @@ private:
   hal::notifier m_notifier;
   /// The steady clock's ticks in two SCL periods: a transaction may take
   /// twice its own length. Set by `configure()`.
-  hal::u64 m_clock_ticks = 0;
+  hal::u32 m_clock_ticks = 0;
   /// The slack in steady clock ticks, set by `configure()`
   hal::u64 m_slack_ticks = 0;
   /// When the time limit of the transaction in progress ends, in steady clock

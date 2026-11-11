@@ -129,11 +129,12 @@ class libhal_arm_mcu_conan(ConanFile):
         # alpha.6 adds hal::deadline_ticks and hal::i2c_transaction_clocks,
         # which measure the I2C time limit.
         self.requires("libhal-util/[>=6.0.0-alpha.6 <7, include_prerelease]")
-        # 0.2.0 iterates a scatter_span by element, which the I2C driver uses,
-        # and by chunk with spans(). It also has 0.1.1's fix for
+        # 0.3.0 adds scatter_span::empty(), which the I2C driver checks for an
+        # empty transaction. From 0.2.0, a scatter_span iterates by element,
+        # which the I2C driver uses, and by chunk with spans(). 0.1.1 fixed
         # sub_scatter_span() on an already trimmed view, which the I2C driver
         # relies on.
-        self.requires("scatter_span/[>=0.2.0 <1]")
+        self.requires("scatter_span/[>=0.3.0 <1]")
 
     def layout(self):
         build_path = Path("build") / (

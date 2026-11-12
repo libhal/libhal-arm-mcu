@@ -15,6 +15,9 @@
 // claim() and release() only touch software state, so they run on the host.
 // power_on() and friends write RCC registers and can't.
 
+#include <cstdlib>
+#include <exception>
+
 #include <boost/ut.hpp>
 
 import hal;
@@ -67,15 +70,38 @@ void power_test()
     expect(not hal::stm32f1::is_claimed(peripheral::i2s));
   };
 
-  // These throw before touching any register, so they're safe on the host.
+#if __has_include(<sys/wait.h>)
+  // These end the program before touching any register, so they're safe on
+  // the host. aborts() runs each in a child process.
   "peripherals beyond the buses can't be powered or reset"_test = []() {
+    // Ends the child without printing the default handler's message
+    static constexpr auto quiet_terminate = []() {
+      std::set_terminate([]() { std::abort(); });
+    };
+
     // Exercise + Verify
-    expect(throws<hal::argument_out_of_domain>(
-      []() { hal::stm32f1::power_on(peripheral::independent_watchdog); }));
-    expect(throws<hal::argument_out_of_domain>([]() {
-      hal::stm32f1::reset_peripheral(peripheral::independent_watchdog);
+    expect(aborts([]() {
+      quiet_terminate();
+      hal::stm32f1::power_on(peripheral::independent_watchdog);
+    }));
+    expect(aborts([]() {
+      quiet_terminate();
+      hal::stm32f1::power_off(peripheral::independent_watchdog);
+    }));
+    expect(aborts([]() {
+      quiet_terminate();
+      static_cast<void>(hal::stm32f1::is_on(peripheral::i2s));
+    }));
+    expect(aborts([]() {
+      quiet_terminate();
+      hal::stm32f1::reset_peripheral(peripheral::cpu);
+    }));
+    expect(aborts([]() {
+      quiet_terminate();
+      hal::stm32f1::power_off(static_cast<peripheral>(200));
     }));
   };
+#endif
 
   "claiming a claimed peripheral throws"_test = []() {
     // Setup

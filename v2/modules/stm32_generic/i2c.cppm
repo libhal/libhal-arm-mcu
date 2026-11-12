@@ -866,6 +866,11 @@ private:
   /**
    * @brief Throw if the time limit has passed
    *
+   * The caller reads the clock before it reads the hardware and passes that
+   * reading here. If the clock were read after the hardware, an interrupt
+   * between the two reads could let the flag get set and the limit pass, and
+   * this would throw for a transaction that finished in time.
+   *
    * @param p_now - the steady clock's uptime, read before the hardware
    * @throws hal::timed_out - the limit has passed
    */

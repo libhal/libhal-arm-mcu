@@ -14,13 +14,19 @@
 
 module;
 
+#include <algorithm>
+#include <array>
+#include <chrono>
+#include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <span>
 
 export module hal.arm_mcu.stm32_generic:i2c;
 
 import hal;
 import hal.util;
+import hal.arm_mcu.cortex_m;
 
 namespace hal::stm32_generic {
 /// SPI Control Register 1 (mirrors the field layout, but for i2c cr1)
@@ -209,21 +215,21 @@ constexpr auto master = hal::bit_mask::from<0>();
 }  // namespace i2c_sr2
 
 namespace i2c_ccr {
-/// 0: Slow mode mode I2C
-/// 1: Fast mode mode I2C
-constexpr auto i2c_mode_sel = hal::bit_mask::from<14>();
+/// 0: Standard mode I2C
+/// 1: Fast mode I2C
+constexpr auto i2c_mode_sel = hal::bit_mask::from<15>();
+/// Fast mode duty cycle
+/// 0: SCL low/high = 2
+/// 1: SCL low/high = 16/9
+constexpr auto fast_mode_duty = hal::bit_mask::from<14>();
 /// refer to CH 18.6.8 in the User manual () for equation
 constexpr auto ccr = hal::bit_mask::from<11, 0>();
 }  // namespace i2c_ccr
 
-namespace i2c_filter {
-/// 0 : analog filter enable
-/// 1 : analog filter disable
-constexpr auto analog = hal::bit_mask::from<4>();
-
-/// Digital noise filter enabled and filtering capability up to n * TPCLK1
-constexpr auto digital_filter = hal::bit_mask::from<3, 0>();
-}  // namespace i2c_filter
+namespace i2c_trise {
+/// Maximum SCL rise time, in peripheral clock cycles plus one
+constexpr auto rise_time = hal::bit_mask::from<5, 0>();
+}  // namespace i2c_trise
 
 /// i2c register map (RM0383 CH 18.6.11)
 struct i2c_reg_t
@@ -250,16 +256,90 @@ struct i2c_reg_t
   hal::u32 volatile filter;
 };
 
-/**
- * @brief Reads the status register
- *
- * just trying to make the code more readable
- *
- * @param p_i2c_reg Peripheral register pointers
- */
-void read_status_reg2(i2c_reg_t const* p_i2c_reg)
+/// Clock control and rise time settings for an STM32 I2C bus
+export struct i2c_timing
 {
-  [[maybe_unused]] auto discard = p_i2c_reg->sr2;
+  /// CR2 FREQ field: the input clock in whole MHz
+  u32 frequency;
+  /// CCR divider field
+  u32 ccr;
+  /// TRISE field: maximum SCL rise time in peripheral clock cycles, plus one
+  u32 rise_time;
+  /// Fast mode (up to 400 kHz) with a 1:2 SCL high:low duty cycle, instead of
+  /// standard mode (up to 100 kHz)
+  bool fast_mode;
+};
+
+/**
+ * @brief Compute the FREQ, CCR and TRISE settings for an i2c clock rate,
+ * without touching any hardware
+ *
+ * The bus never runs faster than `p_clock_rate`. A rate above fast mode's
+ * 400 kHz runs at 400 kHz. Otherwise the rate is rounded down to what the
+ * clock divider can do.
+ *
+ * @param p_clock_rate - requested i2c clock rate
+ * @param p_frequency - the peripheral's input clock (PCLK1 on the STM32F1),
+ * not the bus rate
+ * @return i2c_timing - the register settings
+ * @throws hal::operation_not_supported - if the clock rate is zero, if the
+ * bus can't run as slowly as requested, or if the peripheral's input clock
+ * is outside what that mode allows: 2 MHz to 50 MHz, and at least 4 MHz for
+ * fast mode (RM0008 section 26.3.3).
+ */
+export i2c_timing compute_i2c_timing(hal::hertz p_clock_rate,
+                                     hal::hertz p_frequency)
+{
+  using namespace mp_units::si::unit_symbols;
+  constexpr hal::hertz standard_mode_max_rate = 100 * kHz;
+  constexpr hal::hertz fast_mode_max_rate = 400 * kHz;
+  constexpr hal::hertz min_input_clock = 2 * MHz;
+  constexpr hal::hertz fast_mode_min_input_clock = 4 * MHz;
+  constexpr hal::hertz max_input_clock = 50 * MHz;
+  constexpr u32 standard_mode_min_ccr = 4;
+  constexpr u32 max_ccr = 0xFFF;
+
+  // A rate fast mode can't reach runs at fast mode's top rate, which is
+  // slower than requested and so safe for the devices on the bus.
+  auto const rate = std::min(p_clock_rate, fast_mode_max_rate);
+  bool const fast_mode = rate > standard_mode_max_rate;
+  auto const min_supported_input_clock =
+    fast_mode ? fast_mode_min_input_clock : min_input_clock;
+
+  if ((rate == hal::hertz::zero()) or
+      (p_frequency < min_supported_input_clock) or
+      (p_frequency > max_input_clock)) {
+    throw hal::operation_not_supported(nullptr);
+  }
+
+  // Standard mode: SCL high and low are each CCR cycles, so one SCL period
+  // is 2 * CCR cycles. Fast mode with a 1:2 duty cycle: high is CCR and low
+  // is 2 * CCR cycles, so a period is 3 * CCR cycles. Rounding CCR up keeps
+  // the bus at or below the requested rate.
+  auto const cycles_per_ccr = fast_mode ? 3U : 2U;
+  auto const ccr_rate = cycles_per_ccr * rate;
+  auto const rounded_ccr = ((p_frequency + ccr_rate) - (1U * Hz)) / ccr_rate;
+  auto const ccr = std::max(rounded_ccr.numerical_value_in(mp_units::one),
+                            fast_mode ? 1U : standard_mode_min_ccr);
+
+  // A larger divider would be needed to go this slowly.
+  if (ccr > max_ccr) {
+    throw hal::operation_not_supported(nullptr);
+  }
+
+  // FREQ is the input clock in whole MHz. TRISE is the maximum SCL rise time
+  // in cycles of that clock, rounded down, plus one (RM0008 section 26.6.9).
+  auto const frequency = p_frequency.in(MHz, mp_units::truncated);
+  auto const max_rise_time = fast_mode ? (300U * ns) : (1000U * ns);
+  auto const rise_cycles = max_rise_time * frequency;
+
+  return {
+    .frequency = frequency.numerical_value_in(MHz),
+    .ccr = ccr,
+    .rise_time =
+      rise_cycles.numerical_value_in(mp_units::one, mp_units::truncated) + 1U,
+    .fast_mode = fast_mode,
+  };
 }
 
 /**
@@ -270,8 +350,14 @@ void read_status_reg2(i2c_reg_t const* p_i2c_reg)
  * should use the driver specific to their platform instead of this class as
  * they handle proper initialization for you.
  *
- * This driver is synchronous/blocking. It does not participate in the
- * async::context/coroutine model.
+ * A transaction polls the peripheral's status flags, so it needs no
+ * interrupts, no DMA and no waiter. Its time limit, described in "Timeout" in
+ * `hal::i2c`, is measured with the steady clock given to the constructor.
+ *
+ * Only master mode with 7-bit addressing is supported. After an address of
+ * `0b111'10XX`, the peripheral waits for a second address byte (RM0008 section
+ * 26.3.3), which this driver doesn't send, so a device that acknowledges such
+ * an address causes `hal::timed_out`.
  */
 export class i2c
 {
@@ -279,342 +365,560 @@ public:
   /**
    * @brief Construct a new i2c object
    *
-   * Care must be taken when constructing this object. The constructor does
-   * not and cannot power on the i2c peripheral. Accessing the peripheral's
-   * registers without it be powered on (or provided a clock), will result
-   * in a memory fault as the peripheral cannot ACK the CPU when it
-   * attempts to access the peripheral's registers. The power management
-   * system for each peripheral across the stm32 series of MCUs is
-   * different, meaning its not something that can efficiently be manged by
-   * this generic driver.
+   * The constructor doesn't touch the peripheral. Before calling
+   * `configure()`, the platform driver must:
    *
-   * Things that needed to be done before construction:
+   * 1. Power on the i2c peripheral pointed to by `p_i2c`.
+   * 2. Configure its SCL and SDA pins as open-drain alternate function
+   *    outputs.
    *
-   * 1. Configure pins to be controlled by the i2c peripheral pointed to by
-   *    the `p_peripheral_address` input parameter.
-   * 2. Power on the appropriate i2c peripheral
-   *
-   * After construction, execute the `configure()` function with the
-   * appropriate peripheral frequency and i2c settings.
-   *
-   * Performing these in this order will properly initialize the i2c
-   * driver and allow the usage of the `transaction()` API. Failing to
-   * execute these steps in this order will result in UB.
-   *
-   * It is unsafe to use this driver before performing the steps above.
+   * Accessing the registers of a peripheral that isn't powered faults.
    *
    * @param p_i2c - i2c peripheral address
+   * @param p_clock - the steady clock that measures each transaction's time
+   * limit. It must outlive this object.
    */
-  i2c(void* p_i2c)
+  explicit i2c(void* p_i2c,
+               hal::ref<hal::steady_clock> p_clock [[clang::lifetimebound]])
     : m_i2c(p_i2c)
+    , m_clock(p_clock)
   {
   }
 
+  i2c(i2c const&) = delete;
+  i2c& operator=(i2c const&) = delete;
+  i2c(i2c&&) = delete;
+  i2c& operator=(i2c&&) = delete;
+
   /**
-   * @brief Construct i2c uninitialized
+   * @brief Leaves the peripheral as it is
    *
-   * It is unsafe to call any API of this class before assigning a valid
-   * peripheral address.
+   * Like the constructor, the destructor doesn't touch the registers, since
+   * the peripheral may already be powered off. The platform specific driver
+   * disables the peripheral, for example by resetting it, before powering it
+   * off.
    */
-  i2c() = default;
-
-  ~i2c()
-  {
-    auto& regs = reg();
-    bit_modify(regs.cr1).clear(i2c_cr1::peripheral_enable);
-    bit_modify(regs.cr1).set(i2c_cr1::software_reset);
-    bit_modify(regs.cr1).clear(i2c_cr1::software_reset);
-  }
+  ~i2c() = default;
 
   /**
-   * @brief Configures i2c peripheral
+   * @brief Configure the i2c peripheral
    *
-   * Because each stm32 series MCU has its own unique clock tree, there is
-   * no single, simple and space efficient may to determine the system's
-   * i2c clock speed. So the caller must supply the operating frequency of
-   * the i2c peripheral for this to work. This API is meant to be called by
-   * platform specific i2c drivers that have the necessary context and
-   * library apis to retrieve the i2c peripheral's clock rate.
+   * Each stm32 series MCU has its own clock tree, so the caller supplies the
+   * peripheral's input clock.
+   *
+   * The bus never runs faster than `p_settings.clock_rate`. A rate above fast
+   * mode's 400 kHz runs at 400 kHz. Otherwise the rate is rounded down to
+   * what the clock divider can do.
+   *
+   * A transaction's time limit is twice its own length at the rate the bus
+   * actually runs, plus `p_settings.slack`, as "Timeout" in `hal::i2c`
+   * describes. A slack that isn't positive counts as none.
    *
    * @param p_settings - i2c settings
-   * @param p_frequency - peripheral operating frequency
-   * @throws hal::argument_out_of_domain - if the peripheral frequency or
-   * bus clock rate is not achievable.
+   * @param p_frequency - the peripheral's input clock (PCLK1 on the
+   * STM32F1), not the bus rate
+   * @throws hal::operation_not_supported - if the clock rate is zero, if the
+   * bus can't run as slowly as requested, or if the peripheral's input clock
+   * is outside what that mode allows: 2 MHz to 50 MHz, and at least 4 MHz for
+   * fast mode (RM0008 section 26.3.3). Also if the steady clock's frequency is
+   * zero, since it couldn't measure the time limit.
    */
-  void configure(hal::i2c::settings const& p_settings, hal::hertz p_frequency)
+  void configure(hal::i2c_settings const& p_settings, hal::hertz p_frequency)
   {
-    constexpr u32 slow_mode_max_speed = 100'000;
-    constexpr u32 min_frequency = 2'000'000;
-    constexpr u32 max_frequency = 50'000'000;
-
-    auto const freq =
-      static_cast<u32>(p_frequency.numerical_value_in(hal::hertz::unit));
-
-    if (min_frequency > freq || freq > max_frequency) {
-      throw hal::argument_out_of_domain(this);
+    constexpr hal::u64 max_ticks = std::numeric_limits<hal::u64>::max();
+    auto const timing = compute_i2c_timing(p_settings.clock_rate, p_frequency);
+    auto const clock_rate = m_clock->frequency();
+    if (clock_rate == 0) {
+      throw hal::operation_not_supported(this);
     }
+    // One SCL period is 2 * CCR input clock cycles in standard mode and
+    // 3 * CCR in fast mode (see compute_i2c_timing()). TRISE keeps it there
+    // for rise times within the I2C specification (RM0008 section 26.6.9).
+    hal::u64 const period_cycles =
+      hal::u64{ timing.ccr } * (timing.fast_mode ? 3U : 2U);
+    // The steady clock's ticks in one SCL period, rounded up
+    auto const scaled_clock =
+      mp_units::value_cast<hal::u64>(clock_rate) * period_cycles;
+    auto const input = mp_units::value_cast<hal::u64>(p_frequency);
+    hal::u64 const period_ticks =
+      (((scaled_clock + input) - (1U * mp_units::si::hertz)) / input)
+        .numerical_value_in(mp_units::one);
 
     auto& regs = reg();
+    // Reset clears a bus left busy by an interrupted transfer. CCR and TRISE
+    // can only be written while the peripheral is disabled, which reset
+    // leaves it.
     bit_modify(regs.cr1).set(i2c_cr1::software_reset);
     bit_modify(regs.cr1).clear(i2c_cr1::software_reset);
 
-    bit_modify(regs.filter)
-      .set(i2c_filter::digital_filter)
-      .clear(i2c_filter::analog);
-
-    /// I2C communication speed, fahb / (2 * ccr). The real frequency may
-    /// differ due to the analog noise filter input delay.
-    /// CH 18.6.8 in RM0383 (stm32f411 user manual)
-
-    auto const clock_rate_value = static_cast<u32>(
-      p_settings.clock_rate.numerical_value_in(hal::hertz::unit));
-    u16 const ccr_value = static_cast<u16>(freq / (2 * clock_rate_value));
-
-    if (clock_rate_value > slow_mode_max_speed) {
-      if (ccr_value > 4) {
-        bit_modify(regs.ccr)
-          .set(i2c_ccr::i2c_mode_sel)
-          .insert<i2c_ccr::ccr>(ccr_value);
-      } else {
-        throw hal::argument_out_of_domain(this);
-      }
-    } else {
-      bit_modify(regs.ccr)
-        .clear(i2c_ccr::i2c_mode_sel)
-        .insert<i2c_ccr::ccr>(ccr_value);
-    }
-
-    auto const ahb_freq = static_cast<hal::u8>(freq / 1'000'000);
+    // Transactions enable the interrupts and DMA requests they wait on.
     bit_modify(regs.cr2)
-      .set(i2c_cr2::buffer_intr_en)
-      .set(i2c_cr2::event_intr_en)
-      .set(i2c_cr2::error_intr_en)
-      .insert<i2c_cr2::apb_frequency>(ahb_freq);
+      .clear(i2c_cr2::buffer_intr_en)
+      .clear(i2c_cr2::event_intr_en)
+      .clear(i2c_cr2::error_intr_en)
+      .clear(i2c_cr2::dma_en)
+      .clear(i2c_cr2::last_dma)
+      .insert<i2c_cr2::apb_frequency>(timing.frequency);
+    bit_modify(regs.ccr)
+      .insert<i2c_ccr::i2c_mode_sel>(timing.fast_mode)
+      .clear(i2c_ccr::fast_mode_duty)
+      .insert<i2c_ccr::ccr>(timing.ccr);
+    bit_modify(regs.trise).insert<i2c_trise::rise_time>(timing.rise_time);
+    // A transaction may take twice its own length.
+    // NOTE: Safe to cast without narrowing: CCR is at most 0xFFF and the input
+    // clock at least 2 MHz, or 4 MHz in fast mode, so two periods are at most
+    // about 35 million ticks of a steady clock as fast as 2^32 Hz.
+    m_clock_ticks = static_cast<hal::u32>(2 * period_ticks);
+    // Capped at half the range, so adding a transaction's length can't
+    // overflow. That is still centuries for any clock.
+    m_slack_ticks = std::min(hal::deadline_ticks(clock_rate, p_settings.slack),
+                             max_ticks / 2);
     bit_modify(regs.cr1)
-      .set(i2c_cr1::peripheral_enable)
-      .set(i2c_cr1::ack_enable)
-      .clear(i2c_cr1::smbus_mode);
+      .clear(i2c_cr1::smbus_mode)
+      .set(i2c_cr1::peripheral_enable);
   }
 
   /**
-   * @brief Handles i2c event interrupt when using the above configuration.
+   * @brief Perform a transaction as defined in `hal::i2c::transaction()`,
+   * moving every byte by polling
    *
-   * Insert this into the appropriate i2c peripheral event interrupt.
+   * Spins on the peripheral's status flags until the transaction finishes.
+   * Needs no interrupts and no waiter. It never waits for a busy bus and never
+   * retries: the caller decides what to do about a bus it can't have.
    *
-   */
-  void handle_i2c_event() noexcept
-  {
-    auto& regs = reg();
-    auto& status = regs.sr1;
-    auto& data = regs.data_reg;
-
-    // ⚠️ WARNING: SOMETIMES STM32 I2C peripheral enable will just self
-    // reset. This will cause the i2c peripheral to misbehave, so the code
-    // enables the peripheral at each interrupt call to ensure this never
-    // happens.
-    bit_modify(regs.cr1).set(i2c_cr1::peripheral_enable);
-    if (bit_extract<i2c_sr1::start>(status)) {
-      if (!m_data_out.empty()) {
-        data = to_8_bit_address(m_address, i2c_operation::write);
-        m_state = transmission_state::transmitter;
-      } else {
-        data = to_8_bit_address(m_address, i2c_operation::read);
-        m_state = transmission_state::reciever;
-      }
-      return;
-    }
-
-    if (bit_extract<i2c_sr1::addr>(status)) {
-      if (m_state == transmission_state::reciever) {
-        switch (m_data_in.size()) {
-          case 1: {
-            bit_modify(regs.cr1).clear(i2c_cr1::ack_enable);
-            read_status_reg2(&regs);
-            break;
-          }
-          case 2: {
-            bit_modify(regs.cr1).clear(i2c_cr1::ack_enable).set(i2c_cr1::pos);
-            read_status_reg2(&regs);
-            m_data_in[1] = data;
-            m_data_in[0] = data;
-            break;
-          }
-          default: {
-            read_status_reg2(&regs);
-          }
-        }
-      } else {
-        read_status_reg2(&regs);
-      }
-      return;
-    }
-
-    if (bit_extract<i2c_sr1::tx_empty>(status)) {
-      if (!m_data_out.empty()) {
-        data = m_data_out[0];
-        m_data_out = m_data_out.subspan(1);
-      } else {
-        if (!m_data_in.empty()) {
-          bit_modify(regs.cr1).set(i2c_cr1::start);
-        } else {
-          bit_modify(regs.cr1).clear(i2c_cr1::ack_enable);
-          bit_modify(regs.cr1).set(i2c_cr1::stop);
-          m_state = transmission_state::free;
-        }
-      }
-      return;
-    }
-
-    if (bit_extract<i2c_sr1::rx_not_empty>(status)) {
-      switch (m_data_in.size()) {
-        case 2: {
-          bit_modify(regs.cr1).clear(i2c_cr1::ack_enable);
-          m_data_in[0] = data;
-          bit_modify(regs.cr1).set(i2c_cr1::stop);
-          m_data_in[1] = data;
-          m_state = transmission_state::free;
-
-          break;
-        }
-
-        case 1: {
-          m_data_in[0] = data;
-          bit_modify(regs.cr1).set(i2c_cr1::stop);
-          m_state = transmission_state::free;
-
-          break;
-        }
-
-        case 0: {
-          bit_modify(regs.cr1).set(i2c_cr1::stop).clear(i2c_cr1::ack_enable);
-          [[maybe_unused]] auto discard = data;
-          break;
-        }
-
-        default: {
-          m_data_in[0] = data;
-          m_data_in = m_data_in.subspan(1);
-        }
-      }
-    }
-  }
-
-  /**
-   * @brief Handles i2c error interrupt when using the above configuration.
+   * If both `p_data_out` and `p_data_in` are empty, this returns without
+   * touching the peripheral.
    *
-   * Insert this into the appropriate i2c peripheral error interrupt.
-   *
-   */
-  void handle_i2c_error() noexcept
-  {
-    auto& regs = reg();
-    auto& status = regs.sr1;
-
-    if (bit_extract<i2c_sr1::arbitration_lost>(status)) {
-      m_status = error_state::arbitration_lost;
-    }
-
-    if (bit_extract<i2c_sr1::timeout_error>(status)) {
-      bit_modify(regs.sr1).clear(i2c_sr1::timeout_error);
-    }
-
-    if (bit_extract<i2c_sr1::ack_failure>(status)) {
-      m_status = error_state::no_such_device;
-      bit_modify(regs.sr1).clear<i2c_sr1::ack_failure>();
-    }
-
-    if (bit_extract<i2c_sr1::bus_error>(status)) {
-      m_status = error_state::io_error;
-      bit_modify(regs.sr1).clear<i2c_sr1::bus_error>();
-    }
-  }
-
-  /**
-   * @brief Perform a transfer operation as defined in
-   * `hal::i2c::transaction`
-   *
-   * This call blocks until the entire transaction is finished.
-   *
-   * @param p_address - target i2c slave address
-   * @param p_data_out - outgoing data
-   * @param p_data_in - incoming data
-   * @throws hal::no_such_device - no device acknowledged the address.
-   * @throws hal::io_error - the i2c lines were put into an invalid state.
+   * @param p_address - 7-bit address of the target device
+   * @param p_data_out - bytes to write, possibly spread across chunks
+   * @param p_data_in - buffer for the bytes read, possibly spread across
+   * chunks
+   * @throws hal::no_such_device - the device didn't acknowledge its address.
+   * @throws hal::broken_pipe - the device acknowledged its address, then didn't
+   * acknowledge a byte of `p_data_out` or the read address of a
+   * write-then-read. Its `progress` is the number of bytes of `p_data_out` the
+   * device acknowledged.
+   * @throws hal::io_error - a misplaced start or stop condition was detected
+   * on the bus.
+   * @throws hal::timed_out - the start condition went out, then the
+   * transaction didn't finish within its time limit, for example because a
+   * device held SCL low. Its `progress` is the number of bytes known to have
+   * been transferred, written ones first, then read ones.
+   * @throws hal::resource_unavailable_try_again - the bus was busy when this
+   * call started, the start condition didn't go out within the time limit,
+   * or another controller won arbitration.
    */
   void transaction(hal::byte p_address,
-                   std::span<hal::byte const> p_data_out,
-                   std::span<hal::byte> p_data_in)
+                   mem::scatter_span<hal::byte const> p_data_out,
+                   mem::scatter_span<hal::byte> p_data_in)
   {
-    m_status = error_state::no_error;
-    m_address = p_address;
-    m_data_out = p_data_out;
-    m_data_in = p_data_in;
-    m_state = transmission_state::transmitter;
+    if (p_data_out.empty() and p_data_in.empty()) {
+      return;
+    }
+    run(p_address, p_data_out, p_data_in, polled_data{ this });
+  }
 
+private:
+  /// Moves the data bytes of a transaction by polling the data register.
+  /// The transaction takes how the data bytes move as a template parameter,
+  /// so another way, such as DMA, can reuse the rest of it. Each way adds
+  /// the bytes it moves to `m_progress`.
+  struct polled_data
+  {
+    i2c* bus;
+
+    /// Clear ADDR, then send each byte when the data register is empty
+    void write(mem::scatter_span<hal::byte const> p_data) const
+    {
+      bus->clear_addr();
+      for (auto const byte : p_data) {
+        bus->wait_for(i2c_sr1::tx_empty);
+        bus->reg().data_reg = byte;
+        bus->m_progress++;
+      }
+    }
+
+    /// Clear ADDR, then take each byte when the data register is full
+    void read(mem::scatter_span<hal::byte> p_data) const
+    {
+      bus->clear_addr();
+      for (auto& byte : p_data) {
+        bus->wait_for(i2c_sr1::rx_not_empty);
+        byte = static_cast<hal::byte>(bus->reg().data_reg);
+        bus->m_progress++;
+      }
+    }
+  };
+
+  /// Run a transaction, and release the bus if it fails
+  template<class Data>
+  void run(hal::byte p_address,
+           mem::scatter_span<hal::byte const> p_data_out,
+           mem::scatter_span<hal::byte> p_data_in,
+           Data const& p_data)
+  {
     auto& regs = reg();
-    bit_modify(regs.cr1).set(i2c_cr1::ack_enable);
-    bit_modify(regs.cr1).set(i2c_cr1::peripheral_enable);
-    bit_modify(regs.cr1).clear(i2c_cr1::stop);
-    bit_modify(regs.cr1).set(i2c_cr1::start);
+    // Left alone, the peripheral would wait for the bus to be free. Whether to
+    // wait is the caller's decision.
+    if (bit_extract<i2c_sr2::bus_busy>(regs.sr2)) {
+      throw_bus_taken();
+    }
+
+    // Counting a scatter_span's length walks its chunks, so count each once.
+    std::size_t const write_length = p_data_out.length();
+    std::size_t const read_length = p_data_in.length();
+    // Counted in 32 bits, which holds transactions of up to 477 million bytes.
+    auto const clocks =
+      hal::i2c_transaction_clocks<hal::u32>(write_length, read_length);
+    start_timer((hal::u64{ clocks } * m_clock_ticks) + m_slack_ticks);
+    m_address = p_address;
+    m_progress = 0;
+    m_in_flight = 0;
 
     try {
-      while (m_state != transmission_state::free) {
-        handle_i2c_error();
-        switch (m_status) {
-          case error_state::no_error: {
-            break;
-          }
-          case error_state::no_such_device: {
-            throw hal::no_such_device(m_address, this);
-          }
-          case error_state::io_error: {
-            throw hal::io_error(this);
-          }
-          case error_state::arbitration_lost: {
-            while (bit_extract<i2c_sr2::bus_busy>(regs.sr2)) {
-              continue;
-            }
-            bit_modify(regs.cr1)
-              .set(i2c_cr1::peripheral_enable)
-              .set(i2c_cr1::ack_enable)
-              .clear(i2c_cr1::stop);
-            bit_modify(regs.cr1).set(i2c_cr1::start);
-            break;
-          }
+      bit_modify(regs.cr1)
+        .set(i2c_cr1::peripheral_enable)
+        .set(i2c_cr1::ack_enable)
+        .clear(i2c_cr1::pos)
+        .clear(i2c_cr1::stop);
+
+      if (write_length != 0) {
+        send_address(hal::i2c_operation::write);
+        // Until BTF, the last two bytes written, in the data and shift
+        // registers, may not have reached the device.
+        m_in_flight = 2;
+        p_data.write(p_data_out);
+        wait_for(i2c_sr1::byte_transfered_finish);
+        m_in_flight = 0;
+
+        if (read_length == 0) {
+          bit_modify(regs.cr1).set(i2c_cr1::stop);
+          wait_until_clear(regs.cr1, i2c_cr1::stop);
+          return;
         }
       }
+
+      // A repeated start when bytes were written first.
+      send_address(hal::i2c_operation::read);
+      read(p_data_in, p_data);
+      m_progress = static_cast<hal::u32>(write_length + read_length);
+      wait_until_clear(regs.cr1, i2c_cr1::stop);
     } catch (...) {
-      bit_modify(regs.cr1).clear(i2c_cr1::peripheral_enable);
+      // Wait for the stop condition to go out, so that the next transaction
+      // doesn't find the bus busy because of this one. CR1 must not be
+      // written until then either, and PE must not be cleared before the end
+      // of the communication (RM0008 section 26.6.1). A stuck bus can't send
+      // a stop condition, so the wait gives up after the limit for a
+      // transaction of one clock cycle: twice that cycle, plus the slack.
+      if (bit_extract<i2c_sr2::master>(regs.sr2) and
+          not bit_extract<i2c_cr1::stop>(regs.cr1)) {
+        bit_modify(regs.cr1).set(i2c_cr1::stop);
+      }
+      start_timer(m_clock_ticks + m_slack_ticks);
+      while (true) {
+        auto const now = m_clock->uptime();
+        if (not bit_extract<i2c_cr1::stop>(regs.cr1) or (now >= m_deadline)) {
+          break;
+        }
+      }
+      // Disabling the peripheral resets its state machine, and clearing START
+      // drops a start condition still waiting for the bus. The next
+      // transaction enables the peripheral again.
+      bit_modify(regs.cr1)
+        .clear(i2c_cr1::start)
+        .clear(i2c_cr1::peripheral_enable);
       throw;
     }
   }
 
-private:
-  enum class error_state : hal::u8
+  /**
+   * @brief Generate a start condition and send the address byte
+   *
+   * The peripheral sends the transaction's first start condition once the bus
+   * is free, so until then the bus belongs to something else. A repeated start
+   * comes after bytes this transaction sent, while it holds the bus.
+   *
+   * @throws hal::resource_unavailable_try_again - the first start condition
+   * didn't go out within the time limit
+   * @throws hal::timed_out - a repeated start, or the address, didn't go out
+   * within the time limit
+   * @throws see `check_errors()`
+   */
+  void send_address(hal::i2c_operation p_operation)
   {
-    no_error = 0,
-    no_such_device,
-    io_error,
-    arbitration_lost,
-  };
+    auto& regs = reg();
+    bit_modify(regs.cr1).set(i2c_cr1::start);
+    while (true) {
+      auto const now = m_clock->uptime();
+      if (bit_extract<i2c_sr1::start>(regs.sr1)) {
+        break;
+      }
+      check_errors();
+      if ((now >= m_deadline) and (m_progress == 0)) {
+        throw_bus_taken();
+      }
+      check_deadline(now);
+    }
+    regs.data_reg = hal::to_8_bit_address(m_address, p_operation);
+    wait_for(i2c_sr1::addr);
+  }
 
-  enum class transmission_state : hal::u8
+  /// Receive the bytes after the address, following the master receiver
+  /// sequences in the reference manual (RM0008 section 26.3.3).
+  ///
+  /// The last steps of each ending run with interrupts masked. The comment
+  /// on the first masked block explains why.
+  template<class Data>
+  void read(mem::scatter_span<hal::byte> p_data_in, Data const& p_data)
   {
-    transmitter,
-    reciever,
-    free,
-  };
+    auto& regs = reg();
+    std::size_t const length = p_data_in.length();
+    // Where each of the last bytes goes, found before the ending sequences
+    // so that the steps that must run back to back store through a pointer
+    // instead of walking the buffer.
+    std::array<hal::byte*, 3> ending{};
+    auto const ending_length = std::min(length, ending.size());
+    auto const body_length = length - ending_length;
+    auto destination = ending.begin();
+    for (auto& byte : p_data_in.sub_scatter_span({ .offset = body_length })) {
+      *destination++ = &byte;
+    }
+
+    if (length == 1) {
+      // NACK the only byte, and stop after it.
+      bit_modify(regs.cr1).clear(i2c_cr1::ack_enable);
+      // The steps in each masked block must finish before the byte on the
+      // bus does, or the peripheral may receive an extra byte, read the same
+      // byte twice or corrupt the last one. Polling is fast enough, but an
+      // interrupt between the steps could delay them past that point, so
+      // interrupts are masked for these few register accesses. The STM32F1
+      // errata require this. In ES0340 Rev 17 (STM32F103xC/D/E), section
+      // 2.9.1 on page 19 sets the deadline, and workaround 2 of section 2.9.2,
+      // on pages 19 and 20, masks interrupts for the 2-byte and longer
+      // endings.
+      {
+        hal::cortex_m::interrupt_mask_guard const masked;
+        clear_addr();
+        bit_modify(regs.cr1).set(i2c_cr1::stop);
+      }
+      wait_for(i2c_sr1::rx_not_empty);
+      *ending[0] = static_cast<hal::byte>(regs.data_reg);
+    } else if (length == 2) {
+      // POS makes the cleared ACK apply to the second byte.
+      bit_modify(regs.cr1).clear(i2c_cr1::ack_enable).set(i2c_cr1::pos);
+      clear_addr();
+      // Both bytes have arrived: the first in the data register and the
+      // second in the shift register.
+      wait_for(i2c_sr1::byte_transfered_finish);
+      // Masked so an interrupt can't delay reading the first byte until the
+      // STOP is on the bus, which corrupts the second byte (ES0340 Rev 17,
+      // section 2.9.2, workaround 2, sequence 1). See the comment above the
+      // first interrupt_mask_guard in read(), in the 1-byte case.
+      {
+        hal::cortex_m::interrupt_mask_guard const masked;
+        bit_modify(regs.cr1).set(i2c_cr1::stop);
+        *ending[0] = static_cast<hal::byte>(regs.data_reg);
+      }
+      *ending[1] = static_cast<hal::byte>(regs.data_reg);
+      bit_modify(regs.cr1).clear(i2c_cr1::pos);
+    } else {
+      auto body = p_data_in.sub_scatter_span({ .count = body_length });
+      if (body_length == 0) {
+        clear_addr();
+      } else {
+        p_data.read(body);
+      }
+      // Three bytes left: byte N-2 is in the data register and N-1 in the
+      // shift register. NACK the last one and stop after it.
+      wait_for(i2c_sr1::byte_transfered_finish);
+      bit_modify(regs.cr1).clear(i2c_cr1::ack_enable);
+      // Masked so an interrupt can't delay reading bytes N-2 and N-1 until
+      // the STOP is on the bus, which corrupts byte N (ES0340 Rev 17, section
+      // 2.9.2, workaround 2, sequence 2). See the comment above the first
+      // interrupt_mask_guard in read(), in the 1-byte case.
+      {
+        hal::cortex_m::interrupt_mask_guard const masked;
+        *ending[0] = static_cast<hal::byte>(regs.data_reg);
+        bit_modify(regs.cr1).set(i2c_cr1::stop);
+        *ending[1] = static_cast<hal::byte>(regs.data_reg);
+      }
+      m_progress += 2;
+      wait_for(i2c_sr1::rx_not_empty);
+      *ending[2] = static_cast<hal::byte>(regs.data_reg);
+    }
+  }
+
+  /**
+   * @brief Throw if the peripheral reports an error
+   *
+   * A device refuses a byte once it is in the shift register. That byte, and
+   * the next one if it is waiting in the data register, have moved but
+   * weren't acknowledged. TxE tells the two cases apart, since it isn't set
+   * after a NACK (RM0008 section 26.6.6). It is read before the stop
+   * condition, which clears it.
+   *
+   * @throws hal::no_such_device - a NACK before the device answered: nothing
+   * has moved yet
+   * @throws hal::broken_pipe - a NACK after the device answered, on a byte or
+   * the read address of a write-then-read
+   * @throws hal::io_error - bus error or overrun
+   * @throws hal::resource_unavailable_try_again - another controller won the
+   * bus
+   */
+  void check_errors()
+  {
+    auto& regs = reg();
+    auto const status = regs.sr1;
+    if (bit_extract<i2c_sr1::ack_failure>(status)) {
+      bit_modify(regs.sr1).clear(i2c_sr1::ack_failure);
+      bit_modify(regs.cr1).set(i2c_cr1::stop);
+      if (m_progress == 0) {
+        throw hal::no_such_device(m_address, this);
+      }
+      hal::u32 unacknowledged = 0;
+      if (m_in_flight != 0) {
+        unacknowledged = bit_extract<i2c_sr1::tx_empty>(status) ? 1U : 2U;
+      }
+      hal::u32 const acknowledged =
+        (m_progress > unacknowledged) ? (m_progress - unacknowledged) : 0U;
+      throw hal::broken_pipe(this, acknowledged);
+    }
+    if (bit_extract<i2c_sr1::bus_error>(status) or
+        bit_extract<i2c_sr1::over_under_run>(status)) {
+      bit_modify(regs.sr1)
+        .clear(i2c_sr1::bus_error)
+        .clear(i2c_sr1::over_under_run);
+      throw hal::io_error(this);
+    }
+    if (bit_extract<i2c_sr1::arbitration_lost>(status)) {
+      bit_modify(regs.sr1).clear(i2c_sr1::arbitration_lost);
+      throw_bus_taken();
+    }
+  }
+
+  /**
+   * @brief Throw the exception for a bus that something else holds
+   *
+   * Three places throw it, and calling this is smaller than throwing at each.
+   *
+   * @throws hal::resource_unavailable_try_again - always
+   */
+  [[noreturn]] void throw_bus_taken() const
+  {
+    throw hal::resource_unavailable_try_again(this);
+  }
+
+  /**
+   * @brief Spin until a status register 1 flag is set
+   *
+   * Each poll reads the clock before the flag, so a flag that is still clear
+   * after the deadline really is late, even if an interrupt ran in between.
+   *
+   * @throws hal::timed_out - the flag wasn't set within the time limit
+   * @throws see `check_errors()`
+   */
+  void wait_for(hal::bit_mask p_flag)
+  {
+    auto& regs = reg();
+    while (true) {
+      auto const now = m_clock->uptime();
+      if (bit_extract(p_flag, regs.sr1)) {
+        return;
+      }
+      check_errors();
+      check_deadline(now);
+    }
+  }
+
+  /**
+   * @brief Spin until a register bit clears
+   *
+   * Reads the clock before the bit, as `wait_for()` does.
+   *
+   * @throws hal::timed_out - the bit didn't clear within the time limit
+   * @throws see `check_errors()`
+   */
+  void wait_until_clear(hal::u32 const volatile& p_register,
+                        hal::bit_mask p_bit)
+  {
+    while (true) {
+      auto const now = m_clock->uptime();
+      if (not bit_extract(p_bit, p_register)) {
+        return;
+      }
+      check_errors();
+      check_deadline(now);
+    }
+  }
+
+  /**
+   * @brief Start a time limit of `p_ticks` ticks of the steady clock
+   *
+   * A limit past what 64 bits can count never ends.
+   */
+  void start_timer(hal::u64 p_ticks)
+  {
+    constexpr hal::u64 max_ticks = std::numeric_limits<hal::u64>::max();
+    auto const now = m_clock->uptime();
+    m_deadline = (p_ticks > (max_ticks - now)) ? max_ticks : (now + p_ticks);
+  }
+
+  /**
+   * @brief Throw if the time limit has passed
+   *
+   * The caller reads the clock before it reads the hardware and passes that
+   * reading here. If the clock were read after the hardware, an interrupt
+   * between the two reads could let the flag get set and the limit pass, and
+   * this would throw for a transaction that finished in time.
+   *
+   * @param p_now - the steady clock's uptime, read before the hardware
+   * @throws hal::timed_out - the limit has passed
+   */
+  void check_deadline(hal::u64 p_now) const
+  {
+    if (p_now >= m_deadline) {
+      throw hal::timed_out(this, reported_progress());
+    }
+  }
+
+  /// @return the bytes moved so far, less those that may not have reached
+  /// the device yet
+  [[nodiscard]] hal::u32 reported_progress() const
+  {
+    return (m_progress > m_in_flight) ? (m_progress - m_in_flight) : 0;
+  }
+
+  /// Clears ADDR, which reading SR1 and then SR2 does
+  void clear_addr()
+  {
+    auto& regs = reg();
+    [[maybe_unused]] auto const sr1 = regs.sr1;
+    [[maybe_unused]] auto const sr2 = regs.sr2;
+  }
 
   [[nodiscard]] i2c_reg_t& reg()
   {
-    return *reinterpret_cast<i2c_reg_t*>(m_i2c);
+    return *static_cast<i2c_reg_t*>(m_i2c);
   }
 
-  void* m_i2c = nullptr;
-  std::span<hal::byte const> m_data_out;
-  std::span<hal::byte> m_data_in;
-  error_state m_status{};
-  hal::byte m_address = hal::byte{ 0x00 };
-  transmission_state m_state = transmission_state::free;
+  void* m_i2c;
+  /// Measures each transaction's time limit
+  hal::ref<hal::steady_clock> m_clock;
+  /// The steady clock's ticks in two SCL periods: a transaction may take
+  /// twice its own length. Set by `configure()`.
+  hal::u32 m_clock_ticks = 0;
+  /// The slack in steady clock ticks, set by `configure()`
+  hal::u64 m_slack_ticks = 0;
+  /// When the time limit of the transaction in progress ends, in steady clock
+  /// ticks
+  hal::u64 m_deadline = 0;
+  /// Bytes of the transaction in progress moved through the data register so
+  /// far, written ones first, then read ones
+  hal::u32 m_progress = 0;
+  /// Address of the transaction in progress
+  hal::byte m_address = 0;
+  /// How many of the bytes in `m_progress` may not have reached the device
+  /// yet
+  hal::u8 m_in_flight = 0;
 };
 }  // namespace hal::stm32_generic

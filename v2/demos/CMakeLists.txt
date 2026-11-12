@@ -59,7 +59,7 @@ set(DEMOS
     gpio
     i2c
     spi
-    stack_trace
+    stacktrace
     uart
 )
 

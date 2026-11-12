@@ -16,7 +16,7 @@
 // calls that led to it, which llvm-symbolizer turns into file and line
 // numbers:
 //
-//   llvm-symbolizer --obj=stack_trace.elf --inlines 0x08001a3e 0x080020f2 ...
+//   llvm-symbolizer --obj=stacktrace.elf --inlines 0x08001a3e 0x080020f2 ...
 
 module;
 
@@ -46,11 +46,11 @@ void write_hex(hal::serial& p_console, hal::uptr p_value)
   hal::write(p_console, std::string_view(text.data(), text.size()));
 }
 
-void print_stack_trace()
+void print_stacktrace()
 {
   // Taken first, so the printing below doesn't change it
   std::array<hal::uptr, 32> buffer{};
-  auto const calls = resources::stack_trace(buffer);
+  auto const calls = resources::stacktrace(buffer);
 
   auto console = resources::console();
   hal::write(*console, "\nstd::terminate() was called from:\n"sv);
@@ -90,6 +90,6 @@ int volatile levels_returned = 0;
 
 void application()
 {
-  std::set_terminate(print_stack_trace);
+  std::set_terminate(print_stacktrace);
   run_control_loop();
 }

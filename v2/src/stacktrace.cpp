@@ -416,7 +416,7 @@ bool cross_exception_frame(register_file& p_registers, readable_memory p_memory)
 }  // namespace
 #endif
 
-[[gnu::noinline]] std::span<hal::uptr> stack_trace(
+[[gnu::noinline]] std::span<hal::uptr> stacktrace(
   std::span<hal::uptr> p_addresses) noexcept
 {
 #if defined(__arm__)

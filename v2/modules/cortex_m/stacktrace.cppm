@@ -16,7 +16,7 @@ module;
 
 #include <span>
 
-export module hal.arm_mcu.cortex_m:stack_trace;
+export module hal.arm_mcu.cortex_m:stacktrace;
 
 import hal;
 
@@ -62,7 +62,7 @@ namespace hal::cortex_m {
  *
  * ```cpp
  * std::array<hal::uptr, 16> buffer{};
- * for (auto const address : hal::cortex_m::stack_trace(buffer)) {
+ * for (auto const address : hal::cortex_m::stacktrace(buffer)) {
  *   print_hex(address);
  * }
  * ```
@@ -70,6 +70,6 @@ namespace hal::cortex_m {
  * @param p_addresses - where to write the addresses
  * @return the part of `p_addresses` written, innermost call first
  */
-export [[nodiscard]] std::span<hal::uptr> stack_trace(
+export [[nodiscard]] std::span<hal::uptr> stacktrace(
   std::span<hal::uptr> p_addresses) noexcept;
 }  // namespace hal::cortex_m

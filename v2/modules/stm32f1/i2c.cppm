@@ -177,7 +177,7 @@ public:
    * peripheral, one of its pins, or one of its DMA channels.
    */
   dma_i2c(peripheral p_id,
-          hal::steady_clock& p_clock [[clang::lifetimebound]],
+          hal::ref<hal::steady_clock> p_clock [[clang::lifetimebound]],
           hal::i2c_settings const& p_settings = {});
 
   dma_i2c(dma_i2c const&) = delete;

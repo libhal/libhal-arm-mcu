@@ -213,7 +213,7 @@ void polled_i2c::driver_transaction(
 }
 
 dma_i2c::dma_i2c(peripheral p_id,
-                 hal::steady_clock& p_clock,
+                 hal::ref<hal::steady_clock> p_clock,
                  hal::i2c_settings const& p_settings)
   // signals_for() rejects unsupported peripherals before anything is claimed.
   : m_transmit(signals_for(p_id).transmit)

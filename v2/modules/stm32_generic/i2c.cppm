@@ -920,8 +920,6 @@ private:
                          dma_scope<Dma>& p_operation,
                          std::size_t p_size)
   {
-    constexpr hal::u64 nanoseconds_per_second = 1'000'000'000;
-    constexpr hal::u64 max_sleep_seconds = std::numeric_limits<hal::u32>::max();
     auto& regs = reg();
     while (true) {
       // Reads the clock before the transfer, as wait_for() does.
@@ -941,17 +939,9 @@ private:
       }
       // handle_error_interrupt() masks it again when it fires.
       bit_modify(regs.cr2).set(i2c_cr2::error_intr_en);
-      // Sleep until the deadline, rounded up. Waking sooner only loops again,
-      // so a very long sleep is cut to 2^32 seconds, which can't overflow.
-      hal::u64 const clock_hz = std::max<hal::u64>(
-        m_clock->frequency().numerical_value_in(mp_units::si::hertz), 1);
-      auto const ticks = m_deadline - now;
-      auto const seconds = std::min(ticks / clock_hz, max_sleep_seconds);
-      auto const rest_nanoseconds =
-        (((ticks % clock_hz) * nanoseconds_per_second) + (clock_hz - 1)) /
-        clock_hz;
-      auto const sleep = std::chrono::seconds(seconds) +
-                         std::chrono::nanoseconds(rest_nanoseconds);
+      // Sleep until the deadline. Waking sooner only loops again.
+      auto const sleep =
+        hal::duration_from_cycles(m_clock->frequency(), m_deadline - now);
       static_cast<void>(p_operation.block_for(sleep));
     }
   }

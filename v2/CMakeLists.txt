@@ -33,6 +33,7 @@ libhal_add_library(arm-mcu
         modules/cortex_m/cortex_m.cppm
         modules/cortex_m/dwt_counter.cppm
         modules/cortex_m/interrupt.cppm
+        modules/cortex_m/stack_trace.cppm
         modules/cortex_m/startup.cppm
         modules/cortex_m/system_control.cppm
         modules/cortex_m/systick_timer.cppm
@@ -62,6 +63,7 @@ libhal_add_library(arm-mcu
         # modules/stm32f1/usb.cppm
     SOURCES
         src/dwt_counter.cpp
+        src/stack_trace.cpp
         src/stm32f1/gpio.cpp
         src/stm32f1/clock.cpp
         src/stm32f1/dma.cpp
@@ -98,6 +100,12 @@ option(LIBHAL_USE_DEFAULT_LINKER_SCRIPT "Select a linker script based on platfor
 set(LIBHAL_LINKER_SCRIPT "" CACHE STRING "Resolved linker script base name (without .ld), computed by the Conan recipe")
 
 if(CMAKE_CROSSCOMPILING)
+# Give every function unwind information, including those that can't throw,
+# so hal::cortex_m::stack_trace() can walk through them, and so a function
+# that never returns still saves its return address. PUBLIC, so it reaches
+# the application's own code too.
+target_compile_options(arm-mcu PUBLIC -funwind-tables)
+
 if(LIBHAL_REPLACE_STD_TERMINATE)
     target_link_options(arm-mcu INTERFACE
         # Override picolibc's default hard fault handler to gracefully handle

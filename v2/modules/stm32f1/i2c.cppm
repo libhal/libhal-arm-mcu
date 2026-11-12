@@ -20,6 +20,7 @@ import hal.arm_mcu.stm32_generic;
 
 import :constants;
 import :dma;
+import :pin;
 
 namespace hal::stm32f1 {
 /**
@@ -123,6 +124,10 @@ private:
                           mem::scatter_span<hal::byte> p_data_in) override;
 
   peripheral m_id;
+  // Kept, so the destructor doesn't look them up again: the lookup throws for
+  // an unsupported peripheral.
+  pin m_scl;
+  pin m_sda;
   hal::stm32_generic::i2c m_driver;
 };
 
@@ -210,6 +215,12 @@ private:
   dma_channel m_transmit;
   dma_channel m_receive;
   peripheral m_id;
+  // Kept, so the destructor doesn't look them up again: the lookups throw for
+  // an unsupported peripheral.
+  pin m_scl;
+  pin m_sda;
+  irq m_error;
+  hal::u8 m_index;
   hal::stm32_generic::i2c m_driver;
 };
 }  // namespace hal::stm32f1

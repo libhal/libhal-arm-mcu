@@ -78,7 +78,7 @@ void* register_address(peripheral p_id)
 /// Error interrupt and DMA requests of a supported I2C peripheral
 struct i2c_signals
 {
-  std::size_t index;
+  hal::u8 index;
   irq error;
   dma_request transmit;
   dma_request receive;
@@ -124,21 +124,20 @@ void i2c_error_isr()
  * @throws hal::operation_not_supported - if `p_settings` can't be achieved.
  */
 void start_peripheral(peripheral p_id,
+                      i2c_pins p_pins,
                       hal::stm32_generic::i2c& p_driver,
                       hal::i2c_settings const& p_settings,
                       void const* p_instance)
 {
-  auto const pins = pins_for(p_id);
-
   // Claim every pin or none: check them all before claiming any.
-  for (auto const& selected : std::array{ pins.scl, pins.sda }) {
+  for (auto const& selected : std::array{ p_pins.scl, p_pins.sda }) {
     if (is_pin_claimed(selected)) {
       throw hal::device_or_resource_busy(p_instance);
     }
   }
   claim(p_id);
-  claim_pin(pins.scl);
-  claim_pin(pins.sda);
+  claim_pin(p_pins.scl);
+  claim_pin(p_pins.sda);
 
   power_on(p_id);
   // Start from the reset state, whatever ran before (e.g. a bootloader) left.
@@ -150,13 +149,13 @@ void start_peripheral(peripheral p_id,
     bit_modify(alternative_function_io->mapr).clear<pin_remap::i2c1_remap>();
   }
 
-  configure_pin(pins.scl, open_drain_alternative_output);
-  configure_pin(pins.sda, open_drain_alternative_output);
+  configure_pin(p_pins.scl, open_drain_alternative_output);
+  configure_pin(p_pins.sda, open_drain_alternative_output);
 
   try {
     p_driver.configure(p_settings, frequency(p_id));
   } catch (...) {
-    for (auto const& selected : std::array{ pins.scl, pins.sda }) {
+    for (auto const& selected : std::array{ p_pins.scl, p_pins.sda }) {
       reset_pin(selected);
       release_pin(selected);
     }
@@ -169,10 +168,9 @@ void start_peripheral(peripheral p_id,
 
 /// Reset and release the pins, then disable, power off and release the
 /// peripheral
-void stop_peripheral(peripheral p_id)
+void stop_peripheral(peripheral p_id, i2c_pins p_pins)
 {
-  auto const pins = pins_for(p_id);
-  for (auto const& selected : std::array{ pins.scl, pins.sda }) {
+  for (auto const& selected : std::array{ p_pins.scl, p_pins.sda }) {
     reset_pin(selected);
     release_pin(selected);
   }
@@ -189,14 +187,17 @@ polled_i2c::polled_i2c(peripheral p_id,
                        hal::i2c_settings const& p_settings)
   : m_id(p_id)
   // Rejects unsupported peripherals
+  , m_scl(pins_for(p_id).scl)
+  , m_sda(pins_for(p_id).sda)
   , m_driver(register_address(p_id), p_clock)
 {
-  start_peripheral(m_id, m_driver, p_settings, this);
+  start_peripheral(
+    m_id, { .scl = m_scl, .sda = m_sda }, m_driver, p_settings, this);
 }
 
 polled_i2c::~polled_i2c()
 {
-  stop_peripheral(m_id);
+  stop_peripheral(m_id, { .scl = m_scl, .sda = m_sda });
 }
 
 void polled_i2c::configure(hal::i2c_settings const& p_settings)
@@ -219,23 +220,25 @@ dma_i2c::dma_i2c(peripheral p_id,
   : m_transmit(signals_for(p_id).transmit)
   , m_receive(signals_for(p_id).receive)
   , m_id(p_id)
+  , m_scl(pins_for(p_id).scl)
+  , m_sda(pins_for(p_id).sda)
+  , m_error(signals_for(p_id).error)
+  , m_index(signals_for(p_id).index)
   , m_driver(register_address(p_id), p_clock)
 {
-  start_peripheral(m_id, m_driver, p_settings, this);
+  start_peripheral(
+    m_id, { .scl = m_scl, .sda = m_sda }, m_driver, p_settings, this);
 
-  auto const signals = signals_for(m_id);
-  dma_drivers[signals.index] = &m_driver;
-  auto* const isr =
-    (signals.index == 0) ? &i2c_error_isr<0> : &i2c_error_isr<1>;
-  cortex_m::enable_interrupt(signals.error, isr);
+  dma_drivers[m_index] = &m_driver;
+  auto* const isr = (m_index == 0) ? &i2c_error_isr<0> : &i2c_error_isr<1>;
+  cortex_m::enable_interrupt(m_error, isr);
 }
 
 dma_i2c::~dma_i2c()
 {
-  auto const signals = signals_for(m_id);
-  cortex_m::disable_interrupt(signals.error);
-  dma_drivers[signals.index] = nullptr;
-  stop_peripheral(m_id);
+  cortex_m::disable_interrupt(m_error);
+  dma_drivers[m_index] = nullptr;
+  stop_peripheral(m_id, { .scl = m_scl, .sda = m_sda });
 }
 
 void dma_i2c::configure(hal::i2c_settings const& p_settings)

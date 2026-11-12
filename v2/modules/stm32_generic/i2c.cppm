@@ -436,21 +436,21 @@ public:
     constexpr hal::u64 max_ticks = std::numeric_limits<hal::u64>::max();
     auto const timing = compute_i2c_timing(p_settings.clock_rate, p_frequency);
     auto const clock_rate = m_clock->frequency();
-    hal::u64 const clock_hz =
-      clock_rate.numerical_value_in(mp_units::si::hertz);
-    if (clock_hz == 0) {
+    if (clock_rate == 0) {
       throw hal::operation_not_supported(this);
     }
     // One SCL period is 2 * CCR input clock cycles in standard mode and
     // 3 * CCR in fast mode (see compute_i2c_timing()). TRISE keeps it there
     // for rise times within the I2C specification (RM0008 section 26.6.9).
-    hal::u64 const input_hz =
-      p_frequency.numerical_value_in(mp_units::si::hertz);
     hal::u64 const period_cycles =
       hal::u64{ timing.ccr } * (timing.fast_mode ? 3U : 2U);
     // The steady clock's ticks in one SCL period, rounded up
+    auto const scaled_clock =
+      mp_units::value_cast<hal::u64>(clock_rate) * period_cycles;
+    auto const input = mp_units::value_cast<hal::u64>(p_frequency);
     hal::u64 const period_ticks =
-      ((clock_hz * period_cycles) + (input_hz - 1)) / input_hz;
+      (((scaled_clock + input) - (1U * mp_units::si::hertz)) / input)
+        .numerical_value_in(mp_units::one);
 
     auto& regs = reg();
     // Reset clears a bus left busy by an interrupted transfer. CCR and TRISE

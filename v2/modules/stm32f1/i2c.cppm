@@ -84,7 +84,7 @@ public:
    * peripheral or one of its pins.
    */
   polled_i2c(peripheral p_id,
-             hal::steady_clock& p_clock [[clang::lifetimebound]],
+             hal::ref<hal::steady_clock> p_clock [[clang::lifetimebound]],
              hal::i2c_settings const& p_settings = {});
 
   polled_i2c(polled_i2c const&) = delete;

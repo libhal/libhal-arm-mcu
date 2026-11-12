@@ -378,7 +378,8 @@ public:
    * @param p_clock - the steady clock that measures each transaction's time
    * limit. It must outlive this object.
    */
-  explicit i2c(void* p_i2c, hal::steady_clock& p_clock [[clang::lifetimebound]])
+  explicit i2c(void* p_i2c,
+               hal::ref<hal::steady_clock> p_clock [[clang::lifetimebound]])
     : m_i2c(p_i2c)
     , m_clock(p_clock)
   {

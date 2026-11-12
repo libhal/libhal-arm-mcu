@@ -144,7 +144,7 @@ void stop_peripheral(peripheral p_id)
 }  // namespace
 
 polled_i2c::polled_i2c(peripheral p_id,
-                       hal::steady_clock& p_clock,
+                       hal::ref<hal::steady_clock> p_clock,
                        hal::i2c_settings const& p_settings)
   : m_id(p_id)
   // Rejects unsupported peripherals

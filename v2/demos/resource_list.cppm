@@ -72,13 +72,6 @@ inline void reset()
 {
   hal::cortex_m::reset();
 }
-
-/// Record the calls that led here, innermost first. See
-/// hal::cortex_m::stacktrace().
-inline std::span<hal::uptr> stacktrace(std::span<hal::uptr> p_addresses)
-{
-  return hal::cortex_m::stacktrace(p_addresses);
-}
 }  // namespace resources
 
 // Application function is implemented by one of the .cpp files.

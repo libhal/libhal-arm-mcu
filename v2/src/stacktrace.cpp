@@ -184,7 +184,7 @@ std::optional<unwind_instructions> instructions_at(hal::uptr p_address)
   if (entry.content == cant_unwind) {
     return std::nullopt;
   }
-  if (hal::bit_extract<compact>(entry.content) != 0) {
+  if (hal::bit_extract<compact>(entry.content) == 1) {
     // Three instructions inside the entry itself, for personality routine 0
     if (hal::bit_extract<personality_index>(entry.content) != 0) {
       return std::nullopt;
@@ -276,7 +276,7 @@ bool unwind_frame(unwind_instructions p_instructions,
       // 1010Lnnn: pop r4 to r[4 + nnn], then r14 if L is set
       auto const count = hal::bit_extract<low_three>(instruction) + 1U;
       pop_mask = ((1U << count) - 1U) << 4U;
-      if (hal::bit_extract<with_link_register>(instruction) != 0) {
+      if (hal::bit_extract<with_link_register>(instruction) == 1) {
         pop_mask |= 1U << link_register;
       }
     } else if (instruction == finish) {
@@ -341,8 +341,8 @@ bool unwind_frame(unwind_instructions p_instructions,
 }
 
 /// Whether p_value is an EXC_RETURN value: the link register of an
-/// exception handler, which returns from the exception
-constexpr bool is_exception_return(hal::uptr p_value)
+/// interrupt handler, which returns from the interrupt
+constexpr bool is_interrupt_return(hal::uptr p_value)
 {
   constexpr auto prefix = hal::bit_mask::from<28, 31>();
   return hal::bit_extract<prefix>(p_value) == 0xF;
@@ -351,8 +351,8 @@ constexpr bool is_exception_return(hal::uptr p_value)
 /// Whether p_value is a return address into Thumb code
 constexpr bool is_return_address(hal::uptr p_value)
 {
-  return ((p_value & 0b1U) != 0) and (p_value > 0b1U) and
-         (not is_exception_return(p_value));
+  return ((p_value & 0b1U) == 1) and (p_value > 0b1U) and
+         (not is_interrupt_return(p_value));
 }
 
 /// An address inside the call instruction that returns to p_return_address.
@@ -370,12 +370,12 @@ hal::uptr process_stack_pointer()
 }
 
 /**
- * Step from an exception handler into the code it interrupted. The handler
+ * Step from an interrupt handler into the code it interrupted. The handler
  * has been unwound, so the program counter holds EXC_RETURN and the stack
  * pointer is where the hardware saved the interrupted registers, unless they
  * are on the process stack.
  */
-bool cross_exception_frame(register_file& p_registers, readable_memory p_memory)
+bool cross_interrupt_frame(register_file& p_registers, readable_memory p_memory)
 {
   constexpr auto on_process_stack = hal::bit_mask::from<2>();
   constexpr auto basic_frame_only = hal::bit_mask::from<4>();
@@ -384,9 +384,9 @@ bool cross_exception_frame(register_file& p_registers, readable_memory p_memory)
   // s0 to s15, FPSCR and a reserved word
   constexpr hal::uptr floating_point_words = 18;
 
-  auto const exception_return = p_registers[program_counter];
+  auto const interrupt_return = p_registers[program_counter];
   auto frame = p_registers[stack_pointer];
-  if (hal::bit_extract<on_process_stack>(exception_return) != 0) {
+  if (hal::bit_extract<on_process_stack>(interrupt_return) == 1) {
     frame = process_stack_pointer();
   }
   if (not p_memory.holds(frame, basic_frame_words)) {
@@ -403,11 +403,11 @@ bool cross_exception_frame(register_file& p_registers, readable_memory p_memory)
   auto const status = read_word(frame + 28U);
 
   auto words = basic_frame_words;
-  if (hal::bit_extract<basic_frame_only>(exception_return) == 0) {
+  if (hal::bit_extract<basic_frame_only>(interrupt_return) == 0) {
     words += floating_point_words;
   }
   auto caller_sp = frame + (words * 4U);
-  if (hal::bit_extract<realigned>(status) != 0) {
+  if (hal::bit_extract<realigned>(status) == 1) {
     caller_sp += 4U;
   }
   p_registers[stack_pointer] = caller_sp;
@@ -431,7 +431,7 @@ bool cross_exception_frame(register_file& p_registers, readable_memory p_memory)
 
   // This function's own frame is unwound first and not recorded
   auto location = call_site(registers[program_counter]);
-  // Whether an exception interrupted the current frame, so its program
+  // Whether an interrupt stopped the current frame, so its program
   // counter is the interrupted instruction, not a return address
   bool interrupted = false;
   std::size_t count = 0;
@@ -463,8 +463,8 @@ bool cross_exception_frame(register_file& p_registers, readable_memory p_memory)
     }
 
     auto const pc = registers[program_counter];
-    if (is_exception_return(pc)) {
-      if (not cross_exception_frame(registers, memory)) {
+    if (is_interrupt_return(pc)) {
+      if (not cross_interrupt_frame(registers, memory)) {
         break;
       }
       interrupted = true;

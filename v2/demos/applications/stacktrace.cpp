@@ -29,6 +29,7 @@ module;
 module arm_mcu_demos;
 
 import hal;
+import hal.arm_mcu;
 import hal.util;
 
 namespace {
@@ -50,7 +51,7 @@ void print_stacktrace()
 {
   // Taken first, so the printing below doesn't change it
   std::array<hal::uptr, 32> buffer{};
-  auto const calls = resources::stacktrace(buffer);
+  auto const calls = hal::cortex_m::stacktrace(buffer);
 
   auto console = resources::console();
   hal::write(*console, "\nstd::terminate() was called from:\n"sv);

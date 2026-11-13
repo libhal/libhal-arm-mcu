@@ -53,8 +53,7 @@ concept irq_enum =
  *
  * All core IRQs are enabled by default.
  */
-export enum class irq : irq_t
-{
+export enum class irq : irq_t {
   top_of_stack = -16,
   reset = -15,
   non_maskable_interrupt = -14,
@@ -140,8 +139,9 @@ void nvic_disable_irq(irq_t p_irq)
  */
 export void default_interrupt_handler()
 {
+  // Empty: Clang deletes an infinite loop whose body has statements but
+  // no side effects, such as `continue;`.
   while (true) {
-    continue;
   }
 }
 
@@ -154,8 +154,9 @@ export void default_interrupt_handler()
  */
 export void hard_fault_handler()
 {
+  // Empty: Clang deletes an infinite loop whose body has statements but
+  // no side effects, such as `continue;`.
   while (true) {
-    continue;
   }
 }
 
@@ -168,8 +169,9 @@ export void hard_fault_handler()
  */
 export void memory_management_fault_handler()
 {
+  // Empty: Clang deletes an infinite loop whose body has statements but
+  // no side effects, such as `continue;`.
   while (true) {
-    continue;
   }
 }
 
@@ -182,8 +184,9 @@ export void memory_management_fault_handler()
  */
 export void bus_fault_handler()
 {
+  // Empty: Clang deletes an infinite loop whose body has statements but
+  // no side effects, such as `continue;`.
   while (true) {
-    continue;
   }
 }
 
@@ -196,8 +199,9 @@ export void bus_fault_handler()
  */
 export void usage_fault_handler()
 {
+  // Empty: Clang deletes an infinite loop whose body has statements but
+  // no side effects, such as `continue;`.
   while (true) {
-    continue;
   }
 }
 

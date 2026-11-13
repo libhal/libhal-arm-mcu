@@ -17,8 +17,9 @@ export module hal.arm_mcu.cortex_m:terminate_handler;
 
 namespace hal::cortex_m {
 std::terminate_handler default_handler = +[]() {  // NOLINT
+  // Empty: Clang deletes an infinite loop whose body has statements but
+  // no side effects, such as `continue;`.
   while (true) {
-    continue;
   }
 };
 }  // namespace hal::cortex_m
@@ -42,8 +43,9 @@ extern "C"
   // NOLINTNEXTLINE(readability-identifier-naming,bugprone-reserved-identifier)
   void __attribute__((weak)) _exit(int)
   {
+    // Empty: Clang deletes an infinite loop whose body has statements but
+    // no side effects, such as `continue;`.
     while (true) {
-      continue;
     }
   }
 

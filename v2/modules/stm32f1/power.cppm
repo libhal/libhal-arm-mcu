@@ -16,6 +16,7 @@ module;
 
 #include <bitset>
 #include <cstdint>
+#include <exception>
 
 export module hal.arm_mcu.stm32f1:power;
 
@@ -55,7 +56,7 @@ struct rcc_register_info
   hal::bit_mask mask;
 };
 
-rcc_register_info get_enable_register_info(peripheral p_peripheral)
+rcc_register_info get_enable_register_info(peripheral p_peripheral) noexcept
 {
   auto const peripheral_value = hal::value(p_peripheral);
   auto const bus_number = peripheral_value / bus_id_offset;
@@ -68,11 +69,16 @@ rcc_register_info get_enable_register_info(peripheral p_peripheral)
     case 2:
       return { .reg = &rcc->apb2enr, .mask = mask };
     default:
-      throw hal::argument_out_of_domain(nullptr);
+      // Beyond the buses: there's no enable bit. Calling this for such a
+      // peripheral is a bug in the caller, so it ends the program.
+#if defined(__cpp_contracts)
+      contract_assert(bus_number <= 2);
+#endif
+      std::terminate();
   }
 }
 
-rcc_register_info get_reset_register_info(peripheral p_peripheral)
+rcc_register_info get_reset_register_info(peripheral p_peripheral) noexcept
 {
   auto const peripheral_value = hal::value(p_peripheral);
   auto const bus_number = peripheral_value / bus_id_offset;
@@ -85,9 +91,13 @@ rcc_register_info get_reset_register_info(peripheral p_peripheral)
     case 2:
       return { .reg = &rcc->apb2rstr, .mask = mask };
     default:
-      // Beyond the buses: there's no reset bit. Falling through to APB2 would
-      // reset an unrelated peripheral.
-      throw hal::argument_out_of_domain(nullptr);
+      // Beyond the buses: there's no reset bit. Calling this for such a
+      // peripheral is a bug in the caller, so it ends the program. Falling
+      // through to APB2 would reset an unrelated peripheral.
+#if defined(__cpp_contracts)
+      contract_assert(bus_number <= 2);
+#endif
+      std::terminate();
   }
 }
 
@@ -170,11 +180,13 @@ export [[nodiscard]] bool is_claimed(peripheral p_peripheral) noexcept
  * If the peripheral is already powered on, this does nothing. To detect two
  * drivers using the same peripheral, use claim().
  *
- * @throws hal::argument_out_of_domain - if the peripheral's value is
- * outside of the bounds of the enum class OR if there is no enable
- * register for that peripheral.
+ * Ends the program for a peripheral without an enable bit, such as the
+ * peripherals beyond the buses, or a value that isn't a peripheral. Calling
+ * it for one is a bug in the caller, which nothing could recover from.
+ *
+ * @param p_peripheral - the peripheral to power on
  */
-export void power_on(peripheral p_peripheral)
+export void power_on(peripheral p_peripheral) noexcept
 {
   auto const info = get_enable_register_info(p_peripheral);
   hal::bit_modify(*info.reg).set(info.mask);
@@ -183,9 +195,12 @@ export void power_on(peripheral p_peripheral)
 /**
  * @brief Power off peripheral
  *
- * If the peripheral is already powered off, this does nothing.
+ * If the peripheral is already powered off, this does nothing. Like
+ * power_on(), it ends the program for a peripheral without an enable bit.
+ *
+ * @param p_peripheral - the peripheral to power off
  */
-export void power_off(peripheral p_peripheral)
+export void power_off(peripheral p_peripheral) noexcept
 {
   auto const info = get_enable_register_info(p_peripheral);
   hal::bit_modify(*info.reg).clear(info.mask);
@@ -194,10 +209,14 @@ export void power_off(peripheral p_peripheral)
 /**
  * @brief Check if the peripheral is powered on
  *
+ * Like power_on(), it ends the program for a peripheral without an enable
+ * bit.
+ *
+ * @param p_peripheral - the peripheral to check
  * @return true - peripheral is on
  * @return false - peripheral is off
  */
-export [[nodiscard]] bool is_on(peripheral p_peripheral)
+export [[nodiscard]] bool is_on(peripheral p_peripheral) noexcept
 {
   auto const info = get_enable_register_info(p_peripheral);
   return hal::bit_extract(info.mask, *info.reg);
@@ -209,10 +228,13 @@ export [[nodiscard]] bool is_on(peripheral p_peripheral)
  * This will reset all the peripheral's registers to their reset/default
  * values.
  *
- * @throws hal::argument_out_of_domain - if the peripheral has no reset
- * register, such as the peripherals beyond the buses
+ * Ends the program for a peripheral without a reset bit, such as the
+ * peripherals beyond the buses, or a value that isn't a peripheral. Calling
+ * it for one is a bug in the caller, which nothing could recover from.
+ *
+ * @param p_peripheral - the peripheral to reset
  */
-export void reset_peripheral(peripheral p_peripheral)
+export void reset_peripheral(peripheral p_peripheral) noexcept
 {
   auto const info = get_reset_register_info(p_peripheral);
   hal::bit_modify(*info.reg).set(info.mask);

@@ -19,8 +19,11 @@
 // one tick each time it is read, so a wait that never ends runs out of time
 // after a known number of reads.
 
+#include <algorithm>
 #include <array>
 #include <chrono>
+#include <cstddef>
+#include <span>
 
 #include <boost/ut.hpp>
 
@@ -98,6 +101,217 @@ struct fake_bus
   fake_clock clock;
   hal::stm32_generic::i2c bus;
 };
+
+/// A DMA channel that never moves anything, and reports a fixed number of bytes
+/// left, as if its transfer stopped there
+struct fake_dma
+{
+  void receive(hal::u32 volatile&, std::span<hal::byte>, hal::notifier&)
+  {
+  }
+
+  void receive_discarding(hal::u32 volatile&,
+                          hal::byte&,
+                          std::size_t,
+                          hal::notifier&)
+  {
+  }
+
+  void transmit(hal::u32 volatile&, std::span<hal::byte const>, hal::notifier&)
+  {
+  }
+
+  void transmit_repeated(hal::u32 volatile&,
+                         hal::byte const&,
+                         std::size_t,
+                         hal::notifier&)
+  {
+  }
+
+  void stop()
+  {
+  }
+
+  [[nodiscard]] std::size_t remaining() const
+  {
+    return left;
+  }
+
+  [[nodiscard]] bool failed() const
+  {
+    return false;
+  }
+
+  std::size_t left = 0;
+};
+
+/// A waiter whose timed waits return at once, as if they timed out, and that
+/// records the longest timeout it was given
+class fake_waiter final : public hal::blocking_waiter
+{
+public:
+  hal::time_duration longest_timeout{};
+
+private:
+  void driver_notify() noexcept override
+  {
+  }
+
+  void driver_block() override
+  {
+  }
+
+  bool driver_block_for(hal::time_duration p_timeout) override
+  {
+    longest_timeout = std::max(longest_timeout, p_timeout);
+    return false;
+  }
+
+  void driver_sleep_for(hal::time_duration) override
+  {
+  }
+
+  void driver_clear() noexcept override
+  {
+  }
+};
+
+hal::blocking_waiter& fake_waiter_provider()
+{
+  static fake_waiter waiter;
+  return waiter;
+}
+
+void i2c_dma_transaction_test()
+{
+  using namespace boost::ut;
+
+  static constexpr std::array<hal::byte, 5> five_bytes{
+    0x11, 0x22, 0x33, 0x44, 0x55
+  };
+
+  "an empty DMA transaction returns before it needs a waiter"_test = []() {
+    // Setup
+    hal::set_waiter_provider(nullptr);
+    fake_bus fake(0);
+    fake_dma transmit;
+    fake_dma receive;
+    auto const cr1 = fake.cr1();
+
+    // Exercise
+    fake.bus.transaction(address, {}, {}, transmit, receive);
+
+    // Verify
+    expect(that % cr1 == fake.cr1());
+  };
+
+  "a DMA NACK doesn't count the byte still in the data register"_test = []() {
+    // Setup
+    // Three bytes moved. TxE is clear, so the third is in the data register
+    // and the second is the one refused.
+    hal::set_waiter_provider(fake_waiter_provider);
+    fake_bus fake(sr1_start | sr1_addr | sr1_ack_failure);
+    fake_dma transmit{ .left = 2 };
+    fake_dma receive;
+    hal::u32 progress = 0;
+
+    // Exercise
+    try {
+      fake.bus.transaction(address, { five_bytes }, {}, transmit, receive);
+    } catch (hal::broken_pipe const& p_error) {
+      progress = p_error.progress;
+    }
+
+    // Verify
+    expect(that % 1 == progress);
+    hal::set_waiter_provider(nullptr);
+  };
+
+  "a DMA NACK with an empty data register refuses the last byte moved"_test =
+    []() {
+      // Setup
+      // Three bytes moved. TxE is set, so the third is the one refused.
+      hal::set_waiter_provider(fake_waiter_provider);
+      fake_bus fake(sr1_start | sr1_addr | sr1_tx_empty | sr1_ack_failure);
+      fake_dma transmit{ .left = 2 };
+      fake_dma receive;
+      hal::u32 progress = 0;
+
+      // Exercise
+      try {
+        fake.bus.transaction(address, { five_bytes }, {}, transmit, receive);
+      } catch (hal::broken_pipe const& p_error) {
+        progress = p_error.progress;
+      }
+
+      // Verify
+      expect(that % 2 == progress);
+      hal::set_waiter_provider(nullptr);
+    };
+
+  "a busy bus throws try_again before a DMA transfer starts"_test = []() {
+    // Setup
+    hal::set_waiter_provider(fake_waiter_provider);
+    fake_bus fake(0);
+    fake.sr2() = sr2_busy;
+    fake_dma transmit;
+    fake_dma receive;
+    auto const cr1 = fake.cr1();
+
+    // Exercise + Verify
+    expect(throws<hal::resource_unavailable_try_again>([&]() {
+      fake.bus.transaction(address, { five_bytes }, {}, transmit, receive);
+    }));
+    expect(that % cr1 == fake.cr1());
+    hal::set_waiter_provider(nullptr);
+  };
+
+  "a lost arbitration during a DMA transfer throws try_again"_test = []() {
+    // Setup
+    hal::set_waiter_provider(fake_waiter_provider);
+    fake_bus fake(sr1_start | sr1_addr | sr1_arbitration_lost);
+    fake_dma transmit{ .left = 2 };
+    fake_dma receive;
+
+    // Exercise + Verify
+    expect(throws<hal::resource_unavailable_try_again>([&]() {
+      fake.bus.transaction(address, { five_bytes }, {}, transmit, receive);
+    }));
+    expect(that % 0 == (fake.sr1() & sr1_arbitration_lost));
+    hal::set_waiter_provider(nullptr);
+  };
+
+  "a stalled DMA transfer times out at its time limit"_test = []() {
+    // Setup
+    // Three of the five bytes moved, then the transfer stopped.
+    hal::set_waiter_provider(fake_waiter_provider);
+    auto& waiter = static_cast<fake_waiter&>(fake_waiter_provider());
+    waiter.longest_timeout = {};
+    fake_bus fake(sr1_start | sr1_addr);
+    fake_dma transmit{ .left = 2 };
+    fake_dma receive;
+    hal::u32 progress = 0;
+
+    // Exercise
+    try {
+      fake.bus.transaction(address, { five_bytes }, {}, transmit, receive);
+    } catch (hal::timed_out const& p_error) {
+      progress = p_error.progress;
+    }
+
+    // Verify
+    // Writing 5 bytes is 56 clock cycles. Twice that at 10 ticks a cycle,
+    // plus the 1,001 ticks of slack, is 2,121 ticks.
+    expect(that % fake.clock.now > 2'121);
+    expect(that % fake.clock.now < 2'131);
+    // The first sleep starts on the fourth read of the clock, so it is 2,118
+    // ticks of 1 microsecond until the deadline.
+    expect(std::chrono::microseconds(2'118) == waiter.longest_timeout);
+    // The last two bytes moved may not have reached the device.
+    expect(that % 1 == progress);
+    hal::set_waiter_provider(nullptr);
+  };
+}
 
 void i2c_transaction_test()
 {
@@ -411,4 +625,5 @@ int main()
 {
   i2c_test();
   i2c_transaction_test();
+  i2c_dma_transaction_test();
 }

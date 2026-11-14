@@ -19,6 +19,8 @@ import hal.util;
 import hal.arm_mcu.stm32_generic;
 
 import :constants;
+import :dma;
+import :pin;
 
 namespace hal::stm32f1 {
 /**
@@ -31,6 +33,8 @@ namespace hal::stm32f1 {
  * A transaction spins on the peripheral's status flags until it finishes, so
  * it needs no interrupts, no DMA channels and no waiter, but keeps the CPU
  * busy for the whole transaction: about 25 microseconds per byte at 400 kHz.
+ * For long transfers, such as an EEPROM page or a display buffer, consider
+ * `hal::stm32f1::dma_i2c`.
  *
  * The controller doesn't lock the bus or check for a transaction in progress.
  * Drivers in one context can share it as is. To use the bus from several
@@ -120,7 +124,103 @@ private:
                           mem::scatter_span<hal::byte> p_data_in) override;
 
   peripheral m_id;
+  // Kept, so the destructor doesn't look them up again: the lookup throws for
+  // an unsupported peripheral.
+  pin m_scl;
+  pin m_sda;
   hal::stm32_generic::i2c m_driver;
 };
 
+/**
+ * @brief STM32F1 I2C controller that moves its data bytes by DMA
+ *
+ * Like `hal::stm32f1::polled_i2c`, but the data bytes of a transaction move
+ * by DMA while the calling context sleeps on its waiter, so a waiter
+ * provider must be installed (see `hal::current_waiter()`) and transactions
+ * can't run inside an interrupt. The start, address and stop steps, and the
+ * last three bytes of a read, are polled.
+ *
+ * A transaction has the same time limit as in `hal::stm32f1::polled_i2c`,
+ * measured with a steady clock. The polled steps read the clock, and the DMA
+ * transfers sleep on the waiter until the limit ends, so a stalled transfer
+ * is noticed to the waiter provider's granularity. The exception's `progress`
+ * is the number of bytes known to have been transferred, written ones first,
+ * then read ones.
+ *
+ * A transaction throws `hal::resource_unavailable_try_again` if the bus is busy
+ * when it starts, or if another controller wins arbitration. It never waits for
+ * the bus or retries: see "A busy bus or lost arbitration" in `hal::i2c`.
+ *
+ * It claims the peripheral's DMA channels for as long as it lives: DMA1
+ * channels 6 (transmit) and 7 (receive) for `i2c1`, 4 and 5 for `i2c2`.
+ * Other drivers whose requests use those channels can't use DMA meanwhile:
+ * USART2 receive for `i2c1`, and USART1 receive and SPI2 for `i2c2`. If one
+ * of them holds a channel first, construction throws; use
+ * `hal::stm32f1::polled_i2c` instead.
+ *
+ * ```cpp
+ * static hal::stm32f1::dma_i2c i2c1(hal::stm32f1::peripheral::i2c1, clock);
+ * auto const found = hal::probe(i2c1, 0x68);
+ * ```
+ */
+export class dma_i2c final : public hal::i2c
+{
+public:
+  /**
+   * @brief Claim an I2C peripheral, its pins and its DMA channels, power it
+   * on, and configure it
+   *
+   * See `polled_i2c::polled_i2c()` for the pins, clock and settings.
+   *
+   * @param p_id - which I2C peripheral to use. Must be `i2c1` or `i2c2`.
+   * @param p_clock - the steady clock that measures each transaction's time
+   * limit. It must outlive the controller.
+   * @param p_settings - bus settings
+   * @throws hal::operation_not_supported - if `p_id` is not `i2c1` or `i2c2`,
+   * or if `p_settings` can't be achieved (see `configure()`).
+   * @throws hal::device_or_resource_busy - if another driver has claimed the
+   * peripheral, one of its pins, or one of its DMA channels.
+   */
+  dma_i2c(peripheral p_id,
+          hal::ref<hal::steady_clock> p_clock [[clang::lifetimebound]],
+          hal::i2c_settings const& p_settings = {});
+
+  dma_i2c(dma_i2c const&) = delete;
+  dma_i2c& operator=(dma_i2c const&) = delete;
+  dma_i2c(dma_i2c&&) = delete;
+  dma_i2c& operator=(dma_i2c&&) = delete;
+
+  /// Power off the peripheral, and release its pins and DMA channels
+  ~dma_i2c();
+
+  /**
+   * @brief Change the bus's clock rate and slack
+   *
+   * See `polled_i2c::configure()`, including its warning.
+   *
+   * @param p_settings - the new bus settings
+   * @throws hal::operation_not_supported - if the clock rate is zero, the
+   * bus can't run as slowly as requested, or the steady clock's frequency is
+   * zero.
+   */
+  void configure(hal::i2c_settings const& p_settings);
+
+private:
+  void driver_transaction(hal::byte p_address,
+                          mem::scatter_span<hal::byte const> p_data_out,
+                          mem::scatter_span<hal::byte> p_data_in) override;
+
+  // Claimed first, so construction fails before touching the peripheral if
+  // another driver holds them.
+  dma_channel m_transmit;
+  dma_channel m_receive;
+  peripheral m_id;
+  // Kept, so the destructor doesn't look them up again: the lookups throw for
+  // an unsupported peripheral.
+  pin m_scl;
+  pin m_sda;
+  irq m_error;
+  hal::u8 m_index;
+  hal::stm32_generic::i2c m_driver;
+};
 }  // namespace hal::stm32f1

@@ -21,11 +21,13 @@ module hal.arm_mcu.stm32f1;
 import hal;
 import hal.util;
 import hal.arm_mcu.stm32_generic;
+import hal.arm_mcu.cortex_m;
 
 import :constants;
 import :pin;
 import :power;
 import :clock;
+import :dma;
 
 namespace hal::stm32f1 {
 namespace {
@@ -73,6 +75,45 @@ void* register_address(peripheral p_id)
   return reinterpret_cast<void*>(peripheral_to_register(p_id));
 }
 
+/// Error interrupt and DMA requests of a supported I2C peripheral
+struct i2c_signals
+{
+  hal::u8 index;
+  irq error;
+  dma_request transmit;
+  dma_request receive;
+};
+
+/// @throws hal::operation_not_supported - if `p_id` is not `i2c1` or `i2c2`.
+constexpr i2c_signals signals_for(peripheral p_id)
+{
+  switch (p_id) {
+    case peripheral::i2c1:
+      return { .index = 0,
+               .error = irq::i2c1_er,
+               .transmit = dma_request::i2c1_tx,
+               .receive = dma_request::i2c1_rx };
+    case peripheral::i2c2:
+      return { .index = 1,
+               .error = irq::i2c2_er,
+               .transmit = dma_request::i2c2_tx,
+               .receive = dma_request::i2c2_rx };
+    default:
+      throw hal::operation_not_supported(nullptr);
+  }
+}
+
+/// The DMA driver each I2C peripheral's error interrupt wakes
+constinit std::array<hal::stm32_generic::i2c*, 2> dma_drivers{};
+
+template<std::size_t Index>
+void i2c_error_isr()
+{
+  if (auto* const driver = dma_drivers[Index]; driver != nullptr) {
+    driver->handle_error_interrupt();
+  }
+}
+
 /**
  * @brief Claim the peripheral and its pins, power it on and configure it
  *
@@ -83,21 +124,20 @@ void* register_address(peripheral p_id)
  * @throws hal::operation_not_supported - if `p_settings` can't be achieved.
  */
 void start_peripheral(peripheral p_id,
+                      i2c_pins p_pins,
                       hal::stm32_generic::i2c& p_driver,
                       hal::i2c_settings const& p_settings,
                       void const* p_instance)
 {
-  auto const pins = pins_for(p_id);
-
   // Claim every pin or none: check them all before claiming any.
-  for (auto const& selected : std::array{ pins.scl, pins.sda }) {
+  for (auto const& selected : std::array{ p_pins.scl, p_pins.sda }) {
     if (is_pin_claimed(selected)) {
       throw hal::device_or_resource_busy(p_instance);
     }
   }
   claim(p_id);
-  claim_pin(pins.scl);
-  claim_pin(pins.sda);
+  claim_pin(p_pins.scl);
+  claim_pin(p_pins.sda);
 
   power_on(p_id);
   // Start from the reset state, whatever ran before (e.g. a bootloader) left.
@@ -109,13 +149,13 @@ void start_peripheral(peripheral p_id,
     bit_modify(alternative_function_io->mapr).clear<pin_remap::i2c1_remap>();
   }
 
-  configure_pin(pins.scl, open_drain_alternative_output);
-  configure_pin(pins.sda, open_drain_alternative_output);
+  configure_pin(p_pins.scl, open_drain_alternative_output);
+  configure_pin(p_pins.sda, open_drain_alternative_output);
 
   try {
     p_driver.configure(p_settings, frequency(p_id));
   } catch (...) {
-    for (auto const& selected : std::array{ pins.scl, pins.sda }) {
+    for (auto const& selected : std::array{ p_pins.scl, p_pins.sda }) {
       reset_pin(selected);
       release_pin(selected);
     }
@@ -128,10 +168,9 @@ void start_peripheral(peripheral p_id,
 
 /// Reset and release the pins, then disable, power off and release the
 /// peripheral
-void stop_peripheral(peripheral p_id)
+void stop_peripheral(peripheral p_id, i2c_pins p_pins)
 {
-  auto const pins = pins_for(p_id);
-  for (auto const& selected : std::array{ pins.scl, pins.sda }) {
+  for (auto const& selected : std::array{ p_pins.scl, p_pins.sda }) {
     reset_pin(selected);
     release_pin(selected);
   }
@@ -148,14 +187,17 @@ polled_i2c::polled_i2c(peripheral p_id,
                        hal::i2c_settings const& p_settings)
   : m_id(p_id)
   // Rejects unsupported peripherals
+  , m_scl(pins_for(p_id).scl)
+  , m_sda(pins_for(p_id).sda)
   , m_driver(register_address(p_id), p_clock)
 {
-  start_peripheral(m_id, m_driver, p_settings, this);
+  start_peripheral(
+    m_id, { .scl = m_scl, .sda = m_sda }, m_driver, p_settings, this);
 }
 
 polled_i2c::~polled_i2c()
 {
-  stop_peripheral(m_id);
+  stop_peripheral(m_id, { .scl = m_scl, .sda = m_sda });
 }
 
 void polled_i2c::configure(hal::i2c_settings const& p_settings)
@@ -171,4 +213,43 @@ void polled_i2c::driver_transaction(
   m_driver.transaction(p_address, p_data_out, p_data_in);
 }
 
+dma_i2c::dma_i2c(peripheral p_id,
+                 hal::ref<hal::steady_clock> p_clock,
+                 hal::i2c_settings const& p_settings)
+  // signals_for() rejects unsupported peripherals before anything is claimed.
+  : m_transmit(signals_for(p_id).transmit)
+  , m_receive(signals_for(p_id).receive)
+  , m_id(p_id)
+  , m_scl(pins_for(p_id).scl)
+  , m_sda(pins_for(p_id).sda)
+  , m_error(signals_for(p_id).error)
+  , m_index(signals_for(p_id).index)
+  , m_driver(register_address(p_id), p_clock)
+{
+  start_peripheral(
+    m_id, { .scl = m_scl, .sda = m_sda }, m_driver, p_settings, this);
+
+  dma_drivers[m_index] = &m_driver;
+  auto* const isr = (m_index == 0) ? &i2c_error_isr<0> : &i2c_error_isr<1>;
+  cortex_m::enable_interrupt(m_error, isr);
+}
+
+dma_i2c::~dma_i2c()
+{
+  cortex_m::disable_interrupt(m_error);
+  dma_drivers[m_index] = nullptr;
+  stop_peripheral(m_id, { .scl = m_scl, .sda = m_sda });
+}
+
+void dma_i2c::configure(hal::i2c_settings const& p_settings)
+{
+  m_driver.configure(p_settings, frequency(m_id));
+}
+
+void dma_i2c::driver_transaction(hal::byte p_address,
+                                 mem::scatter_span<hal::byte const> p_data_out,
+                                 mem::scatter_span<hal::byte> p_data_in)
+{
+  m_driver.transaction(p_address, p_data_out, p_data_in, m_transmit, m_receive);
+}
 }  // namespace hal::stm32f1

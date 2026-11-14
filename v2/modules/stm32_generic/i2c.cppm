@@ -21,12 +21,15 @@ module;
 #include <cstdint>
 #include <limits>
 #include <span>
+#include <type_traits>
 
 export module hal.arm_mcu.stm32_generic:i2c;
 
 import hal;
 import hal.util;
 import hal.arm_mcu.cortex_m;
+
+import :dma;
 
 namespace hal::stm32_generic {
 /// SPI Control Register 1 (mirrors the field layout, but for i2c cr1)
@@ -350,9 +353,11 @@ export i2c_timing compute_i2c_timing(hal::hertz p_clock_rate,
  * should use the driver specific to their platform instead of this class as
  * they handle proper initialization for you.
  *
- * A transaction polls the peripheral's status flags, so it needs no
- * interrupts, no DMA and no waiter. Its time limit, described in "Timeout" in
- * `hal::i2c`, is measured with the steady clock given to the constructor.
+ * There are two transactions. One polls every byte and needs nothing else.
+ * The other moves the data bytes by DMA, sleeping on the calling context's
+ * waiter while they move, and polls the rest. Both have the time limit
+ * described in "Timeout" in `hal::i2c`, measured with the steady clock given
+ * to the constructor.
  *
  * Only master mode with 7-bit addressing is supported. After an address of
  * `0b111'10XX`, the peripheral waits for a second address byte (RM0008 section
@@ -371,6 +376,9 @@ public:
    * 1. Power on the i2c peripheral pointed to by `p_i2c`.
    * 2. Configure its SCL and SDA pins as open-drain alternate function
    *    outputs.
+   *
+   * Before the first DMA transaction, it must also route the peripheral's
+   * error interrupt to `handle_error_interrupt()`.
    *
    * Accessing the registers of a peripheral that isn't powered faults.
    *
@@ -479,6 +487,20 @@ public:
   }
 
   /**
+   * @brief Wake a DMA transaction because the bus reported an error
+   *
+   * Call this from the peripheral's error interrupt. Only DMA transactions
+   * enable it, while they sleep. The error flags stay set until the
+   * transaction handles them, so this masks the interrupt before notifying
+   * the waiting context.
+   */
+  void handle_error_interrupt() noexcept
+  {
+    bit_modify(reg().cr2).clear(i2c_cr2::error_intr_en);
+    m_notifier.notify();
+  }
+
+  /**
    * @brief Perform a transaction as defined in `hal::i2c::transaction()`,
    * moving every byte by polling
    *
@@ -518,10 +540,67 @@ public:
     run(p_address, p_data_out, p_data_in, polled_data{ this });
   }
 
+  /**
+   * @brief Perform a transaction as defined in `hal::i2c::transaction()`,
+   * moving the data bytes by DMA
+   *
+   * The start, address and stop steps, and the last three bytes of a read,
+   * are polled: they take tens of microseconds. The bytes in between move by
+   * DMA, one contiguous chunk at a time, and the calling context sleeps on
+   * its waiter until each chunk is done, so a waiter provider must be
+   * installed. The peripheral's error interrupt must be routed to
+   * `handle_error_interrupt()`.
+   *
+   * If both `p_data_out` and `p_data_in` are empty, this returns without
+   * touching the peripheral or needing a waiter.
+   *
+   * @tparam Dma - the platform's DMA channel type
+   * @param p_address - 7-bit address of the target device
+   * @param p_data_out - bytes to write, possibly spread across chunks
+   * @param p_data_in - buffer for the bytes read, possibly spread across
+   * chunks
+   * @param p_transmit - channel serving the peripheral's transmit DMA
+   * request
+   * @param p_receive - channel serving the peripheral's receive DMA request
+   * @throws hal::no_such_device - the device didn't acknowledge its address.
+   * @throws hal::broken_pipe - the device acknowledged its address, then didn't
+   * acknowledge a byte of `p_data_out` or the read address of a
+   * write-then-read. Its `progress` is the number of bytes of `p_data_out` the
+   * device acknowledged.
+   * @throws hal::io_error - a misplaced start or stop condition was detected
+   * on the bus, or a DMA transfer failed.
+   * @throws hal::timed_out - the start condition went out, then the
+   * transaction didn't finish within its time limit, for example because a
+   * device held SCL low. Its `progress` is the number of bytes known to have
+   * been transferred, written ones first, then read ones.
+   * @throws hal::resource_unavailable_try_again - the bus was busy when this
+   * call started, the start condition didn't go out within the time limit,
+   * or another controller won arbitration.
+   */
+  template<byte_dma_channel Dma>
+  void transaction(hal::byte p_address,
+                   mem::scatter_span<hal::byte const> p_data_out,
+                   mem::scatter_span<hal::byte> p_data_in,
+                   Dma& p_transmit,
+                   Dma& p_receive)
+  {
+    if (p_data_out.empty() and p_data_in.empty()) {
+      return;
+    }
+    dma_stop<Dma> const stop{ .bus = this,
+                              .transmit = &p_transmit,
+                              .receive = &p_receive };
+    hal::notifier::scope operation(m_notifier, stop);
+    run(p_address,
+        p_data_out,
+        p_data_in,
+        dma_data<Dma>{ .stop = stop, .operation = &operation });
+  }
+
 private:
   /// Moves the data bytes of a transaction by polling the data register.
   /// The transaction takes how the data bytes move as a template parameter,
-  /// so another way, such as DMA, can reuse the rest of it. Each way adds
+  /// so the polled and DMA transactions share the rest of it. Each way adds
   /// the bytes it moves to `m_progress`.
   struct polled_data
   {
@@ -547,6 +626,46 @@ private:
         byte = static_cast<hal::byte>(bus->reg().data_reg);
         bus->m_progress++;
       }
+    }
+  };
+
+  /// Stops the peripheral's DMA requests and error interrupt, and both
+  /// channels, so nothing wakes a transaction that has ended
+  template<class Dma>
+  struct dma_stop
+  {
+    i2c* bus;
+    Dma* transmit;
+    Dma* receive;
+
+    void operator()() const noexcept
+    {
+      bit_modify(bus->reg().cr2)
+        .clear(i2c_cr2::error_intr_en)
+        .clear(i2c_cr2::dma_en);
+      transmit->stop();
+      receive->stop();
+    }
+  };
+
+  template<class Dma>
+  using dma_scope = hal::notifier::scope<dma_stop<Dma>>;
+
+  /// Moves the data bytes of a transaction by DMA
+  template<class Dma>
+  struct dma_data
+  {
+    dma_stop<Dma> stop;
+    dma_scope<Dma>* operation;
+
+    void write(mem::scatter_span<hal::byte const> p_data) const
+    {
+      stop.bus->move_by_dma(p_data, *stop.transmit, *operation);
+    }
+
+    void read(mem::scatter_span<hal::byte> p_data) const
+    {
+      stop.bus->move_by_dma(p_data, *stop.receive, *operation);
     }
   };
 
@@ -748,6 +867,105 @@ private:
     }
   }
 
+  /// Send, or receive, the bytes of `p_data` by DMA, starting with ADDR
+  /// still set. Writes send `hal::byte const` data and reads receive into
+  /// `hal::byte` data.
+  template<class Dma, class T>
+  void move_by_dma(mem::scatter_span<T> p_data,
+                   Dma& p_dma,
+                   dma_scope<Dma>& p_operation)
+  {
+    auto& regs = reg();
+    bool addr_cleared = false;
+    // The first transfer is ready before ADDR is cleared, so it moves as soon
+    // as the peripheral is. Between transfers, the peripheral holds SCL low
+    // until the next one starts: a write waits for its next byte, and a read
+    // keeps its received byte in the data register.
+    for (std::span<T> chunk : p_data.spans()) {
+      while (not chunk.empty()) {
+        // One DMA transfer moves at most `max_dma_transfer` bytes.
+        auto const run = chunk.first(std::min(chunk.size(), max_dma_transfer));
+        if constexpr (std::is_const_v<T>) {
+          p_dma.transmit(regs.data_reg, run, m_notifier);
+        } else {
+          p_dma.receive(regs.data_reg, run, m_notifier);
+        }
+        if (not addr_cleared) {
+          bit_modify(regs.cr2).set(i2c_cr2::dma_en);
+          clear_addr();
+          addr_cleared = true;
+        }
+        wait_for_transfer(p_dma, p_operation, run.size());
+        chunk = chunk.subspan(run.size());
+      }
+    }
+    bit_modify(regs.cr2).clear(i2c_cr2::dma_en);
+  }
+
+  /**
+   * @brief Sleep until a DMA transfer of `p_size` bytes finishes, then add
+   * them to `m_progress`
+   *
+   * The context sleeps until the transfer finishes or the transaction's time
+   * limit ends. The error interrupt also wakes it if the device stops
+   * acknowledging or the bus fails, which stalls the transfer.
+   *
+   * @throws hal::io_error - the DMA transfer failed
+   * @throws hal::timed_out - the transfer didn't finish within the time
+   * limit. Its progress includes the bytes the transfer did move.
+   * @throws see `check_transfer_errors()`
+   */
+  template<class Dma>
+  void wait_for_transfer(Dma& p_dma,
+                         dma_scope<Dma>& p_operation,
+                         std::size_t p_size)
+  {
+    auto& regs = reg();
+    while (true) {
+      // Reads the clock before the transfer, as wait_for() does.
+      auto const now = m_clock->uptime();
+      check_transfer_errors(p_dma, p_size);
+      auto const left = p_dma.remaining();
+      if (left == 0) {
+        m_progress += static_cast<hal::u32>(p_size);
+        return;
+      }
+      if (p_dma.failed()) {
+        throw hal::io_error(this);
+      }
+      if (now >= m_deadline) {
+        m_progress += static_cast<hal::u32>(p_size - left);
+        throw hal::timed_out(this, reported_progress());
+      }
+      // handle_error_interrupt() masks it again when it fires.
+      bit_modify(regs.cr2).set(i2c_cr2::error_intr_en);
+      // Sleep until the deadline. Waking sooner only loops again.
+      auto const sleep =
+        hal::duration_from_cycles(m_clock->frequency(), m_deadline - now);
+      static_cast<void>(p_operation.block_for(sleep));
+    }
+  }
+
+  /**
+   * @brief Throw if the peripheral reports an error during a DMA transfer
+   *
+   * A NACK counts the bytes the transfer has moved. The DMA requests stop
+   * first, so that this count and the TxE flag that `check_errors()` reads
+   * describe the same moment.
+   *
+   * @throws see `check_errors()`
+   */
+  template<class Dma>
+  void check_transfer_errors(Dma& p_dma, std::size_t p_size)
+  {
+    auto& regs = reg();
+    if (bit_extract<i2c_sr1::ack_failure>(regs.sr1)) {
+      bit_modify(regs.cr2).clear(i2c_cr2::dma_en);
+      m_progress += static_cast<hal::u32>(p_size - p_dma.remaining());
+    }
+    check_errors();
+  }
+
   /**
    * @brief Throw if the peripheral reports an error
    *
@@ -904,6 +1122,7 @@ private:
   void* m_i2c;
   /// Measures each transaction's time limit
   hal::ref<hal::steady_clock> m_clock;
+  hal::notifier m_notifier;
   /// The steady clock's ticks in two SCL periods: a transaction may take
   /// twice its own length. Set by `configure()`.
   hal::u32 m_clock_ticks = 0;

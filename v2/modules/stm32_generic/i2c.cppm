@@ -679,7 +679,7 @@ private:
     auto& regs = reg();
     // Left alone, the peripheral would wait for the bus to be free. Whether to
     // wait is the caller's decision.
-    if (bit_extract<i2c_sr2::bus_busy>(regs.sr2)) {
+    if (bit_is_set<i2c_sr2::bus_busy>(regs.sr2)) {
       throw_bus_taken();
     }
 
@@ -729,14 +729,14 @@ private:
       // of the communication (RM0008 section 26.6.1). A stuck bus can't send
       // a stop condition, so the wait gives up after the limit for a
       // transaction of one clock cycle: twice that cycle, plus the slack.
-      if (bit_extract<i2c_sr2::master>(regs.sr2) and
-          not bit_extract<i2c_cr1::stop>(regs.cr1)) {
+      if (bit_is_set<i2c_sr2::master>(regs.sr2) and
+          not bit_is_set<i2c_cr1::stop>(regs.cr1)) {
         bit_modify(regs.cr1).set(i2c_cr1::stop);
       }
       start_timer(m_clock_ticks + m_slack_ticks);
       while (true) {
         auto const now = m_clock->uptime();
-        if (not bit_extract<i2c_cr1::stop>(regs.cr1) or (now >= m_deadline)) {
+        if (not bit_is_set<i2c_cr1::stop>(regs.cr1) or (now >= m_deadline)) {
           break;
         }
       }
@@ -769,7 +769,7 @@ private:
     bit_modify(regs.cr1).set(i2c_cr1::start);
     while (true) {
       auto const now = m_clock->uptime();
-      if (bit_extract<i2c_sr1::start>(regs.sr1)) {
+      if (bit_is_set<i2c_sr1::start>(regs.sr1)) {
         break;
       }
       check_errors();
@@ -959,7 +959,7 @@ private:
   void check_transfer_errors(Dma& p_dma, std::size_t p_size)
   {
     auto& regs = reg();
-    if (bit_extract<i2c_sr1::ack_failure>(regs.sr1)) {
+    if (bit_is_set<i2c_sr1::ack_failure>(regs.sr1)) {
       bit_modify(regs.cr2).clear(i2c_cr2::dma_en);
       m_progress += static_cast<hal::u32>(p_size - p_dma.remaining());
     }
@@ -987,7 +987,7 @@ private:
   {
     auto& regs = reg();
     auto const status = regs.sr1;
-    if (bit_extract<i2c_sr1::ack_failure>(status)) {
+    if (bit_is_set<i2c_sr1::ack_failure>(status)) {
       bit_modify(regs.sr1).clear(i2c_sr1::ack_failure);
       bit_modify(regs.cr1).set(i2c_cr1::stop);
       if (m_progress == 0) {
@@ -995,20 +995,20 @@ private:
       }
       hal::u32 unacknowledged = 0;
       if (m_in_flight != 0) {
-        unacknowledged = bit_extract<i2c_sr1::tx_empty>(status) ? 1U : 2U;
+        unacknowledged = bit_is_set<i2c_sr1::tx_empty>(status) ? 1U : 2U;
       }
       hal::u32 const acknowledged =
         (m_progress > unacknowledged) ? (m_progress - unacknowledged) : 0U;
       throw hal::broken_pipe(this, acknowledged);
     }
-    if (bit_extract<i2c_sr1::bus_error>(status) or
-        bit_extract<i2c_sr1::over_under_run>(status)) {
+    if (bit_is_set<i2c_sr1::bus_error>(status) or
+        bit_is_set<i2c_sr1::over_under_run>(status)) {
       bit_modify(regs.sr1)
         .clear(i2c_sr1::bus_error)
         .clear(i2c_sr1::over_under_run);
       throw hal::io_error(this);
     }
-    if (bit_extract<i2c_sr1::arbitration_lost>(status)) {
+    if (bit_is_set<i2c_sr1::arbitration_lost>(status)) {
       bit_modify(regs.sr1).clear(i2c_sr1::arbitration_lost);
       throw_bus_taken();
     }

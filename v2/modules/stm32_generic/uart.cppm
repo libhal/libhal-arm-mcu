@@ -185,7 +185,7 @@ public:
     auto& uart_reg = reg();
 
     for (auto const byte : p_data) {
-      while (not bit_extract<status_reg::transit_empty>(uart_reg.status)) {
+      while (not bit_is_set<status_reg::transit_empty>(uart_reg.status)) {
         continue;
       }
       // Load the next byte into the data register

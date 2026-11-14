@@ -157,8 +157,7 @@ u16 convert(adc_reg_t& p_reg, adc_pins p_pin)
   // ADON is already set, so setting it again starts a conversion.
   bit_modify(p_reg.control_2).set<adc_control_register_2::ad_converter_on>();
 
-  while (
-    not bit_extract<adc_status_register::end_of_conversion>(p_reg.status)) {
+  while (not bit_is_set<adc_status_register::end_of_conversion>(p_reg.status)) {
     continue;
   }
 
@@ -201,7 +200,7 @@ adc::adc(peripheral p_id, steady_clock& p_clock, hal::ref<basic_lock> p_lock)
   wait_ticks(p_clock, tstab_ticks + two_adc_cycles_ticks);
 
   bit_modify(reg.control_2).set<adc_control_register_2::ad_calibration>();
-  while (bit_extract<adc_control_register_2::ad_calibration>(reg.control_2)) {
+  while (bit_is_set<adc_control_register_2::ad_calibration>(reg.control_2)) {
     continue;
   }
 }

@@ -239,7 +239,7 @@ void sleep_until(auto p_done)
 {
   bool const in_interrupt =
     hal::bit_extract<exception_number>(read_ipsr()) != 0;
-  bool const masked = hal::bit_extract<interrupts_masked>(read_primask()) != 0;
+  bool const masked = hal::bit_is_set<interrupts_masked>(read_primask());
   if (in_interrupt or masked) [[unlikely]] {
     std::terminate();
   }

@@ -384,7 +384,7 @@ bool dma_channel::failed() const noexcept
   // The channel disables itself on a transfer error, and stop() disables it.
   // A transfer that finished stays enabled with nothing left to move.
   auto& channel = *m_registers;
-  return not hal::bit_extract<dma::enable>(channel.configuration) and
+  return not hal::bit_is_set<dma::enable>(channel.configuration) and
          (channel.transfer_amount != 0);
 }
 }  // namespace hal::stm32f1

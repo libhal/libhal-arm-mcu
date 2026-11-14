@@ -153,17 +153,17 @@ constexpr auto busy_flag = bit_mask::from<7>();
 
 bool busy(spi_reg_t& p_reg)
 {
-  return bit_extract<status_register::busy_flag>(p_reg.sr);
+  return bit_is_set<status_register::busy_flag>(p_reg.sr);
 }
 
 bool tx_empty(spi_reg_t& p_reg)
 {
-  return bit_extract<status_register::tx_buffer_empty>(p_reg.sr);
+  return bit_is_set<status_register::tx_buffer_empty>(p_reg.sr);
 }
 
 bool rx_not_empty(spi_reg_t& p_reg)
 {
-  return bit_extract<status_register::rx_buffer_not_empty>(p_reg.sr);
+  return bit_is_set<status_register::rx_buffer_not_empty>(p_reg.sr);
 }
 
 /**

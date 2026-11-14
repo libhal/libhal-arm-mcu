@@ -102,7 +102,7 @@ void configure_clocks(clock_tree p_clock_tree)
   if (p_clock_tree.high_speed_external > 1 * MHz) {
     clock_control::reg().set(clock_control::external_osc_enable);
 
-    while (!bit_extract<clock_control::external_osc_ready>(
+    while (not bit_is_set<clock_control::external_osc_ready>(
       clock_control::reg().get())) {
       continue;
     }
@@ -112,7 +112,7 @@ void configure_clocks(clock_tree p_clock_tree)
   if (p_clock_tree.low_speed_external > 1 * MHz) {
     rtc_register::reg().set(rtc_register::low_speed_osc_enable);
 
-    while (!bit_extract<rtc_register::low_speed_osc_ready>(
+    while (not bit_is_set<rtc_register::low_speed_osc_ready>(
       rtc_register::reg().get())) {
       continue;
     }
@@ -135,7 +135,8 @@ void configure_clocks(clock_tree p_clock_tree)
 
     clock_control::reg().set<clock_control::pll_enable>();
 
-    while (!bit_extract<clock_control::pll_ready>(clock_control::reg().get())) {
+    while (
+      not bit_is_set<clock_control::pll_ready>(clock_control::reg().get())) {
       continue;
     }
 
@@ -297,15 +298,15 @@ u32 divisor_of(adc_divider p_divider)
 /// configure_clocks() was the one that turned the PLL on.
 hal::hertz pll_frequency()
 {
-  if (not bit_extract<clock_control::pll_ready>(clock_control::reg().get())) {
+  if (not bit_is_set<clock_control::pll_ready>(clock_control::reg().get())) {
     return 0 * Hz;
   }
 
   auto const clock_configuration_register = clock_configuration::reg().get();
-  bool const from_external = bit_extract<clock_configuration::pll_source>(
-    clock_configuration_register);
+  bool const from_external =
+    bit_is_set<clock_configuration::pll_source>(clock_configuration_register);
   bool const external_divided =
-    bit_extract<clock_configuration::hse_pre_divider>(
+    bit_is_set<clock_configuration::hse_pre_divider>(
       clock_configuration_register);
 
   hal::hertz pll_input = internal_high_speed_oscillator / 2;
@@ -395,7 +396,7 @@ hal::hertz timer_apb2_frequency()
 
 hal::hertz usb_frequency()
 {
-  bool const divide_by_1 = bit_extract<clock_configuration::usb_prescalar>(
+  bool const divide_by_1 = bit_is_set<clock_configuration::usb_prescalar>(
     clock_configuration::reg().get());
   auto const pll = pll_frequency();
   if (divide_by_1) {

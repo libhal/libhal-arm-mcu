@@ -184,7 +184,7 @@ std::optional<unwind_instructions> instructions_at(hal::uptr p_address)
   if (entry.content == cant_unwind) {
     return std::nullopt;
   }
-  if (hal::bit_extract<compact>(entry.content) == 1) {
+  if (hal::bit_is_set<compact>(entry.content)) {
     // Three instructions inside the entry itself, for personality routine 0
     if (hal::bit_extract<personality_index>(entry.content) != 0) {
       return std::nullopt;
@@ -195,7 +195,7 @@ std::optional<unwind_instructions> instructions_at(hal::uptr p_address)
   // NOLINTNEXTLINE(performance-no-int-to-ptr): into the exception table
   auto const* words =
     reinterpret_cast<hal::u32 const*>(prel31_target(entry.content));
-  if (hal::bit_extract<compact>(words[0]) == 0) {
+  if (not hal::bit_is_set<compact>(words[0])) {
     // A generic personality routine, such as __gxx_personality_v0. Its
     // address comes first, then a count of extra words and the instructions.
     auto const extra_words = hal::bit_extract<generic_extra_words>(words[1]);
@@ -276,7 +276,7 @@ bool unwind_frame(unwind_instructions p_instructions,
       // 1010Lnnn: pop r4 to r[4 + nnn], then r14 if L is set
       auto const count = hal::bit_extract<low_three>(instruction) + 1U;
       pop_mask = ((1U << count) - 1U) << 4U;
-      if (hal::bit_extract<with_link_register>(instruction) == 1) {
+      if (hal::bit_is_set<with_link_register>(instruction)) {
         pop_mask |= 1U << link_register;
       }
     } else if (instruction == finish) {
@@ -351,7 +351,8 @@ constexpr bool is_interrupt_return(hal::uptr p_value)
 /// Whether p_value is a return address into Thumb code
 constexpr bool is_return_address(hal::uptr p_value)
 {
-  return ((p_value & 0b1U) == 1) and (p_value > 0b1U) and
+  constexpr auto thumb = hal::bit_mask::from<0>();
+  return hal::bit_is_set<thumb>(p_value) and (p_value > 0b1U) and
          (not is_interrupt_return(p_value));
 }
 
@@ -386,7 +387,7 @@ bool cross_interrupt_frame(register_file& p_registers, readable_memory p_memory)
 
   auto const interrupt_return = p_registers[program_counter];
   auto frame = p_registers[stack_pointer];
-  if (hal::bit_extract<on_process_stack>(interrupt_return) == 1) {
+  if (hal::bit_is_set<on_process_stack>(interrupt_return)) {
     frame = process_stack_pointer();
   }
   if (not p_memory.holds(frame, basic_frame_words)) {
@@ -403,11 +404,11 @@ bool cross_interrupt_frame(register_file& p_registers, readable_memory p_memory)
   auto const status = read_word(frame + 28U);
 
   auto words = basic_frame_words;
-  if (hal::bit_extract<basic_frame_only>(interrupt_return) == 0) {
+  if (not hal::bit_is_set<basic_frame_only>(interrupt_return)) {
     words += floating_point_words;
   }
   auto caller_sp = frame + (words * 4U);
-  if (hal::bit_extract<realigned>(status) == 1) {
+  if (hal::bit_is_set<realigned>(status)) {
     caller_sp += 4U;
   }
   p_registers[stack_pointer] = caller_sp;

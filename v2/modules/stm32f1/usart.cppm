@@ -110,8 +110,9 @@ private:
  * @brief The serial port of an STM32F1 USART peripheral
  *
  * Writes block until every byte is sent. Received bytes are written into the
- * receive buffer by DMA without any CPU involvement; `receive_cursor()`
- * reports how far DMA has written.
+ * receive buffer by DMA without any CPU involvement. `receive_count()`
+ * counts every byte DMA has written, using the DMA channel's transfer
+ * complete interrupt to count laps of the buffer.
  *
  * Only `usart::acquire_serial()` creates one.
  */
@@ -136,7 +137,7 @@ private:
   void driver_configure(hal::serial::settings const& p_settings) override;
   void driver_write(mem::scatter_span<hal::byte const> p_data) override;
   hal::circular_span<hal::byte const> driver_receive_buffer() override;
-  hal::usize driver_receive_cursor() override;
+  hal::usize driver_receive_count() override;
 
   hal::ref<usart> m_manager;
   peripheral m_id;

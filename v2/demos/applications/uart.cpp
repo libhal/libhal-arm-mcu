@@ -29,7 +29,7 @@ void application()
 {
   auto console = resources::console();
 
-  auto last_cursor = console->receive_cursor();
+  auto last_count = console->receive_count();
 
   while (true) {
     using namespace std::chrono_literals;
@@ -38,22 +38,24 @@ void application()
     hal::write(*console, "Hello, World!\n"sv);
 
     // Echo back the newest bytes received since the last iteration. The
-    // cursor is a position in the circular receive buffer, so it wraps.
+    // count keeps growing, so unsigned subtraction gives the bytes received
+    // in between, even when the count wraps.
     auto const receive_buffer = console->receive_buffer();
-    auto const buffer_size = receive_buffer.size();
-    auto const cursor = console->receive_cursor();
-    auto const new_byte_count =
-      (cursor + buffer_size - last_cursor) % buffer_size;
+    auto const count = console->receive_count();
+    auto const new_byte_count = count - last_count;
+    if (new_byte_count > receive_buffer.size()) {
+      hal::write(*console, "Receive buffer overrun, bytes were lost\n"sv);
+    }
 
     std::array<hal::byte, 64> echo_buffer{};
     auto const echoed =
       std::min<hal::usize>(new_byte_count, echo_buffer.size());
     // receive_buffer is a circular_span, so indexes past the end wrap around.
-    auto const first = cursor + buffer_size - echoed;
+    auto const first = count - echoed;
     for (hal::usize i = 0; i < echoed; i++) {
       echo_buffer[i] = receive_buffer[first + i];
     }
-    last_cursor = cursor;
+    last_count = count;
 
     if (echoed > 0) {
       hal::write(*console,

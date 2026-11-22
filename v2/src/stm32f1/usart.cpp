@@ -170,9 +170,8 @@ hal::circular_span<hal::byte const> usart::serial::driver_receive_buffer()
   return m_uart.receive_buffer();
 }
 
-hal::usize usart::serial::driver_receive_cursor()
+hal::usize usart::serial::driver_receive_count()
 {
-  auto const buffer_size = m_uart.receive_buffer().size();
-  return buffer_size - m_receive_dma.remaining();
+  return m_receive_dma.circular_received();
 }
 }  // namespace hal::stm32f1

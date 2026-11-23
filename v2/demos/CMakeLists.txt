@@ -56,6 +56,7 @@ set(DEMOS
     blank
     blinker
     dma
+    edge_interrupt
     gpio
     i2c
     spi

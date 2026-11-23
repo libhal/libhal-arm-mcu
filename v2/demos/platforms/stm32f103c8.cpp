@@ -95,6 +95,34 @@ hal::static_ref<hal::input_pin> input_pin()
   return pin;
 }
 
+namespace {
+hal::stm32f1::can& can_manager()
+{
+  static hal::no_op_lock single_context;
+  static hal::stm32f1::can can1(single_context);
+  return can1;
+}
+}  // namespace
+
+hal::static_ref<hal::can_transceiver> can_transceiver()
+{
+  static std::array<hal::can_message, 16> receive_buffer{};
+  static auto transceiver = can_manager().acquire_transceiver(receive_buffer);
+  return transceiver;
+}
+
+hal::static_ref<hal::can_bus_manager> can_bus_manager()
+{
+  static auto bus_manager = can_manager().acquire_bus_manager();
+  return bus_manager;
+}
+
+hal::can_id_filter& can_identifier_filter()
+{
+  static auto filters = can_manager().acquire_identifier_filters();
+  return filters[0];
+}
+
 hal::static_ref<hal::serial> console()
 {
   static hal::stm32f1::usart usart1(hal::stm32f1::peripheral::usart1);

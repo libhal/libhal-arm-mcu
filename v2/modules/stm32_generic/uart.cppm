@@ -115,11 +115,11 @@ struct usart_t
  * This driver is synchronous/blocking for writes. It does not participate
  * in the async::context/coroutine model.
  *
- * This driver does not manage the receive DMA cursor itself. The receive
- * buffer is exposed via `receive_buffer()`; the platform specific driver is
- * responsible for reading the DMA controller's position and reporting it as
- * the `hal::serial::receive_cursor()` value, since DMA control is external
- * to the USART peripheral itself.
+ * This driver does not count received bytes itself. The receive buffer is
+ * exposed via `receive_buffer()`; the platform specific driver is
+ * responsible for counting the bytes DMA writes and reporting them as the
+ * `hal::serial::receive_count()` value, since DMA control is external to the
+ * USART peripheral itself.
  */
 export class uart
 {

@@ -285,8 +285,8 @@ public:
    * @brief Copy bytes from a peripheral register into a circular buffer,
    * forever
    *
-   * No notification is sent. Read `remaining()` to find where the next byte
-   * will be written.
+   * No notification is sent. `circular_received()` counts the bytes written
+   * so far, and `remaining()` finds where the next byte will be written.
    *
    * @param p_register - the peripheral's data register
    * @param p_buffer - the circular buffer
@@ -362,6 +362,21 @@ public:
   [[nodiscard]] std::size_t remaining() const noexcept;
 
   /**
+   * @brief Count the bytes a circular receive has written since it started
+   *
+   * Counts every lap of the buffer, so the difference between two calls is
+   * the number of bytes received in between, even across a lap. The channel
+   * counts laps in its transfer complete interrupt. A lap is lost if that
+   * interrupt can't run for a whole lap of the buffer, and then the bytes of
+   * that lap were overwritten anyway.
+   *
+   * @return hal::usize - bytes written since `receive_circular()` started,
+   * wrapping at the `hal::usize` limit. Zero if no circular receive was
+   * started.
+   */
+  [[nodiscard]] hal::usize circular_received() const noexcept;
+
+  /**
    * @return true - the transfer ended before moving every byte, because of
    * a bus error or because it was stopped
    * @return false - the transfer is in progress or finished
@@ -379,5 +394,8 @@ private:
   /// the controller and channel from the index again
   dma::dma_channel_t* m_registers;
   u8 m_index;
+  /// The buffer length of the circular receive, for `circular_received()`.
+  /// Fits in the padding after `m_index`, so the class stays 8 bytes.
+  u16 m_circular_length = 0;
 };
 }  // namespace hal::stm32f1

@@ -101,13 +101,29 @@ constexpr u8 channel_index(dma_request p_request)
                           dma1_channel_count);
 }
 
-/// Clear every interrupt flag of a channel (CGIF, CTCIF, CHTIF, CTEIF)
-void clear_flags(u8 p_index)
+/// Interrupt flags of one channel (GIF, TCIF, HTIF, TEIF), and how far apart
+/// the channels' flags are in the status and clear registers
+constexpr u32 channel_flags = 0b1111;
+constexpr u32 bits_per_channel = 4;
+/// The transfer complete flag (TCIF), within a channel's flags
+constexpr u32 transfer_complete_flag = 0b0010;
+
+[[nodiscard]] u32 flag_shift(u8 p_index)
 {
-  constexpr u32 channel_flags = 0b1111;
-  constexpr u32 bits_per_channel = 4;
-  controller(p_index).interrupt_flag_clear =
-    channel_flags << (bits_per_channel * controller_channel(p_index));
+  return bits_per_channel * controller_channel(p_index);
+}
+
+/// @return the channel's interrupt flags, in its low four bits
+[[nodiscard]] u32 read_flags(u8 p_index)
+{
+  return (controller(p_index).interrupt_status >> flag_shift(p_index)) &
+         channel_flags;
+}
+
+/// Clear interrupt flags of a channel, given in its low four bits
+void clear_flags(u8 p_index, u32 p_flags = channel_flags)
+{
+  controller(p_index).interrupt_flag_clear = p_flags << flag_shift(p_index);
 }
 
 /// One bit per channel, set while a driver holds the channel. Atomic, so
@@ -116,6 +132,11 @@ constinit std::atomic<u32> claimed_channels{ 0 };
 
 /// What each channel notifies when its one-shot transfer ends
 constinit std::array<hal::notifier* volatile, channel_count> notifiers{};
+
+/// Laps each channel's circular receive has finished. Only the channel's
+/// interrupt writes it while the channel runs, and `start()` resets it while
+/// the channel is stopped.
+constinit std::array<u32 volatile, channel_count> laps{};
 
 [[nodiscard]] bool claim_channel(u8 p_index) noexcept
 {
@@ -129,15 +150,31 @@ void release_channel(u8 p_index) noexcept
   claimed_channels.fetch_and(~bit, std::memory_order_release);
 }
 
+/// The body every channel's interrupt shares, so it's built once instead of
+/// once per channel
+[[gnu::noinline]] void handle_channel_interrupt(u8 p_index)
+{
+  // The driver finds out what happened from the channel's registers, so the
+  // flags are only cleared to stop the interrupt from firing again. Only the
+  // flags read are cleared, so a flag set after the read fires the interrupt
+  // again. A lap that ends between the read and the clear would still be
+  // lost, but a lap takes a whole buffer of transfers, far longer than that.
+  auto const flags = read_flags(p_index);
+  if ((flags & transfer_complete_flag) != 0) {
+    // A circular receive sets transfer complete at the end of every lap.
+    // One-shot transfers never read the count.
+    laps[p_index] = laps[p_index] + 1U;
+  }
+  clear_flags(p_index, flags);
+  if (auto* const notifier = notifiers[p_index]) {
+    notifier->notify();
+  }
+}
+
 template<u8 Index>
 void channel_isr()
 {
-  // The driver finds out what happened from the channel's registers, so the
-  // flags are only cleared to stop the interrupt from firing again.
-  clear_flags(Index);
-  if (auto* const notifier = notifiers[Index]) {
-    notifier->notify();
-  }
+  handle_channel_interrupt(Index);
 }
 
 template<std::size_t... Index>
@@ -282,11 +319,15 @@ void dma_channel::receive_discarding(u32 const volatile& p_register,
 void dma_channel::receive_circular(u32 const volatile& p_register,
                                    std::span<hal::byte> p_buffer)
 {
+  constexpr auto count_laps =
+    hal::bit_value().set<dma::transfer_complete_interrupt_enable>().to<u32>();
   start(address_of(&p_register),
         address_of(p_buffer.data()),
         p_buffer.size(),
-        receive_settings | increment_memory | circular,
+        receive_settings | increment_memory | circular | count_laps,
         nullptr);
+  // start() threw if the buffer is longer than max_dma_length, so it fits.
+  m_circular_length = static_cast<u16>(p_buffer.size());
 }
 
 void dma_channel::transmit(u32 volatile& p_register,
@@ -352,6 +393,8 @@ void dma_channel::start(uptr p_register,
   channel.peripheral_address = static_cast<u32>(p_register);
   channel.memory_address = static_cast<u32>(p_memory);
   channel.transfer_amount = static_cast<u32>(p_count);
+  laps[m_index] = 0;
+  m_circular_length = 0;
   if (p_count == 0) {
     return;
   }
@@ -377,6 +420,40 @@ std::size_t dma_channel::remaining() const noexcept
   // has written it.
   std::atomic_signal_fence(std::memory_order_seq_cst);
   return count;
+}
+
+hal::usize dma_channel::circular_received() const noexcept
+{
+  // The lap count and the channel's position must come from the same moment.
+  // Read them again if the interrupt counted a lap in between, or if a lap
+  // ended in between, which sets the transfer complete flag.
+  u32 lap_count = 0;
+  u32 remaining_count = 0;
+  bool lap_pending = false;
+  bool lap_ended_during_read = false;
+  do {
+    lap_count = laps[m_index];
+    auto const pending_before =
+      (read_flags(m_index) & transfer_complete_flag) != 0;
+    remaining_count = m_registers->transfer_amount;
+    lap_pending = (read_flags(m_index) & transfer_complete_flag) != 0;
+    lap_ended_during_read = (pending_before != lap_pending);
+  } while ((lap_count != laps[m_index]) or lap_ended_during_read);
+
+  // The reads above are one moment in time. If a lap had ended at that moment
+  // but the interrupt hadn't counted it yet, the channel had already reloaded
+  // the transfer amount, so that lap belongs in this result. `laps` is left to
+  // the interrupt: when it runs, it counts the lap and clears the flag, and
+  // later calls see the lap in `laps` instead.
+  auto const completed_laps = lap_pending ? (lap_count + 1U) : lap_count;
+  // At the end of a lap the channel reloads the transfer amount, so the
+  // position is in [0, length).
+  auto const received_this_lap = m_circular_length - remaining_count;
+  auto const received_before_this_lap = completed_laps * m_circular_length;
+  // Reads of the memory being received into must happen after the channel
+  // has written it.
+  std::atomic_signal_fence(std::memory_order_seq_cst);
+  return received_before_this_lap + received_this_lap;
 }
 
 bool dma_channel::failed() const noexcept

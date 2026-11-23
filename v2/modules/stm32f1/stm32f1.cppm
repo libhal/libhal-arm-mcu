@@ -12,5 +12,5 @@ export import :adc;
 export import :spi;
 export import :i2c;
 // Left out until they are ported (see CMakeLists.txt)
-// export import :can;
+export import :can;
 // export import :usb;

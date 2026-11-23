@@ -15,6 +15,10 @@
 module;
 
 #include <array>
+#include <bitset>
+#include <optional>
+#include <span>
+#include <utility>
 
 export module hal.arm_mcu.stm32f1:can;
 
@@ -25,229 +29,294 @@ import :constants;
 import :pin;
 
 namespace hal::stm32f1 {
-
-/**
- * @brief Selects which of the bxCAN's two receive FIFOs a filter bank
- * delivers matching messages into.
- */
-export enum class can_fifo : hal::u8 {
+/// The receive FIFO a filter bank sends the messages it accepts to
+export enum class can_fifo : hal::u8
+{
+  /// FIFO 0, which the CAN1_RX0 interrupt empties
   select1 = 0,
+  /// FIFO 1, which the CAN1_RX1 interrupt empties
   select2 = 1,
 };
 
-/// Configuration for `can::create()`, beyond the baud rate. Declared at
-/// namespace scope (rather than nested in `can`) because a nested struct's
-/// default member initializers aren't available yet for use as a default
-/// argument on a member function of the same enclosing class.
+/// Settings applied when a `hal::stm32f1::can` is constructed
 export struct can_settings
 {
-  /// TX/RX pin pair to route the CAN1 peripheral to.
+  /// The RX/TX pin pair to use
   can_pins pins = can_pins::pa11_pa12;
-
-  /// Number of `hal::can_message`s the receive buffer can hold.
-  hal::usize message_count = 8;
-
-  /// Enable loopback self-test mode at construction. Messages sent by this
-  /// device's transceiver are received back by this same device.
-  bool enable_self_test = false;
+  /// The bus's bit rate
+  hal::hertz baud_rate = 100'000 * mp_units::si::hertz;
+  /// Loop sent messages back into the receiver as well as onto the bus
+  /// (loop back mode, RM0008 section 24.5.3), for testing without another
+  /// node
+  bool loop_back = false;
 };
 
 /**
- * @brief STM32F1 CAN (bxCAN) peripheral manager
+ * @brief STM32F1 bxCAN driver (CAN1), and its transceiver
  *
- * Owns the STM32F1's CAN1 register bank, its 28 filter banks, and the
- * receive message buffer. Vends `hal::can_transceiver`, `hal::can_bus_manager`
- * and filter resources from that shared hardware. Only `can1` is supported;
- * `can2` shares CAN1's filter banks on connectivity-line parts and is not yet
- * implemented by this driver.
+ * Owns CAN1 and keeps it powered for as long as it lives. It is the
+ * `hal::can_transceiver`: it sends messages and receives every message the
+ * hardware filters accept into the buffer given to the constructor.
+ *
+ * The other CAN interfaces are separate classes, constructed from a `can`
+ * and kept no longer than it: `can::bus_manager`, `can::interrupt` and the
+ * filter banks. An application that doesn't construct them doesn't link their
+ * code. Each filter bank claims one of the 13 free hardware banks.
+ *
+ * `send()` places the message in a free transmit mailbox and returns, without
+ * waiting for it to go out. If all three mailboxes are full, it sleeps until
+ * one frees up.
+ *
+ * On the STM32F103, CAN1 and USB share their packet memory and can't run at
+ * the same time, so the driver also claims the USB peripheral.
+ *
+ * Sends, baud rate changes and filter changes hold the lock given to the
+ * constructor, so several contexts can share the CAN bus. Pass a
+ * `hal::no_op_lock` when only one context uses it.
+ *
+ * ```cpp
+ * static hal::no_op_lock single_context;
+ * static std::array<hal::can_message, 16> receive_buffer{};
+ * static hal::stm32f1::can can1(
+ *   single_context, receive_buffer, { .baud_rate = 500 * kHz });
+ * static hal::stm32f1::can::bus_manager bus_manager(can1);
+ * static hal::stm32f1::can::identifier_filters filters(can1);
+ *
+ * filters[0].allow(0x111);
+ * bus_manager.filter_mode(hal::can_message_acceptance::filtered);
+ * can1.send({ .id = 0x111, .length = 1, .payload = { 0xAA } });
+ * ```
  */
-export class can
-  : public hal::pimpl<can>
-  , public mem::enable_strong_from_this<can>
+export class can final : public hal::can_transceiver
 {
 public:
-  struct impl;
+  class bus_manager;
+  class interrupt;
+  template<typename Allowed, hal::usize Count>
+  class filter_bank;
+
+  /// Four standard (11-bit) IDs. Each accepts standard data frames with
+  /// exactly that ID.
+  using identifier_filters = filter_bank<hal::u16, 4>;
+  /// Two extended (29-bit) IDs. Each accepts extended data frames with exactly
+  /// that ID.
+  using extended_identifier_filters = filter_bank<hal::u32, 2>;
+  /// Two standard ID and mask pairs. Each accepts standard frames, data or
+  /// remote, whose ID matches the pair's ID in the bits the mask sets.
+  using mask_filters = filter_bank<hal::can_mask, 2>;
+  /// One extended ID and mask pair. It accepts extended frames, data or
+  /// remote, whose ID matches the pair's ID in the bits the mask sets.
+  using extended_mask_filter = filter_bank<hal::can_mask_ext, 1>;
 
   /**
-   * @brief Acquire a CAN peripheral manager
+   * @brief Claim CAN1 and its pins, power it on and join the bus
    *
-   * Powers on the CAN1 peripheral, configures its bit timing for the
-   * requested baud rate, and routes it to the requested TX/RX pins.
+   * It starts bus-on, accepting every message
+   * (`hal::can_message_acceptance::all`) until a bus manager's `filter_mode()`
+   * changes that.
    *
-   * @param p_allocator - allocator used to allocate the memory for the
-   * object and its receive message buffer. Resources later acquired from
-   * this manager (transceiver, bus manager, filters) are allocated from this
-   * same allocator via `memory_resource()`.
-   * @param p_baud_rate - bus baud rate in hertz
-   * @param p_settings - pin selection, receive buffer size, and self-test
-   * @return hal::ptr<can> - CAN peripheral manager
-   * @throws hal::operation_not_supported - if `p_baud_rate` cannot be
-   * achieved with the CAN1 peripheral's input clock.
-   * @throws hal::device_or_resource_busy - if CAN1 is already powered on and
-   * managed elsewhere.
+   * @param p_lock - held by sends, baud rate changes and filter changes
+   * @param p_buffer - the receive buffer. Must outlive the driver, and hold at
+   * least one message.
+   * @param p_settings - pins, baud rate and test mode
+   * @throws hal::argument_out_of_domain - if `p_buffer` is empty
+   * @throws hal::device_or_resource_busy - if another driver has claimed CAN1,
+   * the USB peripheral (which shares CAN1's memory), or one of the pins
+   * @throws hal::operation_not_supported - if CAN1's clock can't make the baud
+   * rate
    */
-  [[nodiscard]] static hal::ptr<can> create(
-    hal::allocator p_allocator,
-    hal::u32 p_baud_rate,
-    can_settings const& p_settings = {});
-
-  /**
-   * @brief Acquire the transceiver resource for this CAN peripheral
-   *
-   * @return hal::ptr<hal::can_transceiver> - type erased CAN transceiver
-   */
-  [[nodiscard]] hal::ptr<hal::can_transceiver> acquire_transceiver();
-
-  /**
-   * @private
-   * @brief Send a can message
-   *
-   * Called by the transceiver resource acquired from this manager.
-   *
-   * @param p_context - async context for coroutine suspension and resumption
-   * @param p_message - message to be sent over the can network
-   * @throws hal::operation_not_permitted - if the device is bus-off
-   * @throws hal::resource_unavailable_try_again - if no transmit mailbox
-   * becomes available in time
-   */
-  [[nodiscard]] async::future<void> send(async::context& p_context,
-                                         hal::can_message const& p_message);
-
-  /**
-   * @private
-   * @brief Returns this manager's message receive buffer
-   */
-  [[nodiscard]] hal::circular_span<hal::can_message const> receive_buffer();
-
-  /**
-   * @private
-   * @brief Returns the current write position of the receive buffer
-   */
-  [[nodiscard]] hal::usize receive_cursor();
-
-  /**
-   * @brief Acquire the bus configuration/control resource for this CAN
-   * peripheral
-   *
-   * @return hal::ptr<hal::can_bus_manager> - type erased CAN bus manager
-   */
-  [[nodiscard]] hal::ptr<hal::can_bus_manager> acquire_bus_manager();
-
-  /**
-   * @private
-   * @brief Set the bus baud rate
-   *
-   * Called by the bus manager resource acquired from this manager.
-   *
-   * @throws hal::operation_not_supported - if `p_hertz` cannot be achieved
-   */
-  [[nodiscard]] async::future<void> set_baud_rate(async::context& p_context,
-                                                  hal::u32 p_hertz);
-
-  /**
-   * @private
-   * @brief Suspend until the device enters the bus-off state
-   *
-   * Called by the bus manager resource acquired from this manager. Only one
-   * waiter is supported at a time, matching `hal::can_bus_manager`'s
-   * documented single-owner usage.
-   */
-  [[nodiscard]] async::future<void> wait_for_bus_off(async::context& p_context);
-
-  /**
-   * @private
-   * @brief Leave the bus-off state, if in it
-   *
-   * Called by the bus manager resource acquired from this manager.
-   */
-  [[nodiscard]] async::future<void> bus_on(async::context& p_context);
-
-  /**
-   * @private
-   * @brief Claim an unused filter bank
-   *
-   * Called by the filter resource types acquired from this manager.
-   *
-   * @throws hal::resource_unavailable_try_again - if every filter bank is
-   * already claimed
-   */
-  [[nodiscard]] hal::u8 acquire_filter_bank();
-
-  /**
-   * @private
-   * @brief Release a previously claimed filter bank
-   *
-   * Called by the filter resource types acquired from this manager.
-   */
-  void release_filter_bank(hal::u8 p_index);
-
-  /**
-   * @brief Acquire a set of 4x standard (11-bit) identifier list filters
-   *
-   * Claims one bxCAN filter bank in dual 16-bit list mode.
-   *
-   * @param p_fifo - which receive FIFO matching messages are delivered into
-   * @return std::array<hal::ptr<hal::can_id_filter>, 4> - a set of 4x
-   * identifier filters, co-owning the filter bank they share. Releases the
-   * bank once every filter in the set has been destroyed.
-   * @throws hal::resource_unavailable_try_again - if no filter banks are
-   * available
-   */
-  [[nodiscard]] std::array<hal::ptr<hal::can_id_filter>, 4>
-  acquire_identifier_filter(can_fifo p_fifo = can_fifo::select1);
-
-  /**
-   * @brief Acquire a pair of extended (29-bit) identifier list filters
-   *
-   * Claims one bxCAN filter bank in single 32-bit list mode.
-   *
-   * @param p_fifo - which receive FIFO matching messages are delivered into
-   * @return std::array<hal::ptr<hal::can_id_ext_filter>, 2> - a pair of
-   * extended identifier filters, co-owning the filter bank they share.
-   * @throws hal::resource_unavailable_try_again - if no filter banks are
-   * available
-   */
-  [[nodiscard]] std::array<hal::ptr<hal::can_id_ext_filter>, 2>
-  acquire_extended_identifier_filter(can_fifo p_fifo = can_fifo::select1);
-
-  /**
-   * @brief Acquire a pair of standard (11-bit) mask filters
-   *
-   * Claims one bxCAN filter bank in dual 16-bit mask mode.
-   *
-   * @param p_fifo - which receive FIFO matching messages are delivered into
-   * @return std::array<hal::ptr<hal::can_mask_filter>, 2> - a pair of mask
-   * filters, co-owning the filter bank they share.
-   * @throws hal::resource_unavailable_try_again - if no filter banks are
-   * available
-   */
-  [[nodiscard]] std::array<hal::ptr<hal::can_mask_filter>, 2>
-  acquire_mask_filter(can_fifo p_fifo = can_fifo::select1);
-
-  /**
-   * @brief Acquire an extended (29-bit) mask filter
-   *
-   * Claims one bxCAN filter bank in single 32-bit mask mode.
-   *
-   * @param p_fifo - which receive FIFO matching messages are delivered into
-   * @return hal::ptr<hal::can_mask_ext_filter> - extended mask filter
-   * @throws hal::resource_unavailable_try_again - if no filter banks are
-   * available
-   */
-  [[nodiscard]] hal::ptr<hal::can_mask_ext_filter> acquire_extended_mask_filter(
-    can_fifo p_fifo = can_fifo::select1);
-
-  /// @private
-  can(private_key,
-      hal::allocator p_allocator,
-      hal::u32 p_baud_rate,
-      can_settings const& p_settings);
+  can(hal::ref<hal::basic_lock> p_lock [[clang::lifetimebound]],
+      std::span<hal::can_message> p_buffer [[clang::lifetimebound]],
+      can_settings const& p_settings = {});
 
   can(can const&) = delete;
   can& operator=(can const&) = delete;
   can(can&&) = delete;
   can& operator=(can&&) = delete;
 
+  /// Disable CAN1's interrupts, power it off and release its claims
   ~can();
+
+private:
+  hal::hertz driver_baud_rate() override;
+  /**
+   * @throws hal::operation_not_permitted - if CAN1 is bus-off
+   * @throws hal::timed_out - if no transmit mailbox frees up within the time
+   * six maximum-length frames take at the baud rate, plus 1 ms. Messages
+   * already in the mailboxes keep being sent until another node acknowledges
+   * them.
+   */
+  void driver_send(hal::can_message const& p_message) override;
+  hal::circular_span<hal::can_message const> driver_receive_buffer() override;
+  hal::usize driver_receive_count() override;
+
+  /// Hardware banks 0 to 12 are for `filter_bank` objects. Bank 13 accepts
+  /// every message while the filter mode is `all`.
+  static constexpr hal::usize user_bank_count = 13;
+
+  static void fifo0_isr();
+  static void fifo1_isr();
+  static void transmit_isr();
+  static void status_change_isr();
+
+  void receive(u8 p_fifo) noexcept;
+  void transmit(hal::can_message const& p_message);
+  void set_baud_rate(hal::hertz p_baud_rate);
+  void set_filter_mode(hal::can_message_acceptance p_accept);
+  void recover_bus();
+  u8 claim_bank();
+  void release_bank(u8 p_bank) noexcept;
+  void set_bank_enabled(u8 p_bank, bool p_enabled) noexcept;
+  void apply_bank_activation() noexcept;
+
+  hal::ref<hal::basic_lock> m_lock;
+  std::span<hal::can_message> m_receive_buffer{};
+  hal::usize volatile m_receive_count = 0;
+  hal::can_receive_callback* volatile m_receive_callback = nullptr;
+  hal::can_receive_filter m_receive_filter{};
+  hal::can_bus_off_callback* volatile m_bus_off_callback = nullptr;
+  hal::notifier m_transmit_notifier;
+  hal::hertz m_baud_rate;
+  can_pins m_pins;
+  hal::can_message_acceptance m_acceptance = hal::can_message_acceptance::all;
+  /// Banks claimed through `claim_bank()`
+  std::bitset<user_bank_count> m_claimed_banks{};
+  /// Handed-out banks with at least one filter allowing something
+  std::bitset<user_bank_count> m_enabled_banks{};
+};
+
+/**
+ * @brief CAN1's bus manager: baud rate, filter mode and bus-off
+ *
+ * Constructed from a `can`, which must outlive it.
+ */
+class can::bus_manager final : public hal::can_bus_manager
+{
+public:
+  /// @param p_can - the CAN1 driver to manage
+  explicit bus_manager(can& p_can [[clang::lifetimebound]]);
+  bus_manager(bus_manager const&) = delete;
+  bus_manager& operator=(bus_manager const&) = delete;
+  bus_manager(bus_manager&&) = delete;
+  bus_manager& operator=(bus_manager&&) = delete;
+  ~bus_manager() = default;
+
+private:
+  void driver_baud_rate(hal::u32 p_hertz) override;
+  void driver_filter_mode(hal::can_message_acceptance p_accept) override;
+  void driver_on_bus_off(hal::can_bus_off_callback& p_callback) override;
+  void driver_clear_bus_off() noexcept override;
+  void driver_bus_on() override;
+
+  hal::ref<can> m_can;
+};
+
+/**
+ * @brief CAN1's receive interrupt
+ *
+ * The callback runs from the receive interrupts, after the message is stored
+ * in the `can`'s receive buffer, for messages that pass the subscriber's
+ * `hal::can_receive_filter`.
+ *
+ * Constructed from a `can`, which must outlive it.
+ */
+class can::interrupt final : public hal::can_interrupt
+{
+public:
+  /// @param p_can - the CAN1 driver whose messages to report
+  explicit interrupt(can& p_can [[clang::lifetimebound]]);
+  interrupt(interrupt const&) = delete;
+  interrupt& operator=(interrupt const&) = delete;
+  interrupt(interrupt&&) = delete;
+  interrupt& operator=(interrupt&&) = delete;
+  ~interrupt() = default;
+
+private:
+  void driver_on_receive(hal::can_receive_callback& p_callback,
+                         hal::can_receive_filter p_filter) override;
+  void driver_clear_receive() noexcept override;
+
+  hal::ref<can> m_can;
+};
+
+/**
+ * @brief One of CAN1's hardware filter banks, split into `Count` filters
+ *
+ * A message is received if any filter of any enabled bank accepts it. A filter
+ * accepts nothing until `allow()` gives it a value, and `allow(std::nullopt)`
+ * makes it accept nothing again. While none of a bank's filters allows
+ * anything, the bank is disabled.
+ *
+ * Filters only take effect while the bus manager's filter mode is
+ * `hal::can_message_acceptance::filtered`.
+ *
+ * @tparam Allowed - what each filter accepts: a standard ID (`hal::u16`), an
+ * extended ID (`hal::u32`), or an ID and mask pair (`hal::can_mask`,
+ * `hal::can_mask_ext`)
+ * @tparam Count - how many filters the bank holds
+ */
+template<typename Allowed, hal::usize Count>
+class can::filter_bank
+{
+public:
+  /// One filter of the bank
+  class filter final : public hal::can_filter<Allowed>
+  {
+  public:
+    filter(filter const&) = delete;
+    filter& operator=(filter const&) = delete;
+    filter(filter&&) = delete;
+    filter& operator=(filter&&) = delete;
+    ~filter() = default;
+
+  private:
+    friend class filter_bank;
+    filter(filter_bank& p_bank, u8 p_slot);
+
+    void driver_allow(std::optional<Allowed> p_allowed) override;
+
+    filter_bank* m_bank;
+    u8 m_slot;
+  };
+
+  /**
+   * @brief Claim a free filter bank of `p_can` and set it up
+   *
+   * The bank accepts nothing until one of its filters allows something.
+   *
+   * @param p_can - the CAN driver whose filter banks to claim from
+   * @param p_fifo - the receive FIFO the bank's messages go to
+   * @throws hal::device_or_resource_busy - if all 13 filter banks are
+   * in use
+   */
+  filter_bank(can& p_can [[clang::lifetimebound]],
+              can_fifo p_fifo = can_fifo::select1);
+  filter_bank(filter_bank const&) = delete;
+  filter_bank& operator=(filter_bank const&) = delete;
+  filter_bank(filter_bank&&) = delete;
+  filter_bank& operator=(filter_bank&&) = delete;
+  /// Disable the bank and hand it back to the driver
+  ~filter_bank();
+
+  /**
+   * @param p_index - which filter, from 0 to `Count - 1`
+   * @return filter& - the filter
+   * @throws hal::argument_out_of_domain - if `p_index` is `Count` or more
+   */
+  [[nodiscard]] filter& operator[](hal::usize p_index) [[clang::lifetimebound]];
+
+private:
+
+  template<hal::usize... Index>
+  std::array<filter, Count> make_filters(std::index_sequence<Index...>);
+  void allow(u8 p_slot, std::optional<Allowed> p_allowed);
+
+  hal::ref<can> m_can;
+  std::array<filter, Count> m_filters;
+  /// The bank's two registers, FR2 in the upper half
+  hal::u64 m_value = 0;
+  u8 m_bank;
+  /// Filters that allow something
+  std::bitset<Count> m_allowing{};
 };
 }  // namespace hal::stm32f1

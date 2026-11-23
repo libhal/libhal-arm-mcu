@@ -254,8 +254,10 @@ private:
     u64 counts = 1;
     u64 count = cycles;
     if (cycles > max_count) {
-      counts = (cycles / max_count) + u64{ (cycles % max_count) != 0 };
-      count = (cycles / counts) + u64{ (cycles % counts) != 0 };
+      counts = hal::divide<hal::rounding::ceil, u64>(
+        { .num = cycles, .den = max_count });
+      count =
+        hal::divide<hal::rounding::ceil, u64>({ .num = cycles, .den = counts });
     }
 
     m_mode = p_mode;

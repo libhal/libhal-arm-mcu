@@ -160,12 +160,19 @@ void release_channel(u8 p_index) noexcept
   // again. A lap that ends between the read and the clear would still be
   // lost, but a lap takes a whole buffer of transfers, far longer than that.
   auto const flags = read_flags(p_index);
-  if ((flags & transfer_complete_flag) != 0) {
-    // A circular receive sets transfer complete at the end of every lap.
-    // One-shot transfers never read the count.
-    laps[p_index] = laps[p_index] + 1U;
+  {
+    // Between counting a lap and clearing its flag, circular_received() would
+    // count the lap twice: once in `laps` and once for the flag still being
+    // set. Masking interrupts keeps a higher-priority interrupt that reads the
+    // count from running in between.
+    hal::cortex_m::interrupt_mask_guard const masked;
+    if ((flags & transfer_complete_flag) != 0) {
+      // A circular receive sets transfer complete at the end of every lap.
+      // One-shot transfers never read the count.
+      laps[p_index] = laps[p_index] + 1U;
+    }
+    clear_flags(p_index, flags);
   }
-  clear_flags(p_index, flags);
   if (auto* const notifier = notifiers[p_index]) {
     notifier->notify();
   }

@@ -258,26 +258,26 @@ bit_mask odr_mask(u8 p_pin)
   };
 }
 
-std::array<gpio_t*, 8> gpio_reg_map{
-  reinterpret_cast<gpio_t*>(0x4001'0800),  // 'A'
-  reinterpret_cast<gpio_t*>(0x4001'0C00),  // 'B'
-  reinterpret_cast<gpio_t*>(0x4001'1000),  // 'C'
-  reinterpret_cast<gpio_t*>(0x4001'1400),  // 'D'
-  reinterpret_cast<gpio_t*>(0x4001'1800),  // 'E'
-  reinterpret_cast<gpio_t*>(0x4001'1c00),  // 'F'
-  reinterpret_cast<gpio_t*>(0x4001'2000),  // 'G'
-};
-
 /**
  * @brief Returns the gpio register based on the port
  *
- * @param p_port - port letter, must be from 'A' to 'G'
+ * Doesn't check the port, since it runs on every pin read and write. The
+ * functions that take a pin from the caller check it first.
+ *
+ * @pre `p_port` is from 'A' to 'G'.
+ *
+ * @param p_port - port letter
  * @return gpio_t& - gpio register map
  */
 gpio_t& gpio_reg(u8 p_port)
 {
-  auto const offset = p_port - 'A';
-  return *gpio_reg_map.at(offset);
+  // The ports' registers are 0x400 apart, from port A (RM0008 section 3.3)
+  constexpr std::uintptr_t port_a_address = 0x4001'0800;
+  constexpr std::uintptr_t port_spacing = 0x400;
+  auto const address =
+    port_a_address + (static_cast<std::uintptr_t>(p_port - 'A') * port_spacing);
+  // NOLINTNEXTLINE(performance-no-int-to-ptr)
+  return *reinterpret_cast<gpio_t*>(address);
 }
 
 /// Returns the configuration control register for the specific pin.
@@ -364,13 +364,23 @@ export void release_jtag_pins()
 }
 
 /// One bit per pin of ports A to G, set while a driver has claimed the pin.
+///
+/// Indexed with `[]`, after checking the index: `test()`, `set()` and
+/// `reset()` check it again and throw `std::out_of_range`, which drivers
+/// mustn't throw.
 constinit std::bitset<7 * 16> claimed_pins{};
+
+/// Whether the pin is on port 'A' to 'G' and numbered 0 to 15
+bool pin_exists(pin p_pin) noexcept
+{
+  return (p_pin.port >= 'A') and (p_pin.port <= 'G') and (p_pin.pin <= 15);
+}
 
 /// @throws hal::argument_out_of_domain - if the port isn't 'A' to 'G' or the
 /// pin isn't 0 to 15
 std::size_t pin_index(pin p_pin)
 {
-  if (p_pin.port < 'A' || p_pin.port > 'G' || p_pin.pin > 15) {
+  if (not pin_exists(p_pin)) {
     throw hal::argument_out_of_domain(nullptr);
   }
   return static_cast<std::size_t>(p_pin.port - 'A') * 16 + p_pin.pin;
@@ -392,10 +402,10 @@ std::size_t pin_index(pin p_pin)
 export void claim_pin(pin p_pin)
 {
   auto const index = pin_index(p_pin);
-  if (claimed_pins.test(index)) {
+  if (claimed_pins[index]) {
     throw hal::device_or_resource_busy(nullptr);
   }
-  claimed_pins.set(index);
+  claimed_pins[index] = true;
 }
 
 /**
@@ -407,8 +417,8 @@ export void claim_pin(pin p_pin)
  */
 export void release_pin(pin p_pin) noexcept
 {
-  if (p_pin.port >= 'A' && p_pin.port <= 'G' && p_pin.pin <= 15) {
-    claimed_pins.reset(pin_index(p_pin));
+  if (pin_exists(p_pin)) {
+    claimed_pins[pin_index(p_pin)] = false;
   }
 }
 
@@ -421,10 +431,10 @@ export void release_pin(pin p_pin) noexcept
  */
 export [[nodiscard]] bool is_pin_claimed(pin p_pin) noexcept
 {
-  if (p_pin.port < 'A' || p_pin.port > 'G' || p_pin.pin > 15) {
+  if (not pin_exists(p_pin)) {
     return false;
   }
-  return claimed_pins.test(pin_index(p_pin));
+  return claimed_pins[pin_index(p_pin)];
 }
 
 /**
@@ -439,6 +449,9 @@ export [[nodiscard]] bool is_pin_claimed(pin p_pin) noexcept
  */
 export void configure_pin(pin p_pin, pin_config_t p_config)
 {
+  // Throws before any register is written, since gpio_reg() doesn't check
+  static_cast<void>(pin_index(p_pin));
+
   // The GPIO pins PB3, PB4, and PA15 are default initalized to be used for
   // JTAG purposes. This releases them if they are being configured
   if ((p_pin.port == 'B' && p_pin.pin == 3) ||
@@ -465,11 +478,16 @@ export void configure_pin(pin p_pin, pin_config_t p_config)
  * @brief Set pin to the system reset state
  *
  * This does not release the pin's claim; call release_pin() for that.
+ * Resetting a pin that doesn't exist does nothing, so destructors can call
+ * this without it throwing.
  *
  * @param p_pin - the pin to configure
  */
-export void reset_pin(pin p_pin)
+export void reset_pin(pin p_pin) noexcept
 {
+  if (not pin_exists(p_pin)) {
+    return;
+  }
   auto& config_reg = config_register(p_pin);
   config_reg = bit_modify(config_reg)
                  .insert(config_mask(p_pin.pin), reset_pin_config)

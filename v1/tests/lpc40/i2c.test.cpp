@@ -14,33 +14,14 @@
 
 #include <libhal-arm-mcu/lpc40/i2c.hpp>
 
-#include "lpc40/gpio_reg.hpp"
-#include "lpc40/helper.hpp"
-#include "lpc40/i2c_reg.hpp"
-#include "lpc40/pin_reg.hpp"
-#include "lpc40/system_controller_reg.hpp"
-
 #include <boost/ut.hpp>
 
 namespace hal::lpc40 {
-boost::ut::suite i2c_test = []() {
+// Compiles the header on the host. The driver needs its hardware, so the test
+// is empty.
+void i2c_test()
+{
   using namespace boost::ut;
-
-  auto stub_out_pin_map = stub_out_registers(&pin_map);
-  auto stub_out_gpio0 = stub_out_registers(&gpio_reg[0]);
-  auto stub_out_gpio1 = stub_out_registers(&gpio_reg[1]);
-  auto stub_out_gpio2 = stub_out_registers(&gpio_reg[2]);
-  auto stub_out_gpio3 = stub_out_registers(&gpio_reg[3]);
-  auto stub_out_gpio4 = stub_out_registers(&gpio_reg[4]);
-  auto stub_out_gpio5 = stub_out_registers(&gpio_reg[5]);
-  auto stub_out_sys = stub_out_registers(&system_controller_reg);
-  auto stub_out_i2c0 = stub_out_registers(&i2c_reg0);
-  auto stub_out_i2c1 = stub_out_registers(&i2c_reg1);
-  auto stub_out_i2c2 = stub_out_registers(&i2c_reg2);
-
-  // [[maybe_unused]] auto test_i2c = hal::lpc40::i2c::get(0).value();
-
-  "i2c::ctor()"_test = []() {};
-  "i2c::configure()"_test = []() {};
-};
+  "lpc40::i2c"_test = []() {};
+}
 }  // namespace hal::lpc40

@@ -13,3 +13,15 @@
 // limitations under the License.
 
 #include <libhal-arm-mcu/stm32f1/usb.hpp>
+
+#include <boost/ut.hpp>
+
+namespace hal::stm32f1 {
+// Compiles the header on the host. The driver needs its hardware, so the test
+// is empty.
+void usb_test()
+{
+  using namespace boost::ut;
+  "stm32f1::usb"_test = []() {};
+}
+}  // namespace hal::stm32f1

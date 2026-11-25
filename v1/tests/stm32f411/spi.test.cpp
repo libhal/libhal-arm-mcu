@@ -17,12 +17,11 @@
 #include <boost/ut.hpp>
 
 namespace hal::stm32f411 {
-boost::ut::suite spi_test = []() {
+// Compiles the header on the host. The driver needs its hardware, so the test
+// is empty.
+void spi_test()
+{
   using namespace boost::ut;
-  using namespace std::literals;
-
-  "spi::spi()"_test = []() {
-    // Add later?
-  };
-};
+  "stm32f411::spi"_test = []() {};
+}
 }  // namespace hal::stm32f411

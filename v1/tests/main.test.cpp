@@ -12,9 +12,17 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// v1 has no unit tests. Its Boost.UT suites were registered as globals but
-// never ran, and on Linux the test runner's registry then showed up as a
-// LeakSanitizer leak. This empty program keeps the test build working.
+// namespace hal::cortex_m {
+// extern void dwt_test();
+// extern void systick_timer_test();
+// extern void interrupt_test();
+// }  // namespace hal::cortex_m
+
 int main()
 {
+  // [Position Dependent Test]:
+  // Initializes interrupt vector table and thus must go first
+  // hal::cortex_m::interrupt_test();
+  // hal::cortex_m::dwt_test();
+  // hal::cortex_m::systick_timer_test();
 }

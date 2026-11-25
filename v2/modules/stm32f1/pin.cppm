@@ -364,7 +364,7 @@ export void release_jtag_pins()
 }
 
 /// One bit per pin of ports A to G, set while a driver has claimed the pin.
-constinit std::bitset<7 * 16> claimed_pins{};
+constinit std::bitset<std::size_t{ 7 } * 16U> claimed_pins{};
 
 /// @throws hal::argument_out_of_domain - if the port isn't 'A' to 'G' or the
 /// pin isn't 0 to 15

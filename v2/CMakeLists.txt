@@ -13,7 +13,6 @@
 # limitations under the License.
 
 cmake_minimum_required(VERSION 4.0)
-set(LIBHAL_ENABLE_CLANG_TIDY OFF)
 project(arm-mcu LANGUAGES CXX)
 
 # libhal cmake utilities from libhal-cmake-util

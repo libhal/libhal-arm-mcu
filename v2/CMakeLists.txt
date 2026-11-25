@@ -49,6 +49,7 @@ libhal_add_library(arm-mcu
         modules/stm32_generic/uart.cppm
         modules/stm32f1/stm32f1.cppm
         modules/stm32f1/constants.cppm
+        modules/stm32f1/claim.cppm
         modules/stm32f1/power.cppm
         modules/stm32f1/clock.cppm
         modules/stm32f1/dma.cppm

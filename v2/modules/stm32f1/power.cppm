@@ -23,6 +23,7 @@ export module hal.arm_mcu.stm32f1:power;
 import hal;
 import hal.util;
 
+import :claim;
 import :constants;
 
 namespace hal::stm32f1 {
@@ -139,11 +140,7 @@ std::size_t claim_index(peripheral p_peripheral)
  */
 export void claim(peripheral p_peripheral)
 {
-  auto const index = claim_index(p_peripheral);
-  if (claimed_peripherals.test(index)) {
-    throw hal::device_or_resource_busy(nullptr);
-  }
-  claimed_peripherals.set(index);
+  claim_or_throw(claimed_peripherals, claim_index(p_peripheral), nullptr);
 }
 
 /**

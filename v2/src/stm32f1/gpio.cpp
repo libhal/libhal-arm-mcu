@@ -25,6 +25,7 @@ import hal;
 import hal.util;
 import hal.arm_mcu.cortex_m;
 
+import :claim;
 import :constants;
 import :pin;
 
@@ -80,10 +81,6 @@ constinit std::array<hal::edge_triggered_callback*, gpio_line_count>
 /// Set while an edge_triggered_interrupt owns the line
 constinit std::bitset<gpio_line_count> claimed_lines{};
 
-/// The lines that share the EXTI9_5 and EXTI15_10 interrupts
-constexpr u32 lines_5_to_9 = 0b0000'0011'1110'0000;
-constexpr u32 lines_10_to_15 = 0b1111'1100'0000'0000;
-
 /// The 4-bit EXTICR field that selects the port of a line
 bit_mask port_select_mask(u8 p_line)
 {
@@ -99,7 +96,7 @@ bit_mask port_select_mask(u8 p_line)
   while (pending != 0) {
     auto const line = static_cast<u8>(std::countr_zero(pending));
     pending = pending & (pending - 1U);
-    if (auto* const callback = callbacks[line]) {
+    if (auto* const callback = callbacks[line]; callback != nullptr) {
       auto const port = bit_extract(port_select_mask(line),
                                     alternative_function_io->exticr[line / 4U]);
       callback->callback(
@@ -124,6 +121,10 @@ struct line_interrupt
 
 line_interrupt interrupt_for(u8 p_line)
 {
+  // The lines that share the EXTI9_5 and EXTI15_10 interrupts
+  constexpr u32 lines_5_to_9 = 0b0000'0011'1110'0000;
+  constexpr u32 lines_10_to_15 = 0b1111'1100'0000'0000;
+
   switch (p_line) {
     case 0:
       return { irq::exti0, &exti_isr<1U << 0U>, 1U << 0U };
@@ -231,12 +232,12 @@ edge_triggered_interrupt::edge_triggered_interrupt(pin p_pin,
                                                    settings const& p_settings)
   : m_pin(p_pin)
 {
+  // Another port's pin can hold the line. Check the line before claiming the
+  // pin, so this throws before it has claimed anything. claim_pin() then
+  // checks that the pin exists, which keeps the line's index in range.
+  throw_if_claimed(claimed_lines, m_pin.pin, this);
   claim_pin(m_pin);
-  if (claimed_lines.test(m_pin.pin)) {
-    release_pin(m_pin);
-    throw hal::device_or_resource_busy(this);
-  }
-  claimed_lines.set(m_pin.pin);
+  claimed_lines[m_pin.pin] = true;
 
   reset_pin(m_pin);
   if (p_resistor == pin_resistor::pull_up) {
@@ -280,6 +281,9 @@ edge_triggered_interrupt::~edge_triggered_interrupt()
 void edge_triggered_interrupt::driver_configure(settings const& p_settings)
 {
   auto const line = bit_mask::from(m_pin.pin);
+  // edge_trigger::both is neither falling nor rising, so it enables both
+  // edges. Written as two "not" checks, this is 8 B smaller than checking for
+  // each of rising, falling and both.
   auto const rising = (p_settings.trigger != edge_trigger::falling);
   auto const falling = (p_settings.trigger != edge_trigger::rising);
   bit_modify(exti->rising_trigger).insert(line, static_cast<u32>(rising));

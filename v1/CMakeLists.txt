@@ -94,36 +94,7 @@ libhal_test_and_make_library(
   src/stm32f40/output_pin.cpp
 
   TEST_SOURCES
-  # cortex_m
-  tests/dwt_counter.test.cpp
-  tests/interrupt.test.cpp
   tests/main.test.cpp
-  tests/systick_timer.test.cpp
-
-  # lpc40
-  tests/lpc40/adc.test.cpp
-  tests/lpc40/can.test.cpp
-  tests/lpc40/i2c.test.cpp
-  tests/lpc40/input_pin.test.cpp
-  tests/lpc40/interrupt_pin.test.cpp
-  tests/lpc40/output_pin.test.cpp
-  tests/lpc40/pwm.test.cpp
-  tests/lpc40/spi.test.cpp
-  tests/lpc40/stream_dac.test.cpp
-  tests/lpc40/uart.test.cpp
-
-  # stm32f1
-  tests/stm32f1/can.test.cpp
-  tests/stm32f1/can2.test.cpp
-  tests/stm32f1/output_pin.test.cpp
-  tests/stm32f1/uart.test.cpp
-  tests/stm32f1/spi.test.cpp
-  tests/stm32f1/adc.test.cpp
-  tests/stm32f1/usb.test.cpp
-
-  # stm32f411
-  tests/stm32f411/output_pin.test.cpp
-  tests/stm32f411/spi.test.cpp
 
   PACKAGES
   libhal

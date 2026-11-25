@@ -176,6 +176,9 @@ public:
 
   /// Mask the interrupt, return the pin to its reset state and release its
   /// claims
+  // The interface's destructor is protected and not virtual, and this class
+  // has the same name, so clang-tidy reads this as hiding it. It doesn't.
+  // NOLINTNEXTLINE(bugprone-derived-method-shadowing-base-method)
   ~edge_triggered_interrupt();
 
 private:

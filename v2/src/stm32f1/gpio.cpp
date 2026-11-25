@@ -127,23 +127,37 @@ line_interrupt interrupt_for(u8 p_line)
 
   switch (p_line) {
     case 0:
-      return { irq::exti0, &exti_isr<1U << 0U>, 1U << 0U };
+      return { .request = irq::exti0,
+               .isr = &exti_isr<1U << 0U>,
+               .lines = 1U << 0U };
     case 1:
-      return { irq::exti1, &exti_isr<1U << 1U>, 1U << 1U };
+      return { .request = irq::exti1,
+               .isr = &exti_isr<1U << 1U>,
+               .lines = 1U << 1U };
     case 2:
-      return { irq::exti2, &exti_isr<1U << 2U>, 1U << 2U };
+      return { .request = irq::exti2,
+               .isr = &exti_isr<1U << 2U>,
+               .lines = 1U << 2U };
     case 3:
-      return { irq::exti3, &exti_isr<1U << 3U>, 1U << 3U };
+      return { .request = irq::exti3,
+               .isr = &exti_isr<1U << 3U>,
+               .lines = 1U << 3U };
     case 4:
-      return { irq::exti4, &exti_isr<1U << 4U>, 1U << 4U };
+      return { .request = irq::exti4,
+               .isr = &exti_isr<1U << 4U>,
+               .lines = 1U << 4U };
     case 5:
     case 6:
     case 7:
     case 8:
     case 9:
-      return { irq::exti9_5, &exti_isr<lines_5_to_9>, lines_5_to_9 };
+      return { .request = irq::exti9_5,
+               .isr = &exti_isr<lines_5_to_9>,
+               .lines = lines_5_to_9 };
     default:
-      return { irq::exti15_10, &exti_isr<lines_10_to_15>, lines_10_to_15 };
+      return { .request = irq::exti15_10,
+               .isr = &exti_isr<lines_10_to_15>,
+               .lines = lines_10_to_15 };
   }
 }
 }  // namespace
@@ -267,7 +281,7 @@ edge_triggered_interrupt::~edge_triggered_interrupt()
   bit_modify(exti->falling_trigger).clear(line);
   exti->pending = 1U << m_pin.pin;  // Writing 1 clears the pending bit
 
-  claimed_lines.reset(m_pin.pin);
+  claimed_lines[m_pin.pin] = false;
   // A shared interrupt stays on while another of its lines is in use
   auto const interrupt = interrupt_for(m_pin.pin);
   if ((claimed_lines.to_ulong() & interrupt.lines) == 0) {

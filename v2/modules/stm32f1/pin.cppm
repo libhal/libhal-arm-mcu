@@ -364,11 +364,7 @@ export void release_jtag_pins()
 }
 
 /// One bit per pin of ports A to G, set while a driver has claimed the pin.
-///
-/// Indexed with `[]`, after checking the index: `test()`, `set()` and
-/// `reset()` check it again and throw `std::out_of_range`, which drivers
-/// mustn't throw.
-constinit std::bitset<7 * 16> claimed_pins{};
+constinit std::bitset<std::size_t{ 7 } * 16U> claimed_pins{};
 
 /// Whether the pin is on port 'A' to 'G' and numbered 0 to 15
 bool pin_exists(pin p_pin) noexcept

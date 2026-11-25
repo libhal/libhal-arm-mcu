@@ -110,7 +110,7 @@ void output_pin::driver_level(bool p_high)
     gpio_reg(m_pin.port).bsrr = 1U << m_pin.pin;
   } else {
     // The last 16 bits of the register reset the output state
-    gpio_reg(m_pin.port).bsrr = 1U << (16 + m_pin.pin);
+    gpio_reg(m_pin.port).bsrr = 1U << (16U + m_pin.pin);
   }
 }
 

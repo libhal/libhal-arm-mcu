@@ -125,6 +125,9 @@ public:
   serial& operator=(serial&&) = delete;
 
   /// Stop the receive DMA channel and return the pins to their reset state
+  // The interface's destructor is protected and not virtual, and this class
+  // has the same name, so clang-tidy reads this as hiding it. It doesn't.
+  // NOLINTNEXTLINE(bugprone-derived-method-shadowing-base-method)
   ~serial();
 
 private:

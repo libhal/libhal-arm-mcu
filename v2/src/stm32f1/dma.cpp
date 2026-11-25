@@ -384,6 +384,8 @@ void dma_channel::copy(std::span<hal::byte const> p_source,
   }
 }
 
+// Private, and called with named locals by transmit() and receive().
+// NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
 void dma_channel::start(uptr p_register,
                         uptr p_memory,
                         std::size_t p_count,

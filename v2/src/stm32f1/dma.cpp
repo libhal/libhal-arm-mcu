@@ -134,9 +134,9 @@ constinit std::atomic<u32> claimed_channels{ 0 };
 constinit std::array<hal::notifier* volatile, channel_count> notifiers{};
 
 /// Laps each channel's circular receive has finished. Only the channel's
-/// interrupt writes it while the channel runs, and `start()` resets it while
-/// the channel is stopped.
-constinit std::array<u32 volatile, channel_count> laps{};
+/// interrupt counts them while the channel runs, and `start()` resets them
+/// while the channel is stopped.
+constinit std::array<hal::lap_counter, channel_count> laps{};
 
 [[nodiscard]] bool claim_channel(u8 p_index) noexcept
 {
@@ -162,14 +162,14 @@ void release_channel(u8 p_index) noexcept
   auto const flags = read_flags(p_index);
   {
     // Between counting a lap and clearing its flag, circular_received() would
-    // count the lap twice: once in `laps` and once for the flag still being
-    // set. Masking interrupts keeps a higher-priority interrupt that reads the
-    // count from running in between.
+    // count the lap twice: once from count_lap() and once for the flag still
+    // being set. Masking interrupts keeps a higher-priority interrupt that
+    // reads the count from running in between.
     hal::cortex_m::interrupt_mask_guard const masked;
     if ((flags & transfer_complete_flag) != 0) {
       // A circular receive sets transfer complete at the end of every lap.
       // One-shot transfers never read the count.
-      laps[p_index] = laps[p_index] + 1U;
+      laps[p_index].count_lap();
     }
     clear_flags(p_index, flags);
   }
@@ -400,7 +400,7 @@ void dma_channel::start(uptr p_register,
   channel.peripheral_address = static_cast<u32>(p_register);
   channel.memory_address = static_cast<u32>(p_memory);
   channel.transfer_amount = static_cast<u32>(p_count);
-  laps[m_index] = 0;
+  laps[m_index].reset();
   m_circular_length = 0;
   if (p_count == 0) {
     return;
@@ -431,36 +431,18 @@ std::size_t dma_channel::remaining() const noexcept
 
 hal::usize dma_channel::circular_received() const noexcept
 {
-  // The lap count and the channel's position must come from the same moment.
-  // Read them again if the interrupt counted a lap in between, or if a lap
-  // ended in between, which sets the transfer complete flag.
-  u32 lap_count = 0;
-  u32 remaining_count = 0;
-  bool lap_pending = false;
-  bool lap_ended_during_read = false;
-  do {
-    lap_count = laps[m_index];
-    auto const pending_before =
-      (read_flags(m_index) & transfer_complete_flag) != 0;
-    remaining_count = m_registers->transfer_amount;
-    lap_pending = (read_flags(m_index) & transfer_complete_flag) != 0;
-    lap_ended_during_read = (pending_before != lap_pending);
-  } while ((lap_count != laps[m_index]) or lap_ended_during_read);
-
-  // The reads above are one moment in time. If a lap had ended at that moment
-  // but the interrupt hadn't counted it yet, the channel had already reloaded
-  // the transfer amount, so that lap belongs in this result. `laps` is left to
-  // the interrupt: when it runs, it counts the lap and clears the flag, and
-  // later calls see the lap in `laps` instead.
-  auto const completed_laps = lap_pending ? (lap_count + 1U) : lap_count;
-  // At the end of a lap the channel reloads the transfer amount, so the
-  // position is in [0, length).
-  auto const received_this_lap = m_circular_length - remaining_count;
-  auto const received_before_this_lap = completed_laps * m_circular_length;
+  auto const received = laps[m_index].total<hal::usize>(
+    m_circular_length,
+    [this] { return (read_flags(m_index) & transfer_complete_flag) != 0; },
+    // At the end of a lap the channel reloads the transfer amount, so the
+    // position is in [0, length).
+    [this] {
+      return hal::u32{ m_circular_length } - m_registers->transfer_amount;
+    });
   // Reads of the memory being received into must happen after the channel
   // has written it.
   std::atomic_signal_fence(std::memory_order_seq_cst);
-  return received_before_this_lap + received_this_lap;
+  return received;
 }
 
 bool dma_channel::failed() const noexcept

@@ -290,6 +290,9 @@ export struct i2c_timing
  * is outside what that mode allows: 2 MHz to 50 MHz, and at least 4 MHz for
  * fast mode (RM0008 section 26.3.3).
  */
+// Both are hal::hertz. The one caller passes the settings' rate and the
+// peripheral's clock, and the tests check the order.
+// NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
 export i2c_timing compute_i2c_timing(hal::hertz p_clock_rate,
                                      hal::hertz p_frequency)
 {

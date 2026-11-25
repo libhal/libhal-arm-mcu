@@ -93,8 +93,8 @@ auto* scb =
  */
 export void initialize_floating_point_unit()
 {
-  scb->cpacr = scb->cpacr | ((0b11 << 10 * 2) | /* set CP10 Full Access */
-                             (0b11 << 11 * 2)); /* set CP11 Full Access */
+  scb->cpacr = scb->cpacr | ((0b11U << (10U * 2U)) | /* CP10 Full Access */
+                             (0b11U << (11U * 2U))); /* CP11 Full Access */
 }
 
 /**
@@ -284,7 +284,7 @@ export [[noreturn]] void reset()
   // that this action is valid, otherwise the processor ignores the write
   // command.
   // Bit 2 is the SYSRESETREQ bit.
-  scb->aircr = (0x5FA << 16) | (1 << 2);
+  scb->aircr = (0x5FAU << 16U) | (1U << 2U);
   // System reset is asynchronous, so the code needs to wait.
   hal::halt();
 }
@@ -298,6 +298,8 @@ extern "C"
   // around this, we replace sys_semihost and check if a debugger is
   // connected. If it is connected we call the breakpoint instruction with the
   // appropriate input value 0xAB. Otherwise, return an error code.
+  // The linker's --wrap option requires the __wrap_ name.
+  // NOLINTNEXTLINE(bugprone-reserved-identifier,readability-identifier-naming)
   int __wrap_sys_semihost([[maybe_unused]] int p_reason,
                           [[maybe_unused]] void* p_arg)
   {
@@ -314,6 +316,8 @@ extern "C"
     return -1;  // No debugger, return error
   }
 
+  // The linker's --wrap option requires the __wrap_ name.
+  // NOLINTNEXTLINE(bugprone-reserved-identifier,readability-identifier-naming)
   char* __wrap_sys_semihost_get_cmdline()
   {
     if (hal::cortex_m::debugger_connected()) {

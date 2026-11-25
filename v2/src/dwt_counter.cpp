@@ -94,10 +94,10 @@ struct core_debug_registers_t
  *   - Embedded Trace Macrocell (ETM)
  *   - Trace Port Interface Unit (TPIU).
  */
-constexpr unsigned core_trace_enable = 1 << 24U;
+constexpr unsigned core_trace_enable = 1U << 24U;
 
 /// Mask for turning on cycle counter.
-constexpr unsigned enable_cycle_count = 1 << 0;
+constexpr unsigned enable_cycle_count = 1U << 0U;
 
 /// Address of the hardware DWT registers
 constexpr auto dwt_address = static_cast<uptr>(0xE0001000UL);

@@ -127,4 +127,71 @@ private:
   pin m_pin;
   output_speed m_speed;
 };
+/**
+ * @brief STM32F1 GPIO pin that calls a callback when its level changes
+ *
+ * Uses the external interrupt controller (EXTI). EXTI line n serves pin n of
+ * one port, so only one port's pin n can be an edge-triggered interrupt at a
+ * time: PA0 and PB0 can't both be.
+ *
+ * The pin is configured as an input. The callback gets the pin's level as it
+ * reads when the interrupt runs, which may already differ from the level
+ * right after the edge if the signal bounces.
+ *
+ * Construct one per pin, wherever it should live: on the stack, as a static,
+ * or on the heap with `hal::make_owner<...>(...)`.
+ *
+ * ```cpp
+ * // The button connects the pin to ground when pressed, so the pull-up holds
+ * // it high until then: a press is a falling edge.
+ * hal::stm32f1::edge_triggered_interrupt button(
+ *   { .port = 'B', .pin = 4 },
+ *   hal::pin_resistor::pull_up,
+ *   { .trigger = hal::edge_trigger::falling });
+ * auto subscription = button.on_trigger(my_callback);
+ * ```
+ */
+export class edge_triggered_interrupt final
+  : public hal::edge_triggered_interrupt
+{
+public:
+  /**
+   * @brief Configure a pin as an input that triggers an interrupt on an edge
+   *
+   * The interrupt stays masked until a callback is registered with
+   * `on_trigger()`, so edges before that are lost.
+   *
+   * @param p_pin - port & pin selection
+   * @param p_resistor - pull resistor for the pin
+   * @param p_settings - which edges trigger the callback
+   * @throws hal::device_or_resource_busy - if another driver has claimed the
+   * pin (see `claim_pin()`), or another port's pin with the same number is
+   * already an edge-triggered interrupt
+   * @throws hal::argument_out_of_domain - if the port isn't 'A' to 'G' or the
+   * pin isn't 0 to 15
+   */
+  explicit edge_triggered_interrupt(
+    pin p_pin,
+    hal::pin_resistor p_resistor = hal::pin_resistor::pull_up,
+    settings const& p_settings = {});
+
+  edge_triggered_interrupt(edge_triggered_interrupt const&) = delete;
+  edge_triggered_interrupt& operator=(edge_triggered_interrupt const&) = delete;
+  edge_triggered_interrupt(edge_triggered_interrupt&&) = delete;
+  edge_triggered_interrupt& operator=(edge_triggered_interrupt&&) = delete;
+
+  /// Mask the interrupt, return the pin to its reset state and release its
+  /// claims
+  // The interface's destructor is protected and not virtual, and this class
+  // has the same name, so clang-tidy reads this as hiding it. It doesn't.
+  // NOLINTNEXTLINE(bugprone-derived-method-shadowing-base-method)
+  ~edge_triggered_interrupt();
+
+private:
+  void driver_configure(settings const& p_settings) override;
+  void driver_on_trigger(hal::edge_triggered_callback& p_callback) override;
+  void driver_clear_trigger() noexcept override;
+
+  pin m_pin;
+};
 }  // namespace hal::stm32f1

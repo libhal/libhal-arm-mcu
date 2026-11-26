@@ -25,6 +25,7 @@ export module hal.arm_mcu.stm32f1:pin;
 import hal;
 import hal.util;
 
+import :claim;
 import :constants;
 import :power;
 import :clock;
@@ -397,11 +398,7 @@ std::size_t pin_index(pin p_pin)
  */
 export void claim_pin(pin p_pin)
 {
-  auto const index = pin_index(p_pin);
-  if (claimed_pins[index]) {
-    throw hal::device_or_resource_busy(nullptr);
-  }
-  claimed_pins[index] = true;
+  claim_or_throw(claimed_pins, pin_index(p_pin), nullptr);
 }
 
 /**

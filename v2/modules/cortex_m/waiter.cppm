@@ -63,9 +63,10 @@ public:
    * so it must not already have one, and it must outlive the waiter.
    * @throws hal::subscription_busy - if p_timer already has a callback
    */
-  explicit wfi_waiter(hal::timed_interrupt& p_timer [[clang::lifetimebound]])
+  explicit wfi_waiter(hal::ref<hal::timed_interrupt> p_timer
+                      [[clang::lifetimebound]])
     : m_timer(p_timer)
-    , m_wakeup_subscription(p_timer.on_expire(m_wakeup))
+    , m_wakeup_subscription(p_timer->on_expire(m_wakeup))
   {
     // Set s_installed first, so the provider never returns a null waiter.
     m_previous_installed = std::exchange(s_installed, this);

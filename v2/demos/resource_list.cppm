@@ -63,13 +63,10 @@ hal::static_ref<hal::adc16> adc();
 hal::static_ref<hal::i2c> i2c();
 hal::static_ref<hal::spi_channel> spi_channel();
 hal::static_ref<memory_copier> copier();
-
-// Plain references for the comparison: one variant returns the same object
-// from several of these, which static_ref can't express.
-hal::can_transceiver& can_transceiver();
-hal::can_bus_manager& can_bus_manager();
-hal::can_interrupt& can_interrupt();
-hal::can_id_filter& can_identifier_filter();
+hal::static_ref<hal::can_transceiver> can_transceiver();
+hal::static_ref<hal::can_bus_manager> can_bus_manager();
+hal::static_ref<hal::can_interrupt> can_interrupt();
+hal::static_ref<hal::can_id_filter> can_identifier_filter();
 
 // Left out until their drivers are ported (see ../CMakeLists.txt): the usb_*()
 // endpoints.

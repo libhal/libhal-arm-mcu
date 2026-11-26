@@ -299,11 +299,24 @@ public:
   ~filter_bank();
 
   /**
+   * @brief One of the bank's filters
+   *
+   * constexpr, so that a `hal::static_ref` can refer to a filter of a static
+   * bank: `return bank[0];` from a function returning
+   * `hal::static_ref<hal::can_id_filter>`.
+   *
    * @param p_index - which filter, from 0 to `Count - 1`
    * @return filter& - the filter
    * @throws hal::argument_out_of_domain - if `p_index` is `Count` or more
    */
-  [[nodiscard]] filter& operator[](hal::usize p_index) [[clang::lifetimebound]];
+  [[nodiscard]] constexpr filter& operator[](hal::usize p_index)
+    [[clang::lifetimebound]]
+  {
+    if (p_index >= Count) {
+      throw hal::argument_out_of_domain(this);
+    }
+    return m_filters[p_index];
+  }
 
 private:
 

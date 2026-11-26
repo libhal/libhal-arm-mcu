@@ -46,16 +46,16 @@ void application()
   using namespace std::chrono_literals;
 
   auto console = resources::console();
-  auto* transceiver = &resources::can_transceiver();
-  auto* bus_manager = &resources::can_bus_manager();
-  auto& id_filter = resources::can_identifier_filter();
+  auto transceiver = resources::can_transceiver();
+  auto bus_manager = resources::can_bus_manager();
+  auto id_filter = resources::can_identifier_filter();
 
   hal::write(*console, "Starting CAN demo!\n");
 
   bus_manager->baud_rate(100'000);
 
   constexpr std::uint16_t allowed_id = 0x111;
-  id_filter.allow(allowed_id);
+  id_filter->allow(allowed_id);
   bus_manager->filter_mode(hal::can_message_acceptance::filtered);
   hal::print<64>(
     *console, "Allowing ID [0x%" PRIX16 "] through the filter!\n", allowed_id);

@@ -775,16 +775,6 @@ can::filter_bank<Allowed, Count>::~filter_bank<Allowed, Count>()
 }
 
 template<typename Allowed, hal::usize Count>
-typename can::filter_bank<Allowed, Count>::filter&
-can::filter_bank<Allowed, Count>::operator[](hal::usize p_index)
-{
-  if (p_index >= Count) {
-    throw hal::argument_out_of_domain(this);
-  }
-  return m_filters[p_index];
-}
-
-template<typename Allowed, hal::usize Count>
 void can::filter_bank<Allowed, Count>::allow(u8 p_slot,
                                              std::optional<Allowed> p_allowed)
 {

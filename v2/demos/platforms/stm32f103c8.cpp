@@ -96,7 +96,7 @@ hal::static_ref<hal::input_pin> input_pin()
 }
 
 namespace {
-hal::stm32f1::can& can_device()
+hal::static_ref<hal::stm32f1::can> can_device()
 {
   static hal::no_op_lock single_context;
   static std::array<hal::can_message, 16> receive_buffer{};
@@ -105,26 +105,26 @@ hal::stm32f1::can& can_device()
 }
 }  // namespace
 
-hal::can_transceiver& can_transceiver()
+hal::static_ref<hal::can_transceiver> can_transceiver()
 {
   return can_device();
 }
 
-hal::can_bus_manager& can_bus_manager()
+hal::static_ref<hal::can_bus_manager> can_bus_manager()
 {
-  static hal::stm32f1::can::bus_manager bus_manager(can_device());
+  static hal::stm32f1::can::bus_manager bus_manager(*can_device());
   return bus_manager;
 }
 
-hal::can_interrupt& can_interrupt()
+hal::static_ref<hal::can_interrupt> can_interrupt()
 {
-  static hal::stm32f1::can::interrupt interrupt(can_device());
+  static hal::stm32f1::can::interrupt interrupt(*can_device());
   return interrupt;
 }
 
-hal::can_id_filter& can_identifier_filter()
+hal::static_ref<hal::can_id_filter> can_identifier_filter()
 {
-  static hal::stm32f1::can::identifier_filters filters(can_device());
+  static hal::stm32f1::can::identifier_filters filters(*can_device());
   return filters[0];
 }
 

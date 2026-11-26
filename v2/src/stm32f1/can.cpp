@@ -14,11 +14,16 @@
 
 module;
 
+#include <algorithm>
 #include <array>
+#include <atomic>
+#include <bit>
 #include <bitset>
-#include <coroutine>
-#include <memory>
+#include <chrono>
+#include <mutex>
 #include <optional>
+#include <span>
+#include <utility>
 
 module hal.arm_mcu.stm32f1;
 
@@ -30,6 +35,7 @@ import :constants;
 import :pin;
 import :power;
 import :clock;
+import :can;
 
 namespace hal::stm32f1 {
 namespace {
@@ -55,14 +61,13 @@ struct can_filter_register_t
   u32 volatile fr2;
 };
 
-/// Register map for the bxCAN peripheral (RM0008 Chapter 24)
+/// Register map for the bxCAN peripheral (RM0008 section 24.9)
 struct can_reg_t
 {
   u32 volatile mcr;
   u32 volatile msr;
   u32 volatile tsr;
-  u32 volatile rf0r;
-  u32 volatile rf1r;
+  std::array<u32 volatile, 2> rfr;
   u32 volatile ier;
   u32 volatile esr;
   u32 volatile btr;
@@ -79,17 +84,22 @@ struct can_reg_t
   u32 reserved4;
   u32 volatile fa1r;
   std::array<u32, 8> reserved5;
-  // Limited to only 14 on connectivity line devices
+  /// 14 banks on the STM32F103, 28 on connectivity line parts
   std::array<can_filter_register_t, 28> filter_registers;
 };
+static_assert(offsetof(can_reg_t, transmit_mailbox) == 0x180);
+static_assert(offsetof(can_reg_t, fifo_mailbox) == 0x1B0);
+static_assert(offsetof(can_reg_t, fmr) == 0x200);
+static_assert(offsetof(can_reg_t, fa1r) == 0x21C);
+static_assert(offsetof(can_reg_t, filter_registers) == 0x240);
 
 // NOLINTNEXTLINE(performance-no-int-to-ptr)
-auto* can1_reg = reinterpret_cast<can_reg_t*>(0x4000'6400);
+auto* const can1_reg = reinterpret_cast<can_reg_t*>(0x4000'6400);
 
 /// Bit masks for the BTR register
 struct bus_timing
 {
-  static constexpr auto prescalar = bit_mask::from<0, 9>();
+  static constexpr auto prescaler = bit_mask::from<0, 9>();
   static constexpr auto time_segment1 = bit_mask::from<16, 19>();
   static constexpr auto time_segment2 = bit_mask::from<20, 22>();
   static constexpr auto sync_jump_width = bit_mask::from<24, 25>();
@@ -102,6 +112,7 @@ struct master_control
 {
   static constexpr auto initialization_request = bit_mask::from<0>();
   static constexpr auto sleep_mode_request = bit_mask::from<1>();
+  static constexpr auto transmit_fifo_priority = bit_mask::from<2>();
   static constexpr auto no_automatic_retransmission = bit_mask::from<4>();
   static constexpr auto automatic_bus_off_management = bit_mask::from<6>();
 };
@@ -110,26 +121,36 @@ struct master_control
 struct master_status
 {
   static constexpr auto initialization_acknowledge = bit_mask::from<0>();
+  static constexpr auto error_interrupt = bit_mask::from<2>();
 };
 
 /// Bit masks for the TSR register
 struct transmit_status
 {
-  static constexpr auto transmit_mailbox0_empty = bit_mask::from<26>();
-  static constexpr auto transmit_mailbox1_empty = bit_mask::from<27>();
-  static constexpr auto transmit_mailbox2_empty = bit_mask::from<28>();
+  /// RQCP0: mailbox 0's request completed. Cleared by writing 1.
+  static constexpr auto request_completed0 = bit_mask::from<0>();
+  /// RQCP1: mailbox 1's request completed. Cleared by writing 1.
+  static constexpr auto request_completed1 = bit_mask::from<8>();
+  /// RQCP2: mailbox 2's request completed. Cleared by writing 1.
+  static constexpr auto request_completed2 = bit_mask::from<16>();
+  static constexpr u32 requests_completed =
+    u32{ 0 } | request_completed0 | request_completed1 | request_completed2;
+  /// TME0 to TME2: which mailboxes are empty
+  static constexpr auto mailbox_empty = bit_mask::from<26, 28>();
 };
 
 /// Bit masks for the IER register
-struct interrupt_enable_register
+struct interrupt_enable
 {
+  static constexpr auto transmit_mailbox_empty = bit_mask::from<0>();
   static constexpr auto fifo0_message_pending = bit_mask::from<1>();
   static constexpr auto fifo1_message_pending = bit_mask::from<4>();
   static constexpr auto bus_off = bit_mask::from<10>();
+  static constexpr auto error = bit_mask::from<15>();
 };
 
 /// Bit mask for the ESR register
-struct error_status_register
+struct error_status
 {
   static constexpr auto bus_off = bit_mask::from<2>();
 };
@@ -137,23 +158,20 @@ struct error_status_register
 /// Bit masks shared by the TIxR/RIxR mailbox identifier registers
 struct mailbox_identifier
 {
-  static constexpr auto transmit_mailbox_request = bit_mask::from<0>();
+  static constexpr auto transmit_request = bit_mask::from<0>();
   static constexpr auto remote_request = bit_mask::from<1>();
-  static constexpr auto identifier_type = bit_mask::from<2>();
+  static constexpr auto extended = bit_mask::from<2>();
   static constexpr auto standard_identifier = bit_mask::from<21, 31>();
   static constexpr auto extended_identifier = bit_mask::from<3, 31>();
-
-  static constexpr u32 standard = 0;
-  static constexpr u32 extended = 1;
 };
 
-/// Bit masks shared by the TDTxR/RDTxR frame-length registers
-struct frame_length_and_info
+/// Bit mask for the TDTxR/RDTxR frame length registers
+struct frame_length
 {
   static constexpr auto data_length_code = bit_mask::from<0, 3>();
 };
 
-/// Bit masks for the RF0R/RF1R FIFO status registers
+/// Bit masks for the RF0R/RF1R FIFO registers
 struct fifo_status
 {
   static constexpr auto messages_pending = bit_mask::from<0, 1>();
@@ -166,933 +184,676 @@ struct filter_master
   static constexpr auto initialization_mode = bit_mask::from<0>();
 };
 
-enum class filter_bank_master_control : u8
-{
-  active = 0,
-  initialization = 1,
-};
+/// The bank that accepts every message while the filter mode is `all`
+constexpr u8 accept_all_bank = 13;
 
-enum class filter_type : u8
-{
-  mask = 0,
-  list = 1,
-};
+/// The longest frame, an extended frame with 8 bytes of data and the most bit
+/// stuffing, in bits
+constexpr u32 max_frame_bits = 160;
 
-enum class filter_scale : u8
-{
-  dual_16_bit_scale = 0,
-  single_32_bit_scale = 1,
-};
-
-enum class filter_activation : u8
-{
-  not_active = 0,
-  active = 1,
-};
-
-/// Bit layout of a single 16-bit sub-bank within CAN_FiRx (dual 16-bit scale)
-struct standard_filter_bank
-{
-  static constexpr auto id = bit_mask::from<5, 15>();
-  static constexpr auto rtr = bit_mask::from<4>();
-  static constexpr auto id_extension = bit_mask::from<3>();
-
-  static constexpr auto sub_bank1 = bit_mask::from<0, 15>();
-  static constexpr auto sub_bank2 = bit_mask::from<16, 31>();
-};
-
-/// Bit layout of a 32-bit extended filter bank word (single 32-bit scale)
-struct extended_filter_bank
-{
-  static constexpr auto id = bit_mask::from<3, 31>();
-  static constexpr auto id_extension = bit_mask::from<2>();
-  static constexpr auto rtr = bit_mask::from<1>();
-};
-
-void set_master_mode(bit_mask p_mode, bool p_enable)
-{
-  bit_modify(can1_reg->mcr).insert(p_mode, p_enable);
-}
-
-bool get_master_status(bit_mask p_mode)
-{
-  return bit_extract(p_mode, can1_reg->msr);
-}
+constinit can* s_can = nullptr;
 
 void enter_initialization()
 {
-  set_master_mode(master_control::initialization_request, true);
-  while (not get_master_status(master_status::initialization_acknowledge)) {
+  bit_modify(can1_reg->mcr).set<master_control::initialization_request>();
+  while (
+    not bit_is_set<master_status::initialization_acknowledge>(can1_reg->msr)) {
     continue;
   }
 }
 
 void exit_initialization()
 {
-  set_master_mode(master_control::initialization_request, false);
-  while (get_master_status(master_status::initialization_acknowledge)) {
+  bit_modify(can1_reg->mcr).clear<master_control::initialization_request>();
+  while (bit_is_set<master_status::initialization_acknowledge>(can1_reg->msr)) {
     continue;
   }
 }
 
-void configure_baud_rate(u32 p_baud_rate)
+/// Program the bit timing. Must run in initialization mode.
+void configure_bit_timing(hal::hertz p_baud_rate, bool p_loop_back)
 {
   auto const can_frequency = frequency(peripheral::can1);
-  auto const divider = calculate_can_bus_divider(
-    can_frequency,
-    static_cast<hal::hertz>(p_baud_rate * mp_units::si::unit_symbols::Hz));
-
+  auto const divider = calculate_can_bus_divider(can_frequency, p_baud_rate);
   if (not divider) {
     throw hal::operation_not_supported(nullptr);
   }
 
-  auto const timing = divider.value();
-  auto const prescale = timing.clock_divider - 1U;
-  auto const sync_jump_width = timing.synchronization_jump_width - 1U;
-  auto const phase_segment1 =
-    (timing.phase_segment1 + timing.propagation_delay) - 1U;
-  auto const phase_segment2 = timing.phase_segment2 - 1U;
-
+  auto const timing = *divider;
   bit_modify(can1_reg->btr)
-    .insert<bus_timing::prescalar>(prescale)
-    .insert<bus_timing::time_segment1>(phase_segment1)
-    .insert<bus_timing::time_segment2>(phase_segment2)
-    .insert<bus_timing::sync_jump_width>(sync_jump_width)
+    .insert<bus_timing::prescaler>(timing.clock_divider - 1U)
+    .insert<bus_timing::time_segment1>(
+      (timing.phase_segment1 + timing.propagation_delay) - 1U)
+    .insert<bus_timing::time_segment2>(timing.phase_segment2 - 1U)
+    .insert<bus_timing::sync_jump_width>(timing.synchronization_jump_width - 1U)
+    .insert<bus_timing::loop_back_mode>(p_loop_back)
     .clear<bus_timing::silent_mode>();
 }
 
-void set_filter_bank_mode(filter_bank_master_control p_mode)
+/// The baud rate the bit timing in BTR gives
+hal::hertz programmed_baud_rate()
 {
-  bit_modify(can1_reg->fmr)
-    .insert<filter_master::initialization_mode>(value(p_mode));
-}
-
-void set_filter_type(u8 p_filter, filter_type p_type)
-{
-  bit_modify(can1_reg->fm1r).insert(bit_mask::from(p_filter), value(p_type));
-}
-
-void set_filter_scale(u8 p_filter, filter_scale p_scale)
-{
-  bit_modify(can1_reg->fs1r).insert(bit_mask::from(p_filter), value(p_scale));
-}
-
-void set_filter_fifo_assignment(u8 p_filter, can_fifo p_fifo)
-{
-  bit_modify(can1_reg->ffa1r).insert(bit_mask::from(p_filter), value(p_fifo));
-}
-
-void set_filter_activation_state(u8 p_filter, filter_activation p_state)
-{
-  bit_modify(can1_reg->fa1r).insert(bit_mask::from(p_filter), value(p_state));
-}
-
-u16 standard_id_to_stm_filter(u16 p_id)
-{
-  return bit_value()
-    .insert<standard_filter_bank::id>(p_id)
-    .clear(standard_filter_bank::rtr)
-    .clear(standard_filter_bank::id_extension)
-    .to<u16>();
-}
-
-u32 extended_id_to_stm_filter(u32 p_id)
-{
-  return bit_value()
-    .insert<extended_filter_bank::id>(p_id)
-    .clear(extended_filter_bank::id_extension)
-    .clear(extended_filter_bank::rtr)
-    .to<u32>();
-}
-
-struct can_data_registers_t
-{
-  u32 frame = 0;
-  u32 id = 0;
-  u32 data_a = 0;
-  u32 data_b = 0;
-};
-
-can_data_registers_t convert_message_to_stm_can(can_message const& p_message)
-{
-  can_data_registers_t registers;
-
-  registers.frame =
-    bit_value(0U)
-      .insert<frame_length_and_info::data_length_code>(p_message.length)
-      .to<u32>();
-
-  if (p_message.extended) {
-    registers.id =
-      bit_value(0U)
-        .insert<mailbox_identifier::transmit_mailbox_request>(true)
-        .insert<mailbox_identifier::remote_request>(p_message.remote_request)
-        .insert<mailbox_identifier::identifier_type>(
-          mailbox_identifier::extended)
-        .insert<mailbox_identifier::extended_identifier>(p_message.id)
-        .to<u32>();
-  } else {
-    registers.id =
-      bit_value(0U)
-        .insert<mailbox_identifier::transmit_mailbox_request>(true)
-        .insert<mailbox_identifier::remote_request>(p_message.remote_request)
-        .insert<mailbox_identifier::identifier_type>(
-          mailbox_identifier::standard)
-        .insert<mailbox_identifier::standard_identifier>(p_message.id)
-        .to<u32>();
-  }
-
-  u32 data_a = 0;
-  data_a |= static_cast<u32>(p_message.payload[0]) << (0 * 8);
-  data_a |= static_cast<u32>(p_message.payload[1]) << (1 * 8);
-  data_a |= static_cast<u32>(p_message.payload[2]) << (2 * 8);
-  data_a |= static_cast<u32>(p_message.payload[3]) << (3 * 8);
-
-  u32 data_b = 0;
-  data_b |= static_cast<u32>(p_message.payload[4]) << (0 * 8);
-  data_b |= static_cast<u32>(p_message.payload[5]) << (1 * 8);
-  data_b |= static_cast<u32>(p_message.payload[6]) << (2 * 8);
-  data_b |= static_cast<u32>(p_message.payload[7]) << (3 * 8);
-
-  registers.data_a = data_a;
-  registers.data_b = data_b;
-
-  return registers;
-}
-
-can_message read_receive_mailbox()
-{
-  can_message message{};
-
-  auto fifo_select = can_fifo::select1;
-  if (bit_extract<fifo_status::messages_pending>(can1_reg->rf0r)) {
-    fifo_select = can_fifo::select1;
-  } else if (bit_extract<fifo_status::messages_pending>(can1_reg->rf1r)) {
-    fifo_select = can_fifo::select2;
-  } else {
-    // Spurious call: nothing pending on either FIFO.
-    return message;
-  }
-
-  auto& mailbox = can1_reg->fifo_mailbox[value(fifo_select)];
-  auto const frame = mailbox.rdtr;
-  auto const id = mailbox.rir;
-
-  message.remote_request = bit_extract<mailbox_identifier::remote_request>(id);
-  message.length = static_cast<u8>(
-    bit_extract<frame_length_and_info::data_length_code>(frame));
-  message.extended = bit_extract<mailbox_identifier::identifier_type>(id) ==
-                     mailbox_identifier::extended;
-
-  if (message.extended) {
-    message.id = bit_extract<mailbox_identifier::extended_identifier>(id);
-  } else {
-    message.id = bit_extract<mailbox_identifier::standard_identifier>(id);
-  }
-
-  auto const low = mailbox.rdlr;
-  auto const high = mailbox.rdhr;
-
-  message.payload[0] = static_cast<hal::byte>(low >> (0 * 8));
-  message.payload[1] = static_cast<hal::byte>(low >> (1 * 8));
-  message.payload[2] = static_cast<hal::byte>(low >> (2 * 8));
-  message.payload[3] = static_cast<hal::byte>(low >> (3 * 8));
-  message.payload[4] = static_cast<hal::byte>(high >> (0 * 8));
-  message.payload[5] = static_cast<hal::byte>(high >> (1 * 8));
-  message.payload[6] = static_cast<hal::byte>(high >> (2 * 8));
-  message.payload[7] = static_cast<hal::byte>(high >> (3 * 8));
-
-  if (fifo_select == can_fifo::select1) {
-    bit_modify(can1_reg->rf0r).set<fifo_status::release_output_mailbox>();
-  } else {
-    bit_modify(can1_reg->rf1r).set<fifo_status::release_output_mailbox>();
-  }
-
-  return message;
+  auto const timing = can1_reg->btr;
+  auto const divider = bit_extract<bus_timing::prescaler>(timing) + 1U;
+  // The sync segment's quantum plus both time segments, each stored as one
+  // less than its length
+  auto const quanta = (bit_extract<bus_timing::time_segment1>(timing) +
+                       bit_extract<bus_timing::time_segment2>(timing)) +
+                      3U;
+  auto const can_hz =
+    frequency(peripheral::can1).numerical_value_in(mp_units::si::hertz);
+  return (can_hz / (divider * quanta)) * mp_units::si::hertz;
 }
 
 bool is_bus_off()
 {
-  return bit_extract<error_status_register::bus_off>(can1_reg->esr);
+  return bit_is_set<error_status::bus_off>(can1_reg->esr);
 }
 
-void recover_from_bus_off()
+void set_filter_initialization(bool p_initialization)
 {
-  // RM0008 p.670: bus-off is recovered from by re-entering and then leaving
-  // initialization mode.
-  enter_initialization();
-  exit_initialization();
+  bit_modify(can1_reg->fmr)
+    .insert<filter_master::initialization_mode>(p_initialization);
 }
 
-std::span<can_message> allocate_receive_buffer(hal::allocator p_allocator,
-                                               hal::usize p_count)
+/// A bank's filter scale (FS1R)
+enum class bank_scale : u8
 {
-  auto* storage = p_allocator.allocate_object<can_message>(p_count);
-  std::uninitialized_value_construct_n(storage, p_count);
-  return { storage, p_count };
-}
-}  // namespace
-
-/// Implementation state shared by every resource acquired from a `can`
-/// manager. The pimpl pointer doubles as the "CAN1 is in use" singleton
-/// guard: only one `can::impl` can exist at a time because `create()` throws
-/// if CAN1 is already powered on.
-struct can::impl
-{
-  std::span<can_message> receive_buffer;
-  hal::usize receive_cursor = 0;
-  std::bitset<28> acquired_banks{};
-  async::mutex tx_owner{};
-  async::context* bus_off_waiter = nullptr;
+  dual_16_bit = 0,
+  single_32_bit = 1,
 };
 
-namespace {
-// CAN1 is a process-wide singleton peripheral (there is exactly one bxCAN1
-// register bank), so its interrupt handlers reach the active manager through
-// a plain static pointer rather than a per-instance callback, matching the
-// singleton pattern already used for the DWT and systick peripherals.
-can::impl* s_active_can = nullptr;
-
-extern "C" void can1_rx_isr()
+/// A bank's filter mode (FM1R)
+enum class bank_mode : u8
 {
-  auto* state = s_active_can;
-  if (state == nullptr) {
-    return;
-  }
+  mask = 0,
+  list = 1,
+};
 
-  auto const message = read_receive_mailbox();
+/// How a bank's registers are read, and where its messages go
+struct bank_layout
+{
+  bank_scale scale;
+  bank_mode mode;
+  can_fifo fifo;
+};
 
-  // Guard against a damaged/misbehaving peripheral reporting a length above
-  // the 8-byte maximum a CAN frame can hold; discard rather than propagate
-  // garbage payload bytes.
-  if (message.length > 8) {
-    return;
-  }
-
-  state->receive_buffer[state->receive_cursor % state->receive_buffer.size()] =
-    message;
-  state->receive_cursor++;
+/// Set a bank's scale, mode and FIFO. Only allowed in filter initialization
+/// mode, which stops reception, so it's entered only for as long as it takes,
+/// unless the filter mode `none` already holds it.
+void configure_bank(u8 p_bank, bank_layout p_layout)
+{
+  auto const bank = bit_mask::from(p_bank);
+  auto const was_initializing =
+    bit_is_set<filter_master::initialization_mode>(can1_reg->fmr);
+  set_filter_initialization(true);
+  bit_modify(can1_reg->fs1r).insert(bank, value(p_layout.scale));
+  bit_modify(can1_reg->fm1r).insert(bank, value(p_layout.mode));
+  bit_modify(can1_reg->ffa1r).insert(bank, value(p_layout.fifo));
+  set_filter_initialization(was_initializing);
 }
 
-extern "C" void can1_sce_isr()
+hal::can_message read_fifo(u8 p_fifo)
 {
-  auto* state = s_active_can;
-  if (state == nullptr) {
-    return;
+  auto& mailbox = can1_reg->fifo_mailbox[p_fifo];
+  auto const id = mailbox.rir;
+  auto const frame = mailbox.rdtr;
+  auto const low = mailbox.rdlr;
+  auto const high = mailbox.rdhr;
+
+  hal::can_message message{};
+  message.extended = bit_is_set<mailbox_identifier::extended>(id);
+  message.remote_request = bit_is_set<mailbox_identifier::remote_request>(id);
+  message.id = message.extended
+                 ? bit_extract<mailbox_identifier::extended_identifier>(id)
+                 : bit_extract<mailbox_identifier::standard_identifier>(id);
+  // A data length code of 9 to 15 still carries 8 bytes
+  message.length = static_cast<u8>(
+    std::min(bit_extract<frame_length::data_length_code>(frame), 8U));
+  for (u32 i = 0; i < 4; i++) {
+    message.payload[i] = static_cast<hal::byte>(low >> (i * 8U));
+    message.payload[i + 4] = static_cast<hal::byte>(high >> (i * 8U));
   }
 
-  if (is_bus_off() and state->bus_off_waiter != nullptr) {
-    state->bus_off_waiter->unblock();
-    state->bus_off_waiter = nullptr;
-  }
+  bit_modify(can1_reg->rfr[p_fifo]).set<fifo_status::release_output_mailbox>();
+  return message;
 }
 
-class transceiver final : public hal::can_transceiver
+/// The pins of each pin set: RX first
+struct can_pin_pair
 {
-public:
-  explicit transceiver(hal::ptr<can> p_manager)
-    : m_manager(p_manager)
-  {
-  }
-
-  transceiver(transceiver const&) = delete;
-  transceiver& operator=(transceiver const&) = delete;
-  transceiver(transceiver&&) = delete;
-  transceiver& operator=(transceiver&&) = delete;
-  ~transceiver() = default;
-
-private:
-  async::future<hertz> driver_baud_rate(async::context&) override
-  {
-    return frequency(peripheral::can1);
-  }
-
-  async::future<void> driver_send(async::context& p_context,
-                                  can_message const& p_message) override
-  {
-    return m_manager->send(p_context, p_message);
-  }
-
-  circular_span<can_message const> driver_receive_buffer() override
-  {
-    return m_manager->receive_buffer();
-  }
-
-  usize driver_receive_cursor() override
-  {
-    return m_manager->receive_cursor();
-  }
-
-  hal::ptr<can> m_manager;
+  pin rx;
+  pin tx;
 };
 
-class bus_manager final : public hal::can_bus_manager
+can_pin_pair pins_for(can_pins p_pins)
 {
-public:
-  explicit bus_manager(hal::ptr<can> p_manager)
-    : m_manager(p_manager)
-  {
-  }
-
-  bus_manager(bus_manager const&) = delete;
-  bus_manager& operator=(bus_manager const&) = delete;
-  bus_manager(bus_manager&&) = delete;
-  bus_manager& operator=(bus_manager&&) = delete;
-  ~bus_manager() = default;
-
-private:
-  async::future<void> driver_baud_rate(async::context& p_context,
-                                       u32 p_hertz) override
-  {
-    return m_manager->set_baud_rate(p_context, p_hertz);
-  }
-
-  async::future<void> driver_filter_mode(async::context&,
-                                         can_message_acceptance) override
-  {
-    // bxCAN has no single register to bypass every filter bank at once; the
-    // only accurate way to implement `all`/`none` would be to reserve one of
-    // the 28 filter banks as an always-pass/always-block toggle, which would
-    // silently shrink the pool available to `acquire_*_filter()`. Until a
-    // driver needs that trade-off, this is a deliberate no-op: messages are
-    // always filtered per whatever filter banks the caller has acquired,
-    // matching this driver's documented default behavior.
-    return {};
-  }
-
-  async::future<void> driver_on_bus_off(async::context& p_context) override
-  {
-    return m_manager->wait_for_bus_off(p_context);
-  }
-
-  async::future<void> driver_bus_on(async::context& p_context) override
-  {
-    return m_manager->bus_on(p_context);
-  }
-
-  hal::ptr<can> m_manager;
-};
-
-/// Claims a free filter bank, puts the filter banks into initialization
-/// mode for the duration of `p_configure`, then restores active mode and
-/// activates the newly claimed bank.
-u8 claim_and_configure_filter_bank(hal::ptr<can> const& p_manager,
-                                   filter_scale p_scale,
-                                   filter_type p_type,
-                                   can_fifo p_fifo,
-                                   std::invocable<u8> auto&& p_configure)
-{
-  auto const index = p_manager->acquire_filter_bank();
-
-  set_filter_bank_mode(filter_bank_master_control::initialization);
-  set_filter_activation_state(index, filter_activation::not_active);
-  set_filter_scale(index, p_scale);
-  set_filter_type(index, p_type);
-  set_filter_fifo_assignment(index, p_fifo);
-
-  p_configure(index);
-
-  set_filter_bank_mode(filter_bank_master_control::active);
-  set_filter_activation_state(index, filter_activation::active);
-
-  return index;
-}
-
-void release_filter_bank(hal::ptr<can> const& p_manager, u8 p_index)
-{
-  set_filter_activation_state(p_index, filter_activation::not_active);
-  p_manager->release_filter_bank(p_index);
-}
-
-class id_filter final : public hal::can_id_filter
-{
-public:
-  id_filter(hal::ptr<can> p_manager, u8 p_filter_index, u8 p_word_index)
-    : m_manager(p_manager)
-    , m_filter_index(p_filter_index)
-    , m_word_index(p_word_index)
-  {
-  }
-
-private:
-  async::future<void> driver_allow(async::context&,
-                                   std::optional<u16> p_id) override
-  {
-    auto const id = p_id.value_or(0);
-    auto& filter = can1_reg->filter_registers[m_filter_index];
-    auto const reg = standard_id_to_stm_filter(id);
-
-    set_filter_activation_state(m_filter_index, filter_activation::not_active);
-    switch (m_word_index) {
-      case 0:
-        bit_modify(filter.fr1).insert<standard_filter_bank::sub_bank1>(reg);
-        break;
-      case 1:
-        bit_modify(filter.fr1).insert<standard_filter_bank::sub_bank2>(reg);
-        break;
-      case 2:
-        bit_modify(filter.fr2).insert<standard_filter_bank::sub_bank1>(reg);
-        break;
-      default:
-        bit_modify(filter.fr2).insert<standard_filter_bank::sub_bank2>(reg);
-        break;
-    }
-    set_filter_activation_state(m_filter_index, filter_activation::active);
-    return {};
-  }
-
-  hal::ptr<can> m_manager;
-  u8 m_filter_index;
-  u8 m_word_index;
-};
-
-struct id_filter_set
-{
-  id_filter_set(hal::ptr<can> p_manager, can_fifo p_fifo)
-    : manager(p_manager)
-    , filters{ { id_filter(p_manager, 0, 0),
-                 id_filter(p_manager, 0, 1),
-                 id_filter(p_manager, 0, 2),
-                 id_filter(p_manager, 0, 3) } }
-  {
-    auto const disable_reg = standard_id_to_stm_filter(0);
-    auto const disable_word =
-      (static_cast<u32>(disable_reg) << 16) | disable_reg;
-
-    index = claim_and_configure_filter_bank(
-      p_manager,
-      filter_scale::dual_16_bit_scale,
-      filter_type::list,
-      p_fifo,
-      [&](u8 p_index) {
-        can1_reg->filter_registers[p_index].fr1 = disable_word;
-        can1_reg->filter_registers[p_index].fr2 = disable_word;
-        for (auto& f : filters) {
-          f = id_filter(p_manager, p_index, &f - &filters[0]);
-        }
-      });
-  }
-
-  ~id_filter_set()
-  {
-    release_filter_bank(manager, index);
-  }
-
-  hal::ptr<can> manager;
-  std::array<id_filter, 4> filters;
-  u8 index = 0;
-};
-
-class id_ext_filter final : public hal::can_id_ext_filter
-{
-public:
-  id_ext_filter(hal::ptr<can> p_manager, u8 p_filter_index, bool p_second_word)
-    : m_manager(p_manager)
-    , m_filter_index(p_filter_index)
-    , m_second_word(p_second_word)
-  {
-  }
-
-private:
-  async::future<void> driver_allow(async::context&,
-                                   std::optional<u32> p_id) override
-  {
-    auto const id = p_id.value_or(0);
-    auto const reg = extended_id_to_stm_filter(id);
-    auto& filter = can1_reg->filter_registers[m_filter_index];
-
-    set_filter_activation_state(m_filter_index, filter_activation::not_active);
-    if (m_second_word) {
-      filter.fr2 = reg;
-    } else {
-      filter.fr1 = reg;
-    }
-    set_filter_activation_state(m_filter_index, filter_activation::active);
-    return {};
-  }
-
-  hal::ptr<can> m_manager;
-  u8 m_filter_index;
-  bool m_second_word;
-};
-
-struct id_ext_filter_set
-{
-  id_ext_filter_set(hal::ptr<can> p_manager, can_fifo p_fifo)
-    : manager(p_manager)
-    , filters{ { id_ext_filter(p_manager, 0, false),
-                 id_ext_filter(p_manager, 0, true) } }
-  {
-    auto const disable_reg = extended_id_to_stm_filter(0);
-
-    index = claim_and_configure_filter_bank(
-      p_manager,
-      filter_scale::single_32_bit_scale,
-      filter_type::list,
-      p_fifo,
-      [&](u8 p_index) {
-        can1_reg->filter_registers[p_index].fr1 = disable_reg;
-        can1_reg->filter_registers[p_index].fr2 = disable_reg;
-        filters[0] = id_ext_filter(p_manager, p_index, false);
-        filters[1] = id_ext_filter(p_manager, p_index, true);
-      });
-  }
-
-  ~id_ext_filter_set()
-  {
-    release_filter_bank(manager, index);
-  }
-
-  hal::ptr<can> manager;
-  std::array<id_ext_filter, 2> filters;
-  u8 index = 0;
-};
-
-class mask_filter final : public hal::can_mask_filter
-{
-public:
-  mask_filter(hal::ptr<can> p_manager, u8 p_filter_index, bool p_second_word)
-    : m_manager(p_manager)
-    , m_filter_index(p_filter_index)
-    , m_second_word(p_second_word)
-  {
-  }
-
-private:
-  async::future<void> driver_allow(async::context&,
-                                   std::optional<can_mask> p_mask) override
-  {
-    auto const selected = p_mask.value_or(can_mask{ .id = 0, .mask = 0x1FF });
-    auto const id_reg = standard_id_to_stm_filter(selected.id);
-    auto const mask_reg = standard_id_to_stm_filter(selected.mask);
-    auto& filter = can1_reg->filter_registers[m_filter_index];
-
-    set_filter_activation_state(m_filter_index, filter_activation::not_active);
-    if (m_second_word) {
-      bit_modify(filter.fr2)
-        .insert<standard_filter_bank::sub_bank1>(id_reg)
-        .insert<standard_filter_bank::sub_bank2>(mask_reg);
-    } else {
-      bit_modify(filter.fr1)
-        .insert<standard_filter_bank::sub_bank1>(id_reg)
-        .insert<standard_filter_bank::sub_bank2>(mask_reg);
-    }
-    set_filter_activation_state(m_filter_index, filter_activation::active);
-    return {};
-  }
-
-  hal::ptr<can> m_manager;
-  u8 m_filter_index;
-  bool m_second_word;
-};
-
-struct mask_filter_set
-{
-  mask_filter_set(hal::ptr<can> p_manager, can_fifo p_fifo)
-    : manager(p_manager)
-    , filters{ { mask_filter(p_manager, 0, false),
-                 mask_filter(p_manager, 0, true) } }
-  {
-    auto const disable_id = standard_id_to_stm_filter(0);
-    auto const disable_mask = standard_id_to_stm_filter(0x1FF);
-    auto const disable_word =
-      (static_cast<u32>(disable_mask) << 16) | disable_id;
-
-    index = claim_and_configure_filter_bank(
-      p_manager,
-      filter_scale::dual_16_bit_scale,
-      filter_type::mask,
-      p_fifo,
-      [&](u8 p_index) {
-        can1_reg->filter_registers[p_index].fr1 = disable_word;
-        can1_reg->filter_registers[p_index].fr2 = disable_word;
-        filters[0] = mask_filter(p_manager, p_index, false);
-        filters[1] = mask_filter(p_manager, p_index, true);
-      });
-  }
-
-  ~mask_filter_set()
-  {
-    release_filter_bank(manager, index);
-  }
-
-  hal::ptr<can> manager;
-  std::array<mask_filter, 2> filters;
-  u8 index = 0;
-};
-
-class mask_ext_filter final : public hal::can_mask_ext_filter
-{
-public:
-  mask_ext_filter(hal::ptr<can> p_manager, can_fifo p_fifo)
-    : m_manager(p_manager)
-  {
-    auto const disable_id = extended_id_to_stm_filter(0);
-    auto const disable_mask = extended_id_to_stm_filter(0x1FFF'FFFF);
-
-    m_filter_index = claim_and_configure_filter_bank(
-      p_manager,
-      filter_scale::single_32_bit_scale,
-      filter_type::mask,
-      p_fifo,
-      [&](u8 p_index) {
-        can1_reg->filter_registers[p_index].fr1 = disable_id;
-        can1_reg->filter_registers[p_index].fr2 = disable_mask;
-      });
-  }
-
-  mask_ext_filter(mask_ext_filter const&) = delete;
-  mask_ext_filter& operator=(mask_ext_filter const&) = delete;
-  mask_ext_filter(mask_ext_filter&&) = delete;
-  mask_ext_filter& operator=(mask_ext_filter&&) = delete;
-
-  ~mask_ext_filter()
-  {
-    release_filter_bank(m_manager, m_filter_index);
-  }
-
-private:
-  async::future<void> driver_allow(async::context&,
-                                   std::optional<can_mask_ext> p_mask) override
-  {
-    auto const selected =
-      p_mask.value_or(can_mask_ext{ .id = 0, .mask = 0x1FFF'FFFF });
-    auto const id_reg = extended_id_to_stm_filter(selected.id);
-    auto const mask_reg = extended_id_to_stm_filter(selected.mask);
-    auto& filter = can1_reg->filter_registers[m_filter_index];
-
-    set_filter_activation_state(m_filter_index, filter_activation::not_active);
-    filter.fr1 = id_reg;
-    filter.fr2 = mask_reg;
-    set_filter_activation_state(m_filter_index, filter_activation::active);
-    return {};
-  }
-
-  hal::ptr<can> m_manager;
-  u8 m_filter_index = 0;
-};
-}  // namespace
-
-hal::ptr<can> can::create(hal::allocator p_allocator,
-                          u32 p_baud_rate,
-                          can_settings const& p_settings)
-{
-  if (is_on(peripheral::can1)) {
-    throw hal::device_or_resource_busy(nullptr);
-  }
-
-  return hal::allocate<can>(
-    p_allocator, private_key{}, p_allocator, p_baud_rate, p_settings);
-}
-
-can::can(private_key,
-         hal::allocator p_allocator,
-         u32 p_baud_rate,
-         can_settings const& p_settings)
-  : pimpl(
-      p_allocator,
-      impl{ .receive_buffer =
-              allocate_receive_buffer(p_allocator, p_settings.message_count) })
-{
-  power_on(peripheral::can1);
-
-  set_master_mode(master_control::sleep_mode_request, false);
-  set_master_mode(master_control::no_automatic_retransmission, false);
-  set_master_mode(master_control::automatic_bus_off_management, false);
-
-  enter_initialization();
-
-  configure_baud_rate(p_baud_rate);
-
-  switch (p_settings.pins) {
-    case can_pins::pa11_pa12:
-      configure_pin({ .port = 'A', .pin = 11 }, input_pull_up);
-      configure_pin({ .port = 'A', .pin = 12 }, push_pull_alternative_output);
-      break;
+  switch (p_pins) {
     case can_pins::pb9_pb8:
-      configure_pin({ .port = 'B', .pin = 8 }, input_pull_up);
-      configure_pin({ .port = 'B', .pin = 9 }, push_pull_alternative_output);
-      break;
+      return { .rx = { .port = 'B', .pin = 8 },
+               .tx = { .port = 'B', .pin = 9 } };
     case can_pins::pd0_pd1:
-      configure_pin({ .port = 'D', .pin = 0 }, input_pull_up);
-      configure_pin({ .port = 'D', .pin = 1 }, push_pull_alternative_output);
-      break;
+      return { .rx = { .port = 'D', .pin = 0 },
+               .tx = { .port = 'D', .pin = 1 } };
+    case can_pins::pa11_pa12:
+    default:
+      return { .rx = { .port = 'A', .pin = 11 },
+               .tx = { .port = 'A', .pin = 12 } };
+  }
+}
+
+/// The bank register bits of one filter value, before it's shifted into its
+/// slot
+template<typename Allowed>
+struct filter_format;
+
+/// A 16-bit list entry: STID in bits 5 to 15, RTR and IDE clear, so it
+/// accepts standard data frames
+template<>
+struct filter_format<hal::u16>
+{
+  static constexpr auto scale = bank_scale::dual_16_bit;
+  static constexpr auto mode = bank_mode::list;
+  static hal::u64 encode(hal::u16 p_id)
+  {
+    return static_cast<hal::u64>(p_id & 0x7FFU) << 5U;
+  }
+};
+
+/// A 32-bit list entry: the 29-bit ID in bits 3 to 31, IDE set, RTR clear, so
+/// it accepts extended data frames
+template<>
+struct filter_format<hal::u32>
+{
+  static constexpr auto scale = bank_scale::single_32_bit;
+  static constexpr auto mode = bank_mode::list;
+  static hal::u64 encode(hal::u32 p_id)
+  {
+    return (static_cast<hal::u64>(p_id & 0x1FFF'FFFFU) << 3U) | 0b100U;
+  }
+};
+
+/// A 16-bit ID in the lower half and its mask in the upper half. The mask
+/// also requires IDE to be clear, so only standard frames match, and leaves
+/// RTR out, so data and remote frames both do.
+template<>
+struct filter_format<hal::can_mask>
+{
+  static constexpr auto scale = bank_scale::dual_16_bit;
+  static constexpr auto mode = bank_mode::mask;
+  static hal::u64 encode(hal::can_mask p_mask)
+  {
+    auto const id = static_cast<hal::u64>(p_mask.id & 0x7FFU) << 5U;
+    auto const mask =
+      (static_cast<hal::u64>(p_mask.mask & 0x7FFU) << 5U) | 0b1000U;
+    return id | (mask << 16U);
+  }
+};
+
+/// A 32-bit ID in FR1 and its mask in FR2. The mask also requires IDE to be
+/// set, so only extended frames match, and leaves RTR out.
+template<>
+struct filter_format<hal::can_mask_ext>
+{
+  static constexpr auto scale = bank_scale::single_32_bit;
+  static constexpr auto mode = bank_mode::mask;
+  static hal::u64 encode(hal::can_mask_ext p_mask)
+  {
+    auto const id =
+      (static_cast<hal::u64>(p_mask.id & 0x1FFF'FFFFU) << 3U) | 0b100U;
+    auto const mask =
+      (static_cast<hal::u64>(p_mask.mask & 0x1FFF'FFFFU) << 3U) | 0b100U;
+    return id | (mask << 32U);
+  }
+};
+}  // namespace
+
+can::can(hal::ref<hal::basic_lock> p_lock,
+         std::span<hal::can_message> p_buffer,
+         can_settings const& p_settings)
+  : m_lock(p_lock)
+  , m_receive_buffer(p_buffer)
+{
+  if (p_buffer.empty()) {
+    throw hal::argument_out_of_domain(this);
+  }
+  auto const pins = pins_for(p_settings.pins);
+  // Claim everything or nothing: check first, so a claim that succeeds is
+  // never left behind by one that throws.
+  if (is_claimed(peripheral::can1) or is_claimed(peripheral::usb) or
+      is_pin_claimed(pins.rx) or is_pin_claimed(pins.tx)) {
+    throw hal::device_or_resource_busy(this);
+  }
+  claim(peripheral::can1);
+  claim(peripheral::usb);
+  claim_pin(pins.rx);
+  claim_pin(pins.tx);
+
+  power_on(peripheral::can1);
+  // Start from the reset state, whatever ran before (e.g. a bootloader) left.
+  reset_peripheral(peripheral::can1);
+
+  // Leave sleep mode, which the reset state starts in, for initialization
+  bit_modify(can1_reg->mcr)
+    .clear<master_control::sleep_mode_request>()
+    .clear<master_control::no_automatic_retransmission>()
+    .clear<master_control::automatic_bus_off_management>()
+    .set<master_control::transmit_fifo_priority>();
+  enter_initialization();
+  try {
+    configure_bit_timing(p_settings.baud_rate, p_settings.loop_back);
+  } catch (...) {
+    power_off(peripheral::can1);
+    release_pin(pins.rx);
+    release_pin(pins.tx);
+    release(peripheral::usb);
+    release(peripheral::can1);
+    throw;
   }
 
-  bit_modify(can1_reg->btr)
-    .insert<bus_timing::loop_back_mode>(p_settings.enable_self_test);
-
+  configure_pin(pins.rx, input_pull_up);
+  configure_pin(pins.tx, push_pull_alternative_output);
   remap_pins(p_settings.pins);
 
+  // Bank 13 as one 32-bit mask with a mask of 0 accepts every message. It
+  // alone is active, for the filter mode `all`. The reset state leaves the
+  // filters in initialization mode, the filter mode `none`.
+  configure_bank(accept_all_bank,
+                 { .scale = bank_scale::single_32_bit,
+                   .mode = bank_mode::mask,
+                   .fifo = can_fifo::select1 });
+  can1_reg->filter_registers[accept_all_bank].fr1 = 0;
+  can1_reg->filter_registers[accept_all_bank].fr2 = 0;
+  can1_reg->fa1r = bit_mask::from<accept_all_bank>().value<u32>();
+  set_filter_initialization(false);
+
   exit_initialization();
 
-  s_active_can = &inner();
-
-  hal::cortex_m::initialize_interrupts<irq::max>();
-  hal::cortex_m::enable_interrupt(irq::can1_rx0, can1_rx_isr);
-  hal::cortex_m::enable_interrupt(irq::can1_rx1, can1_rx_isr);
-  hal::cortex_m::enable_interrupt(irq::can1_sce, can1_sce_isr);
-
+  s_can = this;
+  cortex_m::enable_interrupt(irq::can1_rx0, &fifo0_isr);
+  cortex_m::enable_interrupt(irq::can1_rx1, &fifo1_isr);
+  cortex_m::enable_interrupt(irq::can1_tx, &transmit_isr);
+  cortex_m::enable_interrupt(irq::can1_sce, &status_change_isr);
+  // The transmit interrupt is only enabled while a send waits for a mailbox
   bit_modify(can1_reg->ier)
-    .set<interrupt_enable_register::fifo0_message_pending>()
-    .set<interrupt_enable_register::fifo1_message_pending>()
-    .set<interrupt_enable_register::bus_off>();
+    .set<interrupt_enable::fifo0_message_pending>()
+    .set<interrupt_enable::fifo1_message_pending>()
+    .set<interrupt_enable::bus_off>()
+    .set<interrupt_enable::error>();
 }
 
 can::~can()
 {
-  hal::cortex_m::disable_interrupt(irq::can1_rx0);
-  hal::cortex_m::disable_interrupt(irq::can1_rx1);
-  hal::cortex_m::disable_interrupt(irq::can1_sce);
-  s_active_can = nullptr;
+  can1_reg->ier = 0;
+  cortex_m::disable_interrupt(irq::can1_rx0);
+  cortex_m::disable_interrupt(irq::can1_rx1);
+  cortex_m::disable_interrupt(irq::can1_tx);
+  cortex_m::disable_interrupt(irq::can1_sce);
+  s_can = nullptr;
   power_off(peripheral::can1);
+
+  auto const pins = pins_for(remapped_can_pins());
+  reset_pin(pins.rx);
+  reset_pin(pins.tx);
+  release_pin(pins.rx);
+  release_pin(pins.tx);
+  release(peripheral::usb);
+  release(peripheral::can1);
 }
 
-// TODO(#212): TX mailbox availability is polled with a bounded retry loop
-// rather than suspending on the transmit-mailbox-empty interrupt. Convert to
-// the completion-interrupt async pattern (mirroring #211 for SPI) before
-// relying on this under sustained bus load.
-async::future<void> can::send(async::context&,
-                              hal::can_message const& p_message)
+void can::fifo0_isr()
 {
+  s_can->receive(0);
+}
+
+void can::fifo1_isr()
+{
+  s_can->receive(1);
+}
+
+void can::transmit_isr()
+{
+  // Clear the completed requests, so the interrupt stops firing, and wake
+  // the send waiting for a mailbox.
+  can1_reg->tsr = transmit_status::requests_completed;
+  s_can->m_transmit_notifier.notify();
+}
+
+void can::status_change_isr()
+{
+  // Writing 1 clears the error interrupt flag. The other flags in the
+  // register ignore a 0.
+  can1_reg->msr = bit_value(0U).set<master_status::error_interrupt>().get();
   if (is_bus_off()) {
-    throw hal::operation_not_permitted(this);
+    // A send waiting for a mailbox would wait forever
+    s_can->m_transmit_notifier.notify();
+    if (auto* const callback = s_can->m_bus_off_callback) {
+      callback->callback();
+    }
+  }
+}
+
+void can::receive(u8 p_fifo) noexcept
+{
+  while (bit_extract<fifo_status::messages_pending>(can1_reg->rfr[p_fifo]) !=
+         0) {
+    auto const message = read_fifo(p_fifo);
+    if (not m_receive_buffer.empty()) {
+      auto const count = m_receive_count;
+      m_receive_buffer[count % m_receive_buffer.size()] = message;
+      // The message is in the buffer before the count says so
+      std::atomic_signal_fence(std::memory_order_seq_cst);
+      m_receive_count = count + 1U;
+    }
+    auto* const callback = m_receive_callback;
+    if ((callback != nullptr) and m_receive_filter.matches(message)) {
+      callback->callback(message);
+    }
+  }
+}
+
+void can::transmit(hal::can_message const& p_message)
+{
+  std::lock_guard const hold(*m_lock);
+
+  u32 id =
+    bit_value(0U)
+      .insert<mailbox_identifier::remote_request>(p_message.remote_request)
+      .insert<mailbox_identifier::extended>(p_message.extended)
+      .get();
+  if (p_message.extended) {
+    id = bit_value(id)
+           .insert<mailbox_identifier::extended_identifier>(p_message.id)
+           .get();
+  } else {
+    id = bit_value(id)
+           .insert<mailbox_identifier::standard_identifier>(p_message.id)
+           .get();
+  }
+  u32 low = 0;
+  u32 high = 0;
+  for (u32 i = 0; i < 4; i++) {
+    low = low | (static_cast<u32>(p_message.payload[i]) << (i * 8U));
+    high = high | (static_cast<u32>(p_message.payload[i + 4]) << (i * 8U));
   }
 
-  auto const registers = convert_message_to_stm_can(p_message);
-  std::optional<u8> available_mailbox{};
-  i8 retries_remaining = 10;
+  hal::notifier::scope operation(m_transmit_notifier, []() noexcept {
+    bit_modify(can1_reg->ier).clear<interrupt_enable::transmit_mailbox_empty>();
+  });
+  // The time six of the longest frames take, plus 1 ms: the three queued
+  // ones, twice over
+  using namespace std::chrono_literals;
+  auto const baud =
+    programmed_baud_rate().numerical_value_in(mp_units::si::hertz);
+  auto const time_limit =
+    std::chrono::nanoseconds(hal::divide<hal::rounding::ceil, hal::u64>(
+      { .num = 6ULL * max_frame_bits * 1'000'000'000ULL, .den = baud })) +
+    1ms;
 
-  while (not available_mailbox) {
-    if (retries_remaining <= 0) {
-      throw hal::resource_unavailable_try_again(this);
+  while (true) {
+    if (is_bus_off()) {
+      throw hal::operation_not_permitted(this);
     }
-
-    auto const status = can1_reg->tsr;
-    if (bit_extract<transmit_status::transmit_mailbox0_empty>(status)) {
-      available_mailbox = 0;
-    } else if (bit_extract<transmit_status::transmit_mailbox1_empty>(status)) {
-      available_mailbox = 1;
-    } else if (bit_extract<transmit_status::transmit_mailbox2_empty>(status)) {
-      available_mailbox = 2;
+    auto const empty =
+      bit_extract<transmit_status::mailbox_empty>(can1_reg->tsr);
+    if (empty != 0) {
+      auto& mailbox = can1_reg->transmit_mailbox[std::countr_zero(empty)];
+      mailbox.tdtr = bit_value(0U)
+                       .insert<frame_length::data_length_code>(
+                         std::min<u32>(p_message.length, 8U))
+                       .get();
+      mailbox.tdlr = low;
+      mailbox.tdhr = high;
+      // Setting the transmit request last sends the message
+      mailbox.tir =
+        bit_value(id).set<mailbox_identifier::transmit_request>().get();
+      return;
     }
-
-    retries_remaining--;
+    bit_modify(can1_reg->ier).set<interrupt_enable::transmit_mailbox_empty>();
+    if (not operation.block_for(time_limit) and
+        (bit_extract<transmit_status::mailbox_empty>(can1_reg->tsr) == 0) and
+        not is_bus_off()) {
+      throw hal::timed_out(this);
+    }
   }
-
-  auto& mailbox = can1_reg->transmit_mailbox[available_mailbox.value()];
-  bit_modify(mailbox.tdtr)
-    .insert<frame_length_and_info::data_length_code>(p_message.length);
-  mailbox.tdlr = registers.data_a;
-  mailbox.tdhr = registers.data_b;
-  mailbox.tir = registers.id;
-
-  return {};
 }
 
-hal::circular_span<hal::can_message const> can::receive_buffer()
+void can::set_baud_rate(hal::hertz p_baud_rate)
 {
-  return inner().receive_buffer;
-}
-
-hal::usize can::receive_cursor()
-{
-  return inner().receive_cursor;
-}
-
-async::future<void> can::set_baud_rate(async::context&, hal::u32 p_hertz)
-{
+  std::lock_guard const hold(*m_lock);
+  auto const loop_back = bit_is_set<bus_timing::loop_back_mode>(can1_reg->btr);
   enter_initialization();
-  configure_baud_rate(p_hertz);
+  try {
+    configure_bit_timing(p_baud_rate, loop_back);
+  } catch (...) {
+    exit_initialization();
+    throw;
+  }
   exit_initialization();
-  return {};
 }
 
-async::future<void> can::wait_for_bus_off(async::context& p_context)
+void can::set_filter_mode(hal::can_message_acceptance p_accept)
 {
+  std::lock_guard const hold(*m_lock);
+  // `all` adds bank 13, which accepts every message, to the enabled banks.
+  // `none` holds the filters in initialization mode, which stops reception,
+  // and keeps FA1R as it is for when a later mode leaves it.
+  constexpr auto accept_all = bit_mask::from<accept_all_bank>();
+  bit_modify(can1_reg->fa1r)
+    .insert<accept_all>(p_accept == hal::can_message_acceptance::all);
+  set_filter_initialization(p_accept == hal::can_message_acceptance::none);
+}
+
+void can::recover_bus()
+{
+  std::lock_guard const hold(*m_lock);
   if (is_bus_off()) {
-    co_return;
+    // RM0008 section 24.7.6: with automatic bus-off management off, software
+    // starts recovery by entering and leaving initialization mode. The
+    // controller then rejoins after 128 runs of 11 recessive bits.
+    enter_initialization();
+    exit_initialization();
   }
-
-  inner().bus_off_waiter = &p_context;
-  co_await p_context.block_by_signal();
-  co_return;
 }
 
-async::future<void> can::bus_on(async::context&)
+u8 can::claim_bank()
 {
-  if (is_bus_off()) {
-    recover_from_bus_off();
-  }
-  return {};
-}
-
-hal::u8 can::acquire_filter_bank()
-{
-  auto& state = inner();
-  for (hal::usize index = 0; index < state.acquired_banks.size(); index++) {
-    if (not state.acquired_banks.test(index)) {
-      state.acquired_banks.set(index);
-      return static_cast<u8>(index);
+  std::lock_guard const hold(*m_lock);
+  for (u8 bank = 0; bank < user_bank_count; bank++) {
+    if (not m_claimed_banks[bank]) {
+      m_claimed_banks[bank] = true;
+      return bank;
     }
   }
-  throw hal::resource_unavailable_try_again(this);
+  throw hal::device_or_resource_busy(this);
 }
 
-void can::release_filter_bank(hal::u8 p_index)
+void can::release_bank(u8 p_bank) noexcept
 {
-  inner().acquired_banks.reset(p_index);
+  set_bank_enabled(p_bank, false);
+  m_claimed_banks[p_bank] = false;
 }
 
-hal::ptr<hal::can_transceiver> can::acquire_transceiver()
+void can::set_bank_enabled(u8 p_bank, bool p_enabled) noexcept
 {
-  return hal::allocate<transceiver>(memory_resource(), strong_from_this());
+  // FA1R can change in any filter mode. A user bank active alongside bank 13
+  // (`all`) accepts nothing bank 13 doesn't.
+  bit_modify(can1_reg->fa1r).insert(bit_mask::from(p_bank), p_enabled);
 }
 
-hal::ptr<hal::can_bus_manager> can::acquire_bus_manager()
+// ---- transceiver -----------------------------------------------------------
+
+hal::hertz can::driver_baud_rate()
 {
-  return hal::allocate<bus_manager>(memory_resource(), strong_from_this());
+  return programmed_baud_rate();
 }
 
-std::array<hal::ptr<hal::can_id_filter>, 4> can::acquire_identifier_filter(
-  can_fifo p_fifo)
+void can::driver_send(hal::can_message const& p_message)
 {
-  auto set =
-    hal::allocate<id_filter_set>(memory_resource(), strong_from_this(), p_fifo);
-  return {
-    hal::ptr<hal::can_id_filter>(set, &id_filter_set::filters, 0),
-    hal::ptr<hal::can_id_filter>(set, &id_filter_set::filters, 1),
-    hal::ptr<hal::can_id_filter>(set, &id_filter_set::filters, 2),
-    hal::ptr<hal::can_id_filter>(set, &id_filter_set::filters, 3),
-  };
+  transmit(p_message);
 }
 
-std::array<hal::ptr<hal::can_id_ext_filter>, 2>
-can::acquire_extended_identifier_filter(can_fifo p_fifo)
+hal::circular_span<hal::can_message const> can::driver_receive_buffer()
 {
-  auto set = hal::allocate<id_ext_filter_set>(
-    memory_resource(), strong_from_this(), p_fifo);
-  return {
-    hal::ptr<hal::can_id_ext_filter>(set, &id_ext_filter_set::filters, 0),
-    hal::ptr<hal::can_id_ext_filter>(set, &id_ext_filter_set::filters, 1),
-  };
+  return std::span<hal::can_message const>(m_receive_buffer);
 }
 
-std::array<hal::ptr<hal::can_mask_filter>, 2> can::acquire_mask_filter(
-  can_fifo p_fifo)
+hal::usize can::driver_receive_count()
 {
-  auto set = hal::allocate<mask_filter_set>(
-    memory_resource(), strong_from_this(), p_fifo);
-  return {
-    hal::ptr<hal::can_mask_filter>(set, &mask_filter_set::filters, 0),
-    hal::ptr<hal::can_mask_filter>(set, &mask_filter_set::filters, 1),
-  };
+  auto const count = m_receive_count;
+  // Reads of the buffer must happen after the count was read
+  std::atomic_signal_fence(std::memory_order_seq_cst);
+  return count;
 }
 
-hal::ptr<hal::can_mask_ext_filter> can::acquire_extended_mask_filter(
-  can_fifo p_fifo)
+// ---- bus manager -----------------------------------------------------------
+
+can::bus_manager::bus_manager(hal::ref<can> p_can)
+  : m_can(p_can)
 {
-  return hal::allocate<mask_ext_filter>(
-    memory_resource(), strong_from_this(), p_fifo);
 }
+
+void can::bus_manager::driver_baud_rate(hal::u32 p_hertz)
+{
+  m_can->set_baud_rate(p_hertz * mp_units::si::hertz);
+}
+
+void can::bus_manager::driver_filter_mode(hal::can_message_acceptance p_accept)
+{
+  m_can->set_filter_mode(p_accept);
+}
+
+void can::bus_manager::driver_on_bus_off(hal::can_bus_off_callback& p_callback)
+{
+  if (m_can->m_bus_off_callback != nullptr) {
+    throw hal::subscription_busy(this);
+  }
+  m_can->m_bus_off_callback = &p_callback;
+}
+
+void can::bus_manager::driver_clear_bus_off() noexcept
+{
+  m_can->m_bus_off_callback = nullptr;
+}
+
+void can::bus_manager::driver_bus_on()
+{
+  m_can->recover_bus();
+}
+
+// ---- interrupt -------------------------------------------------------------
+
+can::interrupt::interrupt(hal::ref<can> p_can)
+  : m_can(p_can)
+{
+}
+
+void can::interrupt::driver_on_receive(hal::can_receive_callback& p_callback,
+                                       hal::can_receive_filter p_filter)
+{
+  if (m_can->m_receive_callback != nullptr) {
+    throw hal::subscription_busy(this);
+  }
+  m_can->m_receive_filter = p_filter;
+  // The filter is in place before the interrupt can see the callback
+  std::atomic_signal_fence(std::memory_order_seq_cst);
+  m_can->m_receive_callback = &p_callback;
+}
+
+void can::interrupt::driver_clear_receive() noexcept
+{
+  m_can->m_receive_callback = nullptr;
+}
+
+// ---- filter banks ----------------------------------------------------------
+
+template<typename Allowed, hal::usize Count>
+can::filter_bank<Allowed, Count>::filter::filter(filter_bank& p_bank, u8 p_slot)
+  : m_bank(&p_bank)
+  , m_slot(p_slot)
+{
+}
+
+template<typename Allowed, hal::usize Count>
+void can::filter_bank<Allowed, Count>::filter::driver_allow(
+  std::optional<Allowed> p_allowed)
+{
+  m_bank->allow(m_slot, p_allowed);
+}
+
+template<typename Allowed, hal::usize Count>
+template<hal::usize... Index>
+std::array<typename can::filter_bank<Allowed, Count>::filter, Count>
+can::filter_bank<Allowed, Count>::make_filters(std::index_sequence<Index...>)
+{
+  return { filter(*this, static_cast<u8>(Index))... };
+}
+
+template<typename Allowed, hal::usize Count>
+can::filter_bank<Allowed, Count>::filter_bank(hal::ref<can> p_can,
+                                              can_fifo p_fifo)
+  : m_can(p_can)
+  , m_filters(make_filters(std::make_index_sequence<Count>{}))
+  , m_bank(p_can->claim_bank())
+{
+  using format = filter_format<Allowed>;
+  std::lock_guard const hold(*m_can->m_lock);
+  // Disabled until a filter allows something
+  m_can->set_bank_enabled(m_bank, false);
+  configure_bank(
+    m_bank, { .scale = format::scale, .mode = format::mode, .fifo = p_fifo });
+}
+
+template<typename Allowed, hal::usize Count>
+can::filter_bank<Allowed, Count>::~filter_bank<Allowed, Count>()
+{
+  std::lock_guard const hold(*m_can->m_lock);
+  m_can->release_bank(m_bank);
+}
+
+template<typename Allowed, hal::usize Count>
+void can::filter_bank<Allowed, Count>::allow(u8 p_slot,
+                                             std::optional<Allowed> p_allowed)
+{
+  constexpr u32 slot_bits = 64 / Count;
+  constexpr hal::u64 slot_mask =
+    (slot_bits == 64) ? ~hal::u64{ 0 } : ((hal::u64{ 1 } << slot_bits) - 1U);
+  std::lock_guard const hold(*m_can->m_lock);
+
+  m_allowing[p_slot] = p_allowed.has_value();
+  if (p_allowed) {
+    auto const shift = p_slot * slot_bits;
+    m_value = (m_value & ~(slot_mask << shift)) |
+              (filter_format<Allowed>::encode(*p_allowed) << shift);
+  }
+
+  // The bank stays disabled while its registers change
+  m_can->set_bank_enabled(m_bank, false);
+  if (m_allowing.none()) {
+    return;
+  }
+  // A filter that allows nothing repeats one that does, so it accepts
+  // nothing new
+  hal::u64 value = m_value;
+  u32 allowing_slot = 0;
+  while (not m_allowing[allowing_slot]) {
+    allowing_slot++;
+  }
+  auto const copy = (m_value >> (allowing_slot * slot_bits)) & slot_mask;
+  for (u32 slot = 0; slot < Count; slot++) {
+    if (not m_allowing[slot]) {
+      auto const shift = slot * slot_bits;
+      value = (value & ~(slot_mask << shift)) | (copy << shift);
+    }
+  }
+  auto& registers = can1_reg->filter_registers[m_bank];
+  registers.fr1 = static_cast<u32>(value);
+  registers.fr2 = static_cast<u32>(value >> 32U);
+  m_can->set_bank_enabled(m_bank, true);
+}
+
+template class can::filter_bank<hal::u16, 4>;
+template class can::filter_bank<hal::u32, 2>;
+template class can::filter_bank<hal::can_mask, 2>;
+template class can::filter_bank<hal::can_mask_ext, 1>;
 }  // namespace hal::stm32f1

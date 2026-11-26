@@ -64,10 +64,13 @@ hal::static_ref<hal::adc16> adc();
 hal::static_ref<hal::i2c> i2c();
 hal::static_ref<hal::spi_channel> spi_channel();
 hal::static_ref<memory_copier> copier();
+hal::static_ref<hal::can_transceiver> can_transceiver();
+hal::static_ref<hal::can_bus_manager> can_bus_manager();
+hal::static_ref<hal::can_interrupt> can_interrupt();
+hal::static_ref<hal::can_id_filter> can_identifier_filter();
 
-// Left out until their drivers are ported (see ../CMakeLists.txt):
-// can_transceiver(), can_bus_manager(), can_identifier_filter() and
-// the usb_*() endpoints.
+// Left out until their drivers are ported (see ../CMakeLists.txt): the usb_*()
+// endpoints.
 
 inline void reset()
 {

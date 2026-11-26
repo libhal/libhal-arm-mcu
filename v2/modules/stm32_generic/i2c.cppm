@@ -290,6 +290,9 @@ export struct i2c_timing
  * is outside what that mode allows: 2 MHz to 50 MHz, and at least 4 MHz for
  * fast mode (RM0008 section 26.3.3).
  */
+// Both are hal::hertz. The one caller passes the settings' rate and the
+// peripheral's clock, and the tests check the order.
+// NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
 export i2c_timing compute_i2c_timing(hal::hertz p_clock_rate,
                                      hal::hertz p_frequency)
 {
@@ -321,9 +324,11 @@ export i2c_timing compute_i2c_timing(hal::hertz p_clock_rate,
   // the bus at or below the requested rate.
   auto const cycles_per_ccr = fast_mode ? 3U : 2U;
   auto const ccr_rate = cycles_per_ccr * rate;
-  auto const rounded_ccr = ((p_frequency + ccr_rate) - (1U * Hz)) / ccr_rate;
-  auto const ccr = std::max(rounded_ccr.numerical_value_in(mp_units::one),
-                            fast_mode ? 1U : standard_mode_min_ccr);
+  auto const rounded_ccr = hal::divide<hal::rounding::ceil, u32>(
+    { .num = p_frequency.numerical_value_in(Hz),
+      .den = ccr_rate.numerical_value_in(Hz) });
+  auto const ccr =
+    std::max(rounded_ccr, fast_mode ? 1U : standard_mode_min_ccr);
 
   // A larger divider would be needed to go this slowly.
   if (ccr > max_ccr) {
@@ -445,12 +450,11 @@ public:
     hal::u64 const period_cycles =
       hal::u64{ timing.ccr } * (timing.fast_mode ? 3U : 2U);
     // The steady clock's ticks in one SCL period, rounded up
-    auto const scaled_clock =
-      mp_units::value_cast<hal::u64>(clock_rate) * period_cycles;
-    auto const input = mp_units::value_cast<hal::u64>(p_frequency);
-    hal::u64 const period_ticks =
-      (((scaled_clock + input) - (1U * mp_units::si::hertz)) / input)
-        .numerical_value_in(mp_units::one);
+    hal::u64 const clock_hz =
+      clock_rate.numerical_value_in(mp_units::si::hertz);
+    auto const period_ticks = hal::divide<hal::rounding::ceil, hal::u64>(
+      { .num = clock_hz * period_cycles,
+        .den = p_frequency.numerical_value_in(mp_units::si::hertz) });
 
     auto& regs = reg();
     // Reset clears a bus left busy by an interrupted transfer. CCR and TRISE

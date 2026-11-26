@@ -34,16 +34,24 @@ std::int32_t register_index(irq_t p_irq)
   return p_irq / register_width;
 }
 
+/// The IRQ's bit in its NVIC register, the one register_index() selects.
+/// p_irq must be 0 or more.
+std::uint32_t register_bit(irq_t p_irq)
+{
+  constexpr std::uint32_t register_width = 32;
+  return 1U << (static_cast<std::uint32_t>(p_irq) % register_width);
+}
+
 void nvic_enable_irq(irq_t p_irq)
 {
   auto* interrupt_enable = &nvic->iser[register_index(p_irq)];
-  *interrupt_enable = 1 << p_irq;
+  *interrupt_enable = register_bit(p_irq);
 }
 
 void nvic_disable_irq(irq_t p_irq)
 {
   auto* interrupt_clear = &nvic->icer[register_index(p_irq)];
-  *interrupt_clear = 1 << p_irq;
+  *interrupt_clear = register_bit(p_irq);
 }
 
 void setup_default_vector_table(std::span<interrupt_pointer> p_vector_table)
@@ -204,7 +212,7 @@ bool is_interrupt_enabled(irq_t p_irq)
 
   uint32_t enable_register = nvic->iser[register_index(p_irq)];
 
-  return (enable_register & (1 << p_irq)) != 0U;
+  return (enable_register & register_bit(p_irq)) != 0U;
 }
 
 bool verify_vector_enabled(irq_t p_irq, interrupt_pointer p_handler)
@@ -227,7 +235,7 @@ bool verify_vector_enabled(irq_t p_irq, interrupt_pointer p_handler)
 
   uint32_t enable_register = nvic->iser[register_index(p_irq)];
 
-  return (enable_register & (1 << p_irq)) != 0U;
+  return (enable_register & register_bit(p_irq)) != 0U;
 }
 
 void revert_interrupt_vector_table()

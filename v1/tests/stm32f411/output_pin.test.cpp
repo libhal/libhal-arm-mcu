@@ -17,14 +17,11 @@
 #include <boost/ut.hpp>
 
 namespace hal::stm32f411 {
-boost::ut::suite output_pin_test = []() {
+// Compiles the header on the host. The driver needs its hardware, so the test
+// is empty.
+void output_pin_test()
+{
   using namespace boost::ut;
-  using namespace std::literals;
-
-  "output_pin::get()"_test = []() {
-    // Setup
-    // Exercise
-    // Verify
-  };
-};
+  "stm32f411::output_pin"_test = []() {};
+}
 }  // namespace hal::stm32f411

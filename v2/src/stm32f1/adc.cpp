@@ -195,8 +195,10 @@ adc::adc(peripheral p_id, steady_clock& p_clock, hal::ref<basic_lock> p_lock)
   auto const clock_hz =
     p_clock.frequency().numerical_value_in(hal::hertz::unit);
   auto const adc_hz = adc_frequency.numerical_value_in(hal::hertz::unit);
-  auto const tstab_ticks = (clock_hz / 1'000'000) + 1;
-  auto const two_adc_cycles_ticks = 2 * ((clock_hz / adc_hz) + 1);
+  auto const tstab_ticks = hal::divide<hal::rounding::ceil, u32>(
+    { .num = clock_hz, .den = 1'000'000 });
+  auto const two_adc_cycles_ticks = 2U * hal::divide<hal::rounding::ceil, u32>(
+                                           { .num = clock_hz, .den = adc_hz });
   wait_ticks(p_clock, tstab_ticks + two_adc_cycles_ticks);
 
   bit_modify(reg.control_2).set<adc_control_register_2::ad_calibration>();

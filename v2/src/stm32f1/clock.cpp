@@ -31,8 +31,9 @@ namespace {
 // frequency() reports is computed live from those registers on every call,
 // so it stays correct even if configure_clocks() is never invoked (e.g. a
 // previous firmware image already left the PLL running).
-hal::hertz high_speed_external_frequency = 0 * Hz;
-hal::hertz low_speed_external_frequency = 0 * Hz;
+// Value-initialized to 0 Hz
+constinit hal::hertz high_speed_external_frequency{};
+constinit hal::hertz low_speed_external_frequency{};
 }  // namespace
 
 struct flash_t

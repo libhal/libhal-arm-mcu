@@ -370,6 +370,11 @@ public:
    * interrupt can't run for a whole lap of the buffer, and then the bytes of
    * that lap were overwritten anyway.
    *
+   * It can be called from anywhere on the core: thread mode, any interrupt, or
+   * with interrupts disabled. The transfer complete interrupt counts a lap and
+   * clears its flag with interrupts masked, so no caller sees the lap half
+   * counted.
+   *
    * @return hal::usize - bytes written since `receive_circular()` started,
    * wrapping at the `hal::usize` limit. Zero if no circular receive was
    * started.

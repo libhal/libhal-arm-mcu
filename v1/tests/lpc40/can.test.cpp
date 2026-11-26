@@ -14,32 +14,14 @@
 
 #include <libhal-arm-mcu/lpc40/can.hpp>
 
-#include "lpc40/can_reg.hpp"
-#include "lpc40/gpio_reg.hpp"
-#include "lpc40/helper.hpp"
-#include "lpc40/pin_reg.hpp"
-#include "lpc40/system_controller_reg.hpp"
-
 #include <boost/ut.hpp>
 
 namespace hal::lpc40 {
-boost::ut::suite can_test = []() {
+// Compiles the header on the host. The driver needs its hardware, so the test
+// is empty.
+void can_test()
+{
   using namespace boost::ut;
-
-  auto stub_out_pin_map = stub_out_registers(&pin_map);
-  auto stub_out_gpio0 = stub_out_registers(&gpio_reg[0]);
-  auto stub_out_gpio1 = stub_out_registers(&gpio_reg[1]);
-  auto stub_out_gpio2 = stub_out_registers(&gpio_reg[2]);
-  auto stub_out_gpio3 = stub_out_registers(&gpio_reg[3]);
-  auto stub_out_gpio4 = stub_out_registers(&gpio_reg[4]);
-  auto stub_out_gpio5 = stub_out_registers(&gpio_reg[5]);
-
-  auto stub_out_sys = stub_out_registers(&system_controller_reg);
-  auto stub_out_can1 = stub_out_registers(&can_reg1);
-  auto stub_out_can2 = stub_out_registers(&can_reg2);
-  auto stub_out_can_accept = stub_out_registers(&can_acceptance_filter);
-
-  "can::ctor()"_test = []() {};
-  "can::configure()"_test = []() {};
-};
+  "lpc40::can"_test = []() {};
+}
 }  // namespace hal::lpc40

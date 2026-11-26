@@ -12,14 +12,49 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <chrono>
 #include <cstddef>
 #include <exception>
 #include <new>
 
 import arm_mcu_demos;
+import hal;
+import hal.util;
+
+namespace {
+/**
+ * @brief Blink the status LED forever: two short blinks, then a pause
+ *
+ * Busy-waits on the steady clock, since interrupts may not work anymore.
+ */
+[[noreturn]] void terminate_handler() noexcept
+{
+  auto led = resources::status_led();
+  auto clock = resources::clock();
+  auto const wait = [&clock](hal::time_duration p_duration) {
+    auto const deadline = hal::future_deadline(*clock, p_duration);
+    while (clock->uptime() < deadline) {
+    }
+  };
+
+  while (true) {
+    using namespace std::chrono_literals;
+    led->level(true);
+    wait(100ms);
+    led->level(false);
+    wait(100ms);
+    led->level(true);
+    wait(100ms);
+    led->level(false);
+    wait(1s);
+  }
+}
+}  // namespace
 
 int main()
 {
+  // Set first, so that a failure while initializing the platform blinks too
+  std::set_terminate(terminate_handler);
   initialize_platform();
   application();
   std::terminate();

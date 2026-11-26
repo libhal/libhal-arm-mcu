@@ -111,7 +111,11 @@ hal::static_ref<hal::stm32f1::can> can_device()
 {
   static hal::no_op_lock single_context;
   static std::array<hal::can_message, 16> receive_buffer{};
-  static hal::stm32f1::can can1(single_context, receive_buffer);
+  // PB8/PB9: the CAN pins on the MicroMod connector. The default, PA11/PA12,
+  // are also the USB pins.
+  static hal::stm32f1::can can1(single_context,
+                                receive_buffer,
+                                { .pins = hal::stm32f1::can_pins::pb9_pb8 });
   return can1;
 }
 }  // namespace
@@ -178,11 +182,10 @@ hal::static_ref<hal::spi_channel> spi_channel()
 
 void initialize_platform()
 {
-  // std::set_terminate(resources::terminate_handler);
   hal::cortex_m::initialize_interrupts<hal::stm32f1::irq::max>();
 
-  // Set the MCU to the maximum clock speed
-#if 0
+  // Set the MCU to its maximum clock speed: the 8 MHz crystal times 9 gives
+  // 72 MHz. The USB peripheral needs exactly 48 MHz, which is 72 MHz / 1.5.
   hal::stm32f1::configure_clocks(hal::stm32f1::clock_tree{
     .high_speed_external = 8 * mp_units::si::unit_symbols::MHz,
     .pll = {
@@ -207,7 +210,6 @@ void initialize_platform()
       },
     },
   });
-#endif
 
   hal::stm32f1::activate_mco_pa8(
     hal::stm32f1::mco_source::pll_clock_divided_by_2);

@@ -52,7 +52,7 @@ void application()
 
   hal::write(*console, "Starting CAN demo!\n");
 
-  bus_manager->baud_rate(100'000);
+  bus_manager->baud_rate(1'000'000);
 
   constexpr std::uint16_t allowed_id = 0x111;
   id_filter->allow(allowed_id);

@@ -94,7 +94,7 @@ static_assert(offsetof(can_reg_t, fa1r) == 0x21C);
 static_assert(offsetof(can_reg_t, filter_registers) == 0x240);
 
 // NOLINTNEXTLINE(performance-no-int-to-ptr)
-inline auto* const can1_reg = reinterpret_cast<can_reg_t*>(0x4000'6400);
+auto* const can1_reg = reinterpret_cast<can_reg_t*>(0x4000'6400);
 
 /// Bit masks for the BTR register
 struct bus_timing
@@ -127,10 +127,14 @@ struct master_status
 /// Bit masks for the TSR register
 struct transmit_status
 {
-  /// RQCP0, RQCP1 and RQCP2: a mailbox's request completed. Cleared by
-  /// writing 1.
+  /// RQCP0: mailbox 0's request completed. Cleared by writing 1.
+  static constexpr auto request_completed0 = bit_mask::from<0>();
+  /// RQCP1: mailbox 1's request completed. Cleared by writing 1.
+  static constexpr auto request_completed1 = bit_mask::from<8>();
+  /// RQCP2: mailbox 2's request completed. Cleared by writing 1.
+  static constexpr auto request_completed2 = bit_mask::from<16>();
   static constexpr u32 requests_completed =
-    (1U << 0U) | (1U << 8U) | (1U << 16U);
+    u32{ 0 } | request_completed0 | request_completed1 | request_completed2;
   /// TME0 to TME2: which mailboxes are empty
   static constexpr auto mailbox_empty = bit_mask::from<26, 28>();
 };
@@ -187,7 +191,7 @@ constexpr u8 accept_all_bank = 13;
 /// stuffing, in bits
 constexpr u32 max_frame_bits = 160;
 
-can* s_can = nullptr;
+constinit can* s_can = nullptr;
 
 void enter_initialization()
 {
@@ -207,8 +211,7 @@ void exit_initialization()
 }
 
 /// Program the bit timing. Must run in initialization mode.
-/// @return hal::hertz - the baud rate achieved
-hal::hertz configure_bit_timing(hal::hertz p_baud_rate, bool p_loop_back)
+void configure_bit_timing(hal::hertz p_baud_rate, bool p_loop_back)
 {
   auto const can_frequency = frequency(peripheral::can1);
   auto const divider = calculate_can_bus_divider(can_frequency, p_baud_rate);
@@ -217,8 +220,6 @@ hal::hertz configure_bit_timing(hal::hertz p_baud_rate, bool p_loop_back)
   }
 
   auto const timing = *divider;
-  u32 const quanta = timing.sync_segment + timing.propagation_delay +
-                     timing.phase_segment1 + timing.phase_segment2;
   bit_modify(can1_reg->btr)
     .insert<bus_timing::prescaler>(timing.clock_divider - 1U)
     .insert<bus_timing::time_segment1>(
@@ -227,9 +228,21 @@ hal::hertz configure_bit_timing(hal::hertz p_baud_rate, bool p_loop_back)
     .insert<bus_timing::sync_jump_width>(timing.synchronization_jump_width - 1U)
     .insert<bus_timing::loop_back_mode>(p_loop_back)
     .clear<bus_timing::silent_mode>();
+}
 
-  auto const can_hz = can_frequency.numerical_value_in(mp_units::si::hertz);
-  return (can_hz / (timing.clock_divider * quanta)) * mp_units::si::hertz;
+/// The baud rate the bit timing in BTR gives
+hal::hertz programmed_baud_rate()
+{
+  auto const timing = can1_reg->btr;
+  auto const divider = bit_extract<bus_timing::prescaler>(timing) + 1U;
+  // The sync segment's quantum plus both time segments, each stored as one
+  // less than its length
+  auto const quanta = (bit_extract<bus_timing::time_segment1>(timing) +
+                       bit_extract<bus_timing::time_segment2>(timing)) +
+                      3U;
+  auto const can_hz =
+    frequency(peripheral::can1).numerical_value_in(mp_units::si::hertz);
+  return (can_hz / (divider * quanta)) * mp_units::si::hertz;
 }
 
 bool is_bus_off()
@@ -243,16 +256,41 @@ void set_filter_initialization(bool p_initialization)
     .insert<filter_master::initialization_mode>(p_initialization);
 }
 
+/// A bank's filter scale (FS1R)
+enum class bank_scale : u8
+{
+  dual_16_bit = 0,
+  single_32_bit = 1,
+};
+
+/// A bank's filter mode (FM1R)
+enum class bank_mode : u8
+{
+  mask = 0,
+  list = 1,
+};
+
+/// How a bank's registers are read, and where its messages go
+struct bank_layout
+{
+  bank_scale scale;
+  bank_mode mode;
+  can_fifo fifo;
+};
+
 /// Set a bank's scale, mode and FIFO. Only allowed in filter initialization
-/// mode, which stops reception, so it's left at once.
-void configure_bank(u8 p_bank, bool p_32_bit, bool p_list, can_fifo p_fifo)
+/// mode, which stops reception, so it's entered only for as long as it takes,
+/// unless the filter mode `none` already holds it.
+void configure_bank(u8 p_bank, bank_layout p_layout)
 {
   auto const bank = bit_mask::from(p_bank);
+  auto const was_initializing =
+    bit_is_set<filter_master::initialization_mode>(can1_reg->fmr);
   set_filter_initialization(true);
-  bit_modify(can1_reg->fs1r).insert(bank, static_cast<u32>(p_32_bit));
-  bit_modify(can1_reg->fm1r).insert(bank, static_cast<u32>(p_list));
-  bit_modify(can1_reg->ffa1r).insert(bank, value(p_fifo));
-  set_filter_initialization(false);
+  bit_modify(can1_reg->fs1r).insert(bank, value(p_layout.scale));
+  bit_modify(can1_reg->fm1r).insert(bank, value(p_layout.mode));
+  bit_modify(can1_reg->ffa1r).insert(bank, value(p_layout.fifo));
+  set_filter_initialization(was_initializing);
 }
 
 hal::can_message read_fifo(u8 p_fifo)
@@ -314,8 +352,8 @@ struct filter_format;
 template<>
 struct filter_format<hal::u16>
 {
-  static constexpr bool is_32_bit = false;
-  static constexpr bool is_list = true;
+  static constexpr auto scale = bank_scale::dual_16_bit;
+  static constexpr auto mode = bank_mode::list;
   static hal::u64 encode(hal::u16 p_id)
   {
     return static_cast<hal::u64>(p_id & 0x7FFU) << 5U;
@@ -327,8 +365,8 @@ struct filter_format<hal::u16>
 template<>
 struct filter_format<hal::u32>
 {
-  static constexpr bool is_32_bit = true;
-  static constexpr bool is_list = true;
+  static constexpr auto scale = bank_scale::single_32_bit;
+  static constexpr auto mode = bank_mode::list;
   static hal::u64 encode(hal::u32 p_id)
   {
     return (static_cast<hal::u64>(p_id & 0x1FFF'FFFFU) << 3U) | 0b100U;
@@ -341,8 +379,8 @@ struct filter_format<hal::u32>
 template<>
 struct filter_format<hal::can_mask>
 {
-  static constexpr bool is_32_bit = false;
-  static constexpr bool is_list = false;
+  static constexpr auto scale = bank_scale::dual_16_bit;
+  static constexpr auto mode = bank_mode::mask;
   static hal::u64 encode(hal::can_mask p_mask)
   {
     auto const id = static_cast<hal::u64>(p_mask.id & 0x7FFU) << 5U;
@@ -357,8 +395,8 @@ struct filter_format<hal::can_mask>
 template<>
 struct filter_format<hal::can_mask_ext>
 {
-  static constexpr bool is_32_bit = true;
-  static constexpr bool is_list = false;
+  static constexpr auto scale = bank_scale::single_32_bit;
+  static constexpr auto mode = bank_mode::mask;
   static hal::u64 encode(hal::can_mask_ext p_mask)
   {
     auto const id =
@@ -375,13 +413,11 @@ can::can(hal::ref<hal::basic_lock> p_lock,
          can_settings const& p_settings)
   : m_lock(p_lock)
   , m_receive_buffer(p_buffer)
-  , m_baud_rate(p_settings.baud_rate)
-  , m_pins(p_settings.pins)
 {
   if (p_buffer.empty()) {
     throw hal::argument_out_of_domain(this);
   }
-  auto const pins = pins_for(m_pins);
+  auto const pins = pins_for(p_settings.pins);
   // Claim everything or nothing: check first, so a claim that succeeds is
   // never left behind by one that throws.
   if (is_claimed(peripheral::can1) or is_claimed(peripheral::usb) or
@@ -405,8 +441,7 @@ can::can(hal::ref<hal::basic_lock> p_lock,
     .set<master_control::transmit_fifo_priority>();
   enter_initialization();
   try {
-    m_baud_rate =
-      configure_bit_timing(p_settings.baud_rate, p_settings.loop_back);
+    configure_bit_timing(p_settings.baud_rate, p_settings.loop_back);
   } catch (...) {
     power_off(peripheral::can1);
     release_pin(pins.rx);
@@ -418,13 +453,19 @@ can::can(hal::ref<hal::basic_lock> p_lock,
 
   configure_pin(pins.rx, input_pull_up);
   configure_pin(pins.tx, push_pull_alternative_output);
-  remap_pins(m_pins);
+  remap_pins(p_settings.pins);
 
-  // Bank 13 as one 32-bit mask with a mask of 0 accepts every message
-  configure_bank(accept_all_bank, true, false, can_fifo::select1);
+  // Bank 13 as one 32-bit mask with a mask of 0 accepts every message. It
+  // alone is active, for the filter mode `all`. The reset state leaves the
+  // filters in initialization mode, the filter mode `none`.
+  configure_bank(accept_all_bank,
+                 { .scale = bank_scale::single_32_bit,
+                   .mode = bank_mode::mask,
+                   .fifo = can_fifo::select1 });
   can1_reg->filter_registers[accept_all_bank].fr1 = 0;
   can1_reg->filter_registers[accept_all_bank].fr2 = 0;
-  apply_bank_activation();
+  can1_reg->fa1r = bit_mask::from<accept_all_bank>().value<u32>();
+  set_filter_initialization(false);
 
   exit_initialization();
 
@@ -451,7 +492,7 @@ can::~can()
   s_can = nullptr;
   power_off(peripheral::can1);
 
-  auto const pins = pins_for(m_pins);
+  auto const pins = pins_for(remapped_can_pins());
   reset_pin(pins.rx);
   reset_pin(pins.tx);
   release_pin(pins.rx);
@@ -542,7 +583,8 @@ void can::transmit(hal::can_message const& p_message)
   // The time six of the longest frames take, plus 1 ms: the three queued
   // ones, twice over
   using namespace std::chrono_literals;
-  auto const baud = m_baud_rate.numerical_value_in(mp_units::si::hertz);
+  auto const baud =
+    programmed_baud_rate().numerical_value_in(mp_units::si::hertz);
   auto const time_limit =
     std::chrono::nanoseconds(hal::divide<hal::rounding::ceil, hal::u64>(
       { .num = 6ULL * max_frame_bits * 1'000'000'000ULL, .den = baud })) +
@@ -582,7 +624,7 @@ void can::set_baud_rate(hal::hertz p_baud_rate)
   auto const loop_back = bit_is_set<bus_timing::loop_back_mode>(can1_reg->btr);
   enter_initialization();
   try {
-    m_baud_rate = configure_bit_timing(p_baud_rate, loop_back);
+    configure_bit_timing(p_baud_rate, loop_back);
   } catch (...) {
     exit_initialization();
     throw;
@@ -593,8 +635,13 @@ void can::set_baud_rate(hal::hertz p_baud_rate)
 void can::set_filter_mode(hal::can_message_acceptance p_accept)
 {
   std::lock_guard const hold(*m_lock);
-  m_acceptance = p_accept;
-  apply_bank_activation();
+  // `all` adds bank 13, which accepts every message, to the enabled banks.
+  // `none` holds the filters in initialization mode, which stops reception,
+  // and keeps FA1R as it is for when a later mode leaves it.
+  constexpr auto accept_all = bit_mask::from<accept_all_bank>();
+  bit_modify(can1_reg->fa1r)
+    .insert<accept_all>(p_accept == hal::can_message_acceptance::all);
+  set_filter_initialization(p_accept == hal::can_message_acceptance::none);
 }
 
 void can::recover_bus()
@@ -623,34 +670,22 @@ u8 can::claim_bank()
 
 void can::release_bank(u8 p_bank) noexcept
 {
-  m_enabled_banks[p_bank] = false;
+  set_bank_enabled(p_bank, false);
   m_claimed_banks[p_bank] = false;
-  apply_bank_activation();
 }
 
 void can::set_bank_enabled(u8 p_bank, bool p_enabled) noexcept
 {
-  m_enabled_banks[p_bank] = p_enabled;
-  apply_bank_activation();
-}
-
-void can::apply_bank_activation() noexcept
-{
-  u32 active = 0;
-  if (m_acceptance == hal::can_message_acceptance::filtered) {
-    active = static_cast<u32>(m_enabled_banks.to_ulong());
-  } else if (m_acceptance == hal::can_message_acceptance::all) {
-    active = 1U << accept_all_bank;
-  }
-  // No active bank accepts nothing (`none`)
-  can1_reg->fa1r = active;
+  // FA1R can change in any filter mode. A user bank active alongside bank 13
+  // (`all`) accepts nothing bank 13 doesn't.
+  bit_modify(can1_reg->fa1r).insert(bit_mask::from(p_bank), p_enabled);
 }
 
 // ---- transceiver -----------------------------------------------------------
 
 hal::hertz can::driver_baud_rate()
 {
-  return m_baud_rate;
+  return programmed_baud_rate();
 }
 
 void can::driver_send(hal::can_message const& p_message)
@@ -765,7 +800,8 @@ can::filter_bank<Allowed, Count>::filter_bank(hal::ref<can> p_can,
   std::lock_guard const hold(*m_can->m_lock);
   // Disabled until a filter allows something
   m_can->set_bank_enabled(m_bank, false);
-  configure_bank(m_bank, format::is_32_bit, format::is_list, p_fifo);
+  configure_bank(
+    m_bank, { .scale = format::scale, .mode = format::mode, .fifo = p_fifo });
 }
 
 template<typename Allowed, hal::usize Count>

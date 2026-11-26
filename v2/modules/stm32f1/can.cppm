@@ -30,8 +30,7 @@ import :pin;
 
 namespace hal::stm32f1 {
 /// The receive FIFO a filter bank sends the messages it accepts to
-export enum class can_fifo : hal::u8
-{
+export enum class can_fifo : hal::u8 {
   /// FIFO 0, which the CAN1_RX0 interrupt empties
   select1 = 0,
   /// FIFO 1, which the CAN1_RX1 interrupt empties
@@ -151,7 +150,7 @@ private:
   hal::usize driver_receive_count() override;
 
   /// Hardware banks 0 to 12 are for `filter_bank` objects. Bank 13 accepts
-  /// every message while the filter mode is `all`.
+  /// every message, and is active while the filter mode is `all`.
   static constexpr hal::usize user_bank_count = 13;
 
   static void fifo0_isr();
@@ -167,7 +166,6 @@ private:
   u8 claim_bank();
   void release_bank(u8 p_bank) noexcept;
   void set_bank_enabled(u8 p_bank, bool p_enabled) noexcept;
-  void apply_bank_activation() noexcept;
 
   hal::ref<hal::basic_lock> m_lock;
   std::span<hal::can_message> m_receive_buffer{};
@@ -176,13 +174,10 @@ private:
   hal::can_receive_filter m_receive_filter{};
   hal::can_bus_off_callback* volatile m_bus_off_callback = nullptr;
   hal::notifier m_transmit_notifier;
-  hal::hertz m_baud_rate;
-  can_pins m_pins;
-  hal::can_message_acceptance m_acceptance = hal::can_message_acceptance::all;
-  /// Banks claimed through `claim_bank()`
+  /// Banks claimed through `claim_bank()`. The registers hold the rest of
+  /// the state: the baud rate (BTR), the pins (AFIO MAPR), which banks are
+  /// enabled (FA1R) and the filter mode (FA1R and FMR).
   std::bitset<user_bank_count> m_claimed_banks{};
-  /// Handed-out banks with at least one filter allowing something
-  std::bitset<user_bank_count> m_enabled_banks{};
 };
 
 /**

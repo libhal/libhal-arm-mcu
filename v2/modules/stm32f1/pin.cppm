@@ -49,8 +49,7 @@ export struct pin
  * The following options are available to be sent to the output of the MCO
  * pin
  */
-export enum class mco_source : std::uint8_t
-{
+export enum class mco_source : std::uint8_t {
   system_clock = 0b100,
   high_speed_internal = 0b101,
   high_speed_external = 0b110,
@@ -61,8 +60,7 @@ export enum class mco_source : std::uint8_t
  * @brief Remap pins for can bus peripheral
  *
  */
-export enum class can_pins : std::uint8_t
-{
+export enum class can_pins : std::uint8_t {
   pa11_pa12 = 0b00,
   pb9_pb8 = 0b10,
   pd0_pd1 = 0b11,
@@ -511,6 +509,9 @@ export void reset_mco_pa8()
   release_pin({ .port = 'A', .pin = 8 });
 }
 
+/// CAN_REMAP in AFIO MAPR
+constexpr auto can_pin_remap = bit_mask::from<14, 13>();
+
 /**
  * @brief Remap can pins
  *
@@ -518,7 +519,17 @@ export void reset_mco_pa8()
  */
 export void remap_pins(can_pins p_pin)
 {
-  constexpr auto can_pin_remap = bit_mask::from<14, 13>();
   bit_modify(alternative_function_io->mapr).insert<can_pin_remap>(value(p_pin));
+}
+
+/**
+ * @brief The CAN pins that `remap_pins()` last selected
+ *
+ * @return can_pins - the pins, read back from AFIO MAPR
+ */
+can_pins remapped_can_pins()
+{
+  return static_cast<can_pins>(
+    bit_extract<can_pin_remap>(alternative_function_io->mapr));
 }
 }  // namespace hal::stm32f1

@@ -613,8 +613,8 @@ u8 can::claim_bank()
 {
   std::lock_guard const hold(*m_lock);
   for (u8 bank = 0; bank < user_bank_count; bank++) {
-    if (not m_claimed_banks.test(bank)) {
-      m_claimed_banks.set(bank);
+    if (not m_claimed_banks[bank]) {
+      m_claimed_banks[bank] = true;
       return bank;
     }
   }
@@ -623,14 +623,14 @@ u8 can::claim_bank()
 
 void can::release_bank(u8 p_bank) noexcept
 {
-  m_enabled_banks.reset(p_bank);
-  m_claimed_banks.reset(p_bank);
+  m_enabled_banks[p_bank] = false;
+  m_claimed_banks[p_bank] = false;
   apply_bank_activation();
 }
 
 void can::set_bank_enabled(u8 p_bank, bool p_enabled) noexcept
 {
-  m_enabled_banks.set(p_bank, p_enabled);
+  m_enabled_banks[p_bank] = p_enabled;
   apply_bank_activation();
 }
 
@@ -793,7 +793,7 @@ void can::filter_bank<Allowed, Count>::allow(u8 p_slot,
     (slot_bits == 64) ? ~hal::u64{ 0 } : ((hal::u64{ 1 } << slot_bits) - 1U);
   std::lock_guard const hold(*m_can->m_lock);
 
-  m_allowing.set(p_slot, p_allowed.has_value());
+  m_allowing[p_slot] = p_allowed.has_value();
   if (p_allowed) {
     auto const shift = p_slot * slot_bits;
     m_value = (m_value & ~(slot_mask << shift)) |
@@ -809,12 +809,12 @@ void can::filter_bank<Allowed, Count>::allow(u8 p_slot,
   // nothing new
   hal::u64 value = m_value;
   u32 allowing_slot = 0;
-  while (not m_allowing.test(allowing_slot)) {
+  while (not m_allowing[allowing_slot]) {
     allowing_slot++;
   }
   auto const copy = (m_value >> (allowing_slot * slot_bits)) & slot_mask;
   for (u32 slot = 0; slot < Count; slot++) {
-    if (not m_allowing.test(slot)) {
+    if (not m_allowing[slot]) {
       auto const shift = slot * slot_bits;
       value = (value & ~(slot_mask << shift)) | (copy << shift);
     }

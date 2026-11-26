@@ -123,19 +123,19 @@ hal::static_ref<hal::can_transceiver> can_transceiver()
 
 hal::static_ref<hal::can_bus_manager> can_bus_manager()
 {
-  static hal::stm32f1::can::bus_manager bus_manager(*can_device());
+  static hal::stm32f1::can::bus_manager bus_manager(can_device());
   return bus_manager;
 }
 
 hal::static_ref<hal::can_interrupt> can_interrupt()
 {
-  static hal::stm32f1::can::interrupt interrupt(*can_device());
+  static hal::stm32f1::can::interrupt interrupt(can_device());
   return interrupt;
 }
 
 hal::static_ref<hal::can_id_filter> can_identifier_filter()
 {
-  static hal::stm32f1::can::identifier_filters filters(*can_device());
+  static hal::stm32f1::can::identifier_filters filters(can_device());
   return filters[0];
 }
 

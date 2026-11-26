@@ -194,7 +194,7 @@ class can::bus_manager final : public hal::can_bus_manager
 {
 public:
   /// @param p_can - the CAN1 driver to manage
-  explicit bus_manager(can& p_can [[clang::lifetimebound]]);
+  explicit bus_manager(hal::ref<can> p_can [[clang::lifetimebound]]);
   bus_manager(bus_manager const&) = delete;
   bus_manager& operator=(bus_manager const&) = delete;
   bus_manager(bus_manager&&) = delete;
@@ -224,7 +224,7 @@ class can::interrupt final : public hal::can_interrupt
 {
 public:
   /// @param p_can - the CAN1 driver whose messages to report
-  explicit interrupt(can& p_can [[clang::lifetimebound]]);
+  explicit interrupt(hal::ref<can> p_can [[clang::lifetimebound]]);
   interrupt(interrupt const&) = delete;
   interrupt& operator=(interrupt const&) = delete;
   interrupt(interrupt&&) = delete;
@@ -289,7 +289,7 @@ public:
    * @throws hal::device_or_resource_busy - if all 13 filter banks are
    * in use
    */
-  filter_bank(can& p_can [[clang::lifetimebound]],
+  filter_bank(hal::ref<can> p_can [[clang::lifetimebound]],
               can_fifo p_fifo = can_fifo::select1);
   filter_bank(filter_bank const&) = delete;
   filter_bank& operator=(filter_bank const&) = delete;
@@ -319,7 +319,6 @@ public:
   }
 
 private:
-
   template<hal::usize... Index>
   std::array<filter, Count> make_filters(std::index_sequence<Index...>);
   void allow(u8 p_slot, std::optional<Allowed> p_allowed);

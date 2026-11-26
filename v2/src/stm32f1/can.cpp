@@ -673,7 +673,7 @@ hal::usize can::driver_receive_count()
 
 // ---- bus manager -----------------------------------------------------------
 
-can::bus_manager::bus_manager(can& p_can)
+can::bus_manager::bus_manager(hal::ref<can> p_can)
   : m_can(p_can)
 {
 }
@@ -708,7 +708,7 @@ void can::bus_manager::driver_bus_on()
 
 // ---- interrupt -------------------------------------------------------------
 
-can::interrupt::interrupt(can& p_can)
+can::interrupt::interrupt(hal::ref<can> p_can)
   : m_can(p_can)
 {
 }
@@ -755,10 +755,11 @@ can::filter_bank<Allowed, Count>::make_filters(std::index_sequence<Index...>)
 }
 
 template<typename Allowed, hal::usize Count>
-can::filter_bank<Allowed, Count>::filter_bank(can& p_can, can_fifo p_fifo)
+can::filter_bank<Allowed, Count>::filter_bank(hal::ref<can> p_can,
+                                              can_fifo p_fifo)
   : m_can(p_can)
   , m_filters(make_filters(std::make_index_sequence<Count>{}))
-  , m_bank(p_can.claim_bank())
+  , m_bank(p_can->claim_bank())
 {
   using format = filter_format<Allowed>;
   std::lock_guard const hold(*m_can->m_lock);

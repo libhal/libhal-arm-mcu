@@ -95,18 +95,18 @@ void independent_watchdog::set_countdown_time(hal::time_duration p_wait_time)
 
   // Convert to counts of 40 kHz clock (figure 11, RM0008 page 126)
   constexpr auto nano_seconds_per_clock_cycle = 1'000'000'000ns / 40'000;
-  long long cycle_count = p_wait_time / nano_seconds_per_clock_cycle;
+  auto const cycles = p_wait_time / nano_seconds_per_clock_cycle;
 
-  // FRQ divider starts at /4 (table 96, RM0008 page 495)
-  cycle_count = cycle_count >> 2;
-
-  if (cycle_count == 0) {
+  // FRQ divider starts at /4 (table 96, RM0008 page 495), so a time shorter
+  // than 4 cycles, or a negative one, can't be counted.
+  if (cycles < 4) {
     throw hal::operation_not_supported(this);
   }
+  auto cycle_count = static_cast<std::uint64_t>(cycles) >> 2U;
 
   hal::byte freq_divider = 0;
   while (cycle_count > 0x1000 && freq_divider <= 7) {
-    cycle_count = cycle_count >> 1;
+    cycle_count = cycle_count >> 1U;
     freq_divider++;
   }
 

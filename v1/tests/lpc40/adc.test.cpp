@@ -13,3 +13,15 @@
 // limitations under the License.
 
 #include <libhal-arm-mcu/lpc40/adc.hpp>
+
+#include <boost/ut.hpp>
+
+namespace hal::lpc40 {
+// Compiles the header on the host. The driver needs its hardware, so the test
+// is empty.
+void adc_test()
+{
+  using namespace boost::ut;
+  "lpc40::adc"_test = []() {};
+}
+}  // namespace hal::lpc40

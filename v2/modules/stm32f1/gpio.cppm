@@ -67,6 +67,9 @@ public:
   input_pin& operator=(input_pin&&) = delete;
 
   /// Return the pin to its reset state and release its claim
+  // The interface's destructor is protected and not virtual, and this class
+  // has the same name, so clang-tidy reads this as hiding it. It doesn't.
+  // NOLINTNEXTLINE(bugprone-derived-method-shadowing-base-method)
   ~input_pin();
 
 private:
@@ -110,6 +113,9 @@ public:
   output_pin& operator=(output_pin&&) = delete;
 
   /// Return the pin to its reset state and release its claim
+  // The interface's destructor is protected and not virtual, and this class
+  // has the same name, so clang-tidy reads this as hiding it. It doesn't.
+  // NOLINTNEXTLINE(bugprone-derived-method-shadowing-base-method)
   ~output_pin();
 
 private:

@@ -186,14 +186,11 @@ std::uint16_t select_baud_rate_control(hal::hertz p_peripheral_clock_speed,
   constexpr std::uint32_t min_prescaler = 2;
   constexpr std::uint32_t max_prescaler = 256;
 
-  // Zero asks for the slowest rate. Treating it as 1 Hz gets there, since the
-  // divider is then clamped to the largest prescaler below.
-  auto const nonzero_request = std::max(requested, 1U);
-  auto const whole_divider = peripheral_clock / nonzero_request;
-  bool const has_remainder = (peripheral_clock % nonzero_request) != 0;
   // Round the divider up, so the bus never runs faster than requested when it
-  // can avoid it.
-  auto const divider = has_remainder ? (whole_divider + 1U) : whole_divider;
+  // can avoid it. Zero asks for the slowest rate: hal::divide() divides by 1
+  // instead, and the divider is then clamped to the largest prescaler below.
+  auto const divider = hal::divide<hal::rounding::ceil, std::uint32_t>(
+    { .num = peripheral_clock, .den = requested });
 
   // The prescaler is a power of two from 2 (field value 0) to 256 (field
   // value 7). Pick the smallest one that is at least the divider.

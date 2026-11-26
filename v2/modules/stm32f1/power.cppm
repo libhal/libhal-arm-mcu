@@ -23,6 +23,7 @@ export module hal.arm_mcu.stm32f1:power;
 import hal;
 import hal.util;
 
+import :claim;
 import :constants;
 
 namespace hal::stm32f1 {
@@ -105,6 +106,10 @@ rcc_register_info get_reset_register_info(peripheral p_peripheral) noexcept
 /// peripheral. Indexed directly by the peripheral's value. Covers the
 /// peripherals beyond the buses too, such as the independent watchdog, so
 /// every claim goes through one map.
+///
+/// Indexed with `[]`, after checking the index: `test()`, `set()` and
+/// `reset()` check it again and throw `std::out_of_range`, which drivers
+/// mustn't throw.
 constinit std::bitset<peripheral_count> claimed_peripherals{};
 
 static_assert(hal::value(peripheral::independent_watchdog) < peripheral_count,
@@ -139,11 +144,7 @@ std::size_t claim_index(peripheral p_peripheral)
  */
 export void claim(peripheral p_peripheral)
 {
-  auto const index = claim_index(p_peripheral);
-  if (claimed_peripherals.test(index)) {
-    throw hal::device_or_resource_busy(nullptr);
-  }
-  claimed_peripherals.set(index);
+  claim_or_throw(claimed_peripherals, claim_index(p_peripheral), nullptr);
 }
 
 /**
@@ -157,7 +158,7 @@ export void release(peripheral p_peripheral) noexcept
 {
   auto const index = hal::value(p_peripheral);
   if (index < claimed_peripherals.size()) {
-    claimed_peripherals.reset(index);
+    claimed_peripherals[index] = false;
   }
 }
 
@@ -171,7 +172,7 @@ export void release(peripheral p_peripheral) noexcept
 export [[nodiscard]] bool is_claimed(peripheral p_peripheral) noexcept
 {
   auto const index = hal::value(p_peripheral);
-  return index < claimed_peripherals.size() && claimed_peripherals.test(index);
+  return (index < claimed_peripherals.size()) and claimed_peripherals[index];
 }
 
 /**

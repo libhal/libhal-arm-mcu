@@ -95,6 +95,17 @@ hal::static_ref<hal::input_pin> input_pin()
   return pin;
 }
 
+/// The same pin as input_pin(): a button that connects it to ground, so a
+/// press is a falling edge and a release a rising one. No demo uses both.
+hal::static_ref<hal::edge_triggered_interrupt> edge_interrupt()
+{
+  static hal::stm32f1::edge_triggered_interrupt button(
+    { .port = 'B', .pin = 4 },
+    hal::pin_resistor::pull_up,
+    { .trigger = hal::edge_trigger::both });
+  return button;
+}
+
 namespace {
 hal::static_ref<hal::stm32f1::can> can_device()
 {

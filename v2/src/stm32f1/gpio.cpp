@@ -12,11 +12,21 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+module;
+
+#include <array>
+#include <bit>
+#include <bitset>
+#include <cstdint>
+
 module hal.arm_mcu.stm32f1;
 
 import hal;
 import hal.util;
+import hal.arm_mcu.cortex_m;
 
+import :claim;
+import :constants;
 import :pin;
 
 namespace hal::stm32f1 {
@@ -37,6 +47,118 @@ bool read_level(pin p_pin)
   auto const& reg = gpio_reg(p_pin.port);
   auto const pin_value = bit_extract(bit_mask::from(p_pin.pin), reg.idr);
   return static_cast<bool>(pin_value);
+}
+
+/// External interrupt/event controller (EXTI) register map, RM0008 10.3
+struct exti_reg_t
+{
+  /// Offset: 0x00 Interrupt mask register
+  u32 volatile interrupt_mask;
+  /// Offset: 0x04 Event mask register
+  u32 volatile event_mask;
+  /// Offset: 0x08 Rising trigger selection register
+  u32 volatile rising_trigger;
+  /// Offset: 0x0C Falling trigger selection register
+  u32 volatile falling_trigger;
+  /// Offset: 0x10 Software interrupt event register
+  u32 volatile software_interrupt_event;
+  /// Offset: 0x14 Pending register, cleared by writing 1
+  u32 volatile pending;
+};
+static_assert(sizeof(exti_reg_t) == 0x18);
+
+constexpr std::uintptr_t exti_address = 0x4001'0400;
+// NOLINTNEXTLINE(performance-no-int-to-ptr)
+inline auto* const exti = reinterpret_cast<exti_reg_t*>(exti_address);
+
+/// Lines 0 to 15 serve GPIO pins. Lines 16 and up serve the PVD, RTC alarm
+/// and USB wakeup, which have their own drivers.
+constexpr std::size_t gpio_line_count = 16;
+
+/// The callback of each line, null while none is registered
+constinit std::array<hal::edge_triggered_callback*, gpio_line_count>
+  callbacks{};
+/// Set while an edge_triggered_interrupt owns the line
+constinit std::bitset<gpio_line_count> claimed_lines{};
+
+/// The 4-bit EXTICR field that selects the port of a line
+bit_mask port_select_mask(u8 p_line)
+{
+  return { .position = static_cast<u32>((p_line % 4U) * 4U), .width = 4 };
+}
+
+[[gnu::noinline]] void handle_lines(u32 p_lines)
+{
+  auto pending = exti->pending & p_lines;
+  // Clear before the callbacks run, so an edge during a callback sets the
+  // pending bit again and runs the interrupt again.
+  exti->pending = pending;
+  while (pending != 0) {
+    auto const line = static_cast<u8>(std::countr_zero(pending));
+    pending = pending & (pending - 1U);
+    if (auto* const callback = callbacks[line]; callback != nullptr) {
+      auto const port = bit_extract(port_select_mask(line),
+                                    alternative_function_io->exticr[line / 4U]);
+      callback->callback(
+        read_level({ .port = static_cast<u8>('A' + port), .pin = line }));
+    }
+  }
+}
+
+template<u32 Lines>
+void exti_isr()
+{
+  handle_lines(Lines);
+}
+
+struct line_interrupt
+{
+  irq request;
+  cortex_m::interrupt_pointer isr;
+  /// Every line that shares the interrupt
+  u32 lines;
+};
+
+line_interrupt interrupt_for(u8 p_line)
+{
+  // The lines that share the EXTI9_5 and EXTI15_10 interrupts
+  constexpr u32 lines_5_to_9 = 0b0000'0011'1110'0000;
+  constexpr u32 lines_10_to_15 = 0b1111'1100'0000'0000;
+
+  switch (p_line) {
+    case 0:
+      return { .request = irq::exti0,
+               .isr = &exti_isr<1U << 0U>,
+               .lines = 1U << 0U };
+    case 1:
+      return { .request = irq::exti1,
+               .isr = &exti_isr<1U << 1U>,
+               .lines = 1U << 1U };
+    case 2:
+      return { .request = irq::exti2,
+               .isr = &exti_isr<1U << 2U>,
+               .lines = 1U << 2U };
+    case 3:
+      return { .request = irq::exti3,
+               .isr = &exti_isr<1U << 3U>,
+               .lines = 1U << 3U };
+    case 4:
+      return { .request = irq::exti4,
+               .isr = &exti_isr<1U << 4U>,
+               .lines = 1U << 4U };
+    case 5:
+    case 6:
+    case 7:
+    case 8:
+    case 9:
+      return { .request = irq::exti9_5,
+               .isr = &exti_isr<lines_5_to_9>,
+               .lines = lines_5_to_9 };
+    default:
+      return { .request = irq::exti15_10,
+               .isr = &exti_isr<lines_10_to_15>,
+               .lines = lines_10_to_15 };
+  }
 }
 }  // namespace
 
@@ -117,5 +239,88 @@ void output_pin::driver_level(bool p_high)
 bool output_pin::driver_level()
 {
   return read_level(m_pin);
+}
+
+edge_triggered_interrupt::edge_triggered_interrupt(pin p_pin,
+                                                   pin_resistor p_resistor,
+                                                   settings const& p_settings)
+  : m_pin(p_pin)
+{
+  // Another port's pin can hold the line. Check the line before claiming the
+  // pin, so this throws before it has claimed anything. claim_pin() then
+  // checks that the pin exists, which keeps the line's index in range.
+  throw_if_claimed(claimed_lines, m_pin.pin, this);
+  claim_pin(m_pin);
+  claimed_lines[m_pin.pin] = true;
+
+  reset_pin(m_pin);
+  if (p_resistor == pin_resistor::pull_up) {
+    configure_pin(m_pin, input_pull_up);
+  } else if (p_resistor == pin_resistor::pull_down) {
+    configure_pin(m_pin, input_pull_down);
+  } else {
+    configure_pin(m_pin, input_float);
+  }
+
+  // configure_pin() powered on AFIO, which selects the line's port
+  bit_modify(alternative_function_io->exticr[m_pin.pin / 4U])
+    .insert(port_select_mask(m_pin.pin), static_cast<u32>(m_pin.port - 'A'));
+
+  driver_configure(p_settings);
+
+  // The line stays masked until a callback is registered
+  auto const interrupt = interrupt_for(m_pin.pin);
+  cortex_m::enable_interrupt(interrupt.request, interrupt.isr);
+}
+
+edge_triggered_interrupt::~edge_triggered_interrupt()
+{
+  driver_clear_trigger();
+  auto const line = bit_mask::from(m_pin.pin);
+  bit_modify(exti->rising_trigger).clear(line);
+  bit_modify(exti->falling_trigger).clear(line);
+  exti->pending = 1U << m_pin.pin;  // Writing 1 clears the pending bit
+
+  claimed_lines[m_pin.pin] = false;
+  // A shared interrupt stays on while another of its lines is in use
+  auto const interrupt = interrupt_for(m_pin.pin);
+  if ((claimed_lines.to_ulong() & interrupt.lines) == 0) {
+    cortex_m::disable_interrupt(interrupt.request);
+  }
+
+  reset_pin(m_pin);
+  release_pin(m_pin);
+}
+
+void edge_triggered_interrupt::driver_configure(settings const& p_settings)
+{
+  auto const line = bit_mask::from(m_pin.pin);
+  // edge_trigger::both is neither falling nor rising, so it enables both
+  // edges. Written as two "not" checks, this is 8 B smaller than checking for
+  // each of rising, falling and both.
+  auto const rising = (p_settings.trigger != edge_trigger::falling);
+  auto const falling = (p_settings.trigger != edge_trigger::rising);
+  bit_modify(exti->rising_trigger).insert(line, static_cast<u32>(rising));
+  bit_modify(exti->falling_trigger).insert(line, static_cast<u32>(falling));
+}
+
+void edge_triggered_interrupt::driver_on_trigger(
+  hal::edge_triggered_callback& p_callback)
+{
+  if (callbacks[m_pin.pin] != nullptr) {
+    throw hal::subscription_busy(this);
+  }
+  callbacks[m_pin.pin] = &p_callback;
+
+  // Edges before the callback was registered are lost
+  auto const line = bit_mask::from(m_pin.pin);
+  exti->pending = 1U << m_pin.pin;  // Writing 1 clears the pending bit
+  bit_modify(exti->interrupt_mask).set(line);
+}
+
+void edge_triggered_interrupt::driver_clear_trigger() noexcept
+{
+  bit_modify(exti->interrupt_mask).clear(bit_mask::from(m_pin.pin));
+  callbacks[m_pin.pin] = nullptr;
 }
 }  // namespace hal::stm32f1

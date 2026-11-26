@@ -58,6 +58,7 @@ export namespace resources {
 hal::static_ref<hal::steady_clock> clock();
 hal::static_ref<hal::output_pin> status_led();
 hal::static_ref<hal::input_pin> input_pin();
+hal::static_ref<hal::edge_triggered_interrupt> edge_interrupt();
 hal::static_ref<hal::serial> console();
 hal::static_ref<hal::adc16> adc();
 hal::static_ref<hal::i2c> i2c();

@@ -1,6 +1,7 @@
 export module hal.arm_mcu.stm32f1;
 
 export import :constants;
+export import :claim;
 export import :power;
 export import :clock;
 export import :pin;

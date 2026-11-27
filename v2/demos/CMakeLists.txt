@@ -68,6 +68,7 @@ set(DEMOS
     gpio
     i2c
     pwm
+    quadrature_encoder
     spi
     stacktrace
     timer

@@ -1,10 +1,9 @@
 export module hal.arm_mcu.stm32_generic;
 
-// Left out until they are ported (see ../../CMakeLists.txt):
-// export import :timer;
 export import :dma;
 export import :i2c;
 export import :pwm;
+export import :quadrature_encoder;
 export import :spi;
 export import :timer;
 export import :uart;

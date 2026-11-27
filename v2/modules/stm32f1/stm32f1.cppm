@@ -16,4 +16,5 @@ export import :i2c;
 export import :can;
 export import :timer;
 export import :pwm;
+export import :quadrature_encoder;
 // export import :usb;

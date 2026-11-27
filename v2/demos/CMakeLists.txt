@@ -28,6 +28,13 @@ if(NOT LIBHAL_PLATFORM)
         "LIBHAL_PLATFORM must be set (see conanfile.py's `platform` option)")
 endif()
 
+# The stm32f103zg has every peripheral and pin the stm32f103c8 platform uses,
+# so it builds from the same platform file.
+set(platform_source platforms/${LIBHAL_PLATFORM}.cpp)
+if(LIBHAL_PLATFORM STREQUAL "stm32f103zg")
+    set(platform_source platforms/stm32f103c8.cpp)
+endif()
+
 # Startup code shared by every demo: the resource module (resource_list.cppm)
 # that supplies each driver, the selected platform's initialize_platform(),
 # and main().
@@ -39,7 +46,7 @@ target_sources(startup_code PUBLIC
 )
 target_sources(startup_code PRIVATE
     main.cpp
-    platforms/${LIBHAL_PLATFORM}.cpp
+    ${platform_source}
 )
 target_link_libraries(startup_code PUBLIC
     libhal::libhal

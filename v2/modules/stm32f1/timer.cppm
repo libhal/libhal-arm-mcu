@@ -116,6 +116,9 @@ public:
   ~timer();
 
 private:
+  /// Takes the index `claim_timer()` returned
+  explicit timer(u8 p_index);
+
   static void handle_update(void* p_self) noexcept;
 
   bool driver_scheduled() override;
@@ -176,8 +179,8 @@ public:
    * @brief Claim a timer, power it on and start it counting
    *
    * @param p_id - the timer: `peripheral::timer1` to `peripheral::timer8`
-   * @param p_settings - the most interrupts a second to accept
-   * @throws hal::argument_out_of_domain - if `max_interrupt_rate` is 0 Hz
+   * @param p_settings - the most interrupts a second to accept. A rate too low
+   * to reach, 0 Hz included, gets the fewest: one wrap every 59.6 s at 72 MHz.
    * @throws hal::operation_not_supported - if `p_id` isn't TIM1 to TIM8
    * @throws hal::device_or_resource_busy - if another driver has claimed the
    * timer
@@ -194,14 +197,15 @@ public:
   ~timer_clock_16bit();
 
 private:
+  /// Takes the index `claim_timer()` returned
+  timer_clock_16bit(u8 p_index, timer_clock_16bit_settings const& p_settings);
+
   static void handle_update(void* p_self) noexcept;
 
   hal::hertz driver_frequency() override;
   u64 driver_uptime() override;
 
-  u32 m_prescaler;
-  u8 m_index;
-  hal::hertz m_frequency;
   hal::stm32_generic::free_running_counter m_counter;
+  u8 m_index;
 };
 }  // namespace hal::stm32f1

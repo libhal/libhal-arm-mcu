@@ -27,27 +27,29 @@ namespace {
 /// @throws hal::argument_out_of_domain - if `p_max_interrupt_rate` is 0 Hz
 u32 prescaler_for(hal::hertz p_timer_clock, hal::hertz p_max_interrupt_rate)
 {
-  auto const prescaler = hal::stm32_generic::counter_prescaler(
-    p_timer_clock.numerical_value_in(mp_units::si::hertz),
-    p_max_interrupt_rate.numerical_value_in(mp_units::si::hertz));
-  if (prescaler == 0) {
-    throw hal::argument_out_of_domain(nullptr);
-  }
-  return prescaler;
+  return hal::stm32_generic::counter_prescaler(
+    { .clock_hz = p_timer_clock.numerical_value_in(mp_units::si::hertz),
+      .max_interrupt_rate_hz =
+        p_max_interrupt_rate.numerical_value_in(mp_units::si::hertz) });
 }
 }  // namespace
 
 timer_clock_16bit::timer_clock_16bit(
   peripheral p_id,
   timer_clock_16bit_settings const& p_settings)
-  : m_prescaler(
-      prescaler_for(stm32f1::frequency(p_id), p_settings.max_interrupt_rate))
-  , m_index(claim_timer(p_id))
-  , m_frequency(stm32f1::frequency(p_id) / m_prescaler)
-  , m_counter(timer_address(m_index))
+  : timer_clock_16bit(claim_timer(p_id), p_settings)
+{
+}
+
+timer_clock_16bit::timer_clock_16bit(
+  u8 p_index,
+  timer_clock_16bit_settings const& p_settings)
+  : m_counter(timer_address(p_index))
+  , m_index(p_index)
 {
   route_timer_interrupt(m_index, &handle_update, this);
-  m_counter.start(m_prescaler);
+  m_counter.start(prescaler_for(stm32f1::frequency(timer_routes[m_index].id),
+                                p_settings.max_interrupt_rate));
 }
 
 timer_clock_16bit::~timer_clock_16bit()
@@ -63,7 +65,7 @@ void timer_clock_16bit::handle_update(void* p_self) noexcept
 
 hal::hertz timer_clock_16bit::driver_frequency()
 {
-  return m_frequency;
+  return stm32f1::frequency(timer_routes[m_index].id) / m_counter.prescaler();
 }
 
 u64 timer_clock_16bit::driver_uptime()

@@ -41,7 +41,7 @@ void application()
 
   auto console = resources::console();
   auto reference = resources::clock();
-  auto timer_clock = resources::timer_clock_16bit();
+  auto timer_clock = resources::timer_clock();
 
   auto const timer_hz =
     timer_clock->frequency().numerical_value_in(hal::hertz::unit);

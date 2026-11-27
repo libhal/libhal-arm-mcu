@@ -100,10 +100,14 @@ void* timer_address(u8 p_index)
 }
 
 timer::timer(peripheral p_id)
-  : m_frequency(frequency(p_id))
-  , m_driver(timer_address(timer_index(p_id)))
-  // The last call that can throw, so nothing needs undoing after it
-  , m_index(claim_timer(p_id))
+  : timer(claim_timer(p_id))
+{
+}
+
+timer::timer(u8 p_index)
+  : m_frequency(frequency(timer_routes[p_index].id))
+  , m_driver(timer_address(p_index))
+  , m_index(p_index)
 {
   route_timer_interrupt(m_index, &handle_update, this);
 }

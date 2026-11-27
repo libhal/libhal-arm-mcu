@@ -185,21 +185,6 @@ public:
   }
 
   /**
-   * @brief The period last set, read back from PSC and ARR
-   *
-   * Both read back the value written, even before it takes effect at the
-   * next period.
-   *
-   * @return pwm_period - the prescaler and reload
-   * @pre The timer is powered on.
-   */
-  [[nodiscard]] pwm_period period() const noexcept
-  {
-    return { .prescaler = (m_reg->prescale_register & 0xFFFFU) + 1U,
-             .reload = (m_reg->auto_reload_register & 0xFFFFU) + 1U };
-  }
-
-  /**
    * @brief Drive a channel's output in PWM mode 1, starting low
    *
    * @param p_channel - the channel
@@ -258,31 +243,6 @@ public:
         m_reg->capture_compare_register_4 = p_value;
         break;
     }
-  }
-
-  /**
-   * @brief A channel's compare value last set, read back from CCRx
-   *
-   * CCRx reads back the value written, even before it takes effect at the
-   * next period.
-   *
-   * @param p_channel - the channel
-   * @return u32 - the value in CCRx
-   * @pre The timer is powered on.
-   */
-  [[nodiscard]] u32 compare(timer_channel p_channel) const noexcept
-  {
-    switch (p_channel) {
-      case timer_channel::ch1:
-        return m_reg->capture_compare_register & 0xFFFFU;
-      case timer_channel::ch2:
-        return m_reg->capture_compare_register_2 & 0xFFFFU;
-      case timer_channel::ch3:
-        return m_reg->capture_compare_register_3 & 0xFFFFU;
-      case timer_channel::ch4:
-        break;
-    }
-    return m_reg->capture_compare_register_4 & 0xFFFFU;
   }
 
 private:

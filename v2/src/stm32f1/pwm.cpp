@@ -57,6 +57,8 @@ pwm::pwm(peripheral p_id, pwm_settings const& p_settings)
 
 pwm::pwm(u8 p_index, pwm_settings const& p_settings)
   : m_driver(timer_address(p_index))
+  , m_clock(stm32f1::frequency(timer_routes[p_index].id))
+  , m_period(period_for(m_clock, p_settings.frequency))
   , m_remap(p_settings.remap)
   , m_index(p_index)
 {
@@ -64,7 +66,7 @@ pwm::pwm(u8 p_index, pwm_settings const& p_settings)
   // AFIO is shared, so it is powered on, never claimed.
   power_on(peripheral::afio);
   apply_timer_remap(id, timer_pins(id, m_remap).remap_value);
-  m_driver.start(period_for(clock(), p_settings.frequency));
+  m_driver.start(m_period);
   if ((id == peripheral::timer1) or (id == peripheral::timer8)) {
     m_driver.enable_main_output();
   }
@@ -76,28 +78,17 @@ pwm::~pwm()
   release_timer(m_index);
 }
 
-hal::hertz pwm::clock() const
-{
-  return stm32f1::frequency(timer_routes[m_index].id);
-}
-
 void pwm::driver_frequency(hal::hertz p_frequency)
 {
-  auto const old_reload = m_driver.period().reload;
-  auto const period = period_for(clock(), p_frequency);
-  m_driver.period(period);
-  // Keep each duty cycle: rescale its compare value to the new number of
-  // steps. 100% stays 100%: the old reload maps to the new one.
-  for (usize index = 0; index < m_claimed_channels.size(); index++) {
-    if (not m_claimed_channels.test(index)) {
-      continue;
+  m_period = period_for(m_clock, p_frequency);
+  m_driver.period(m_period);
+  // Keep each duty cycle at the new number of steps
+  for (usize index = 0; index < m_duty_cycles.size(); index++) {
+    if (m_claimed_channels.test(index)) {
+      m_driver.compare(
+        static_cast<timer_channel>(index),
+        hal::stm32_generic::pwm_compare(m_duty_cycles[index], m_period.reload));
     }
-    auto const channel = static_cast<timer_channel>(index);
-    auto const scaled = hal::divide<hal::rounding::round, u64>(
-      { .num = u64{ m_driver.compare(channel) } * period.reload,
-        .den = old_reload });
-    // NOTE: Safe to cast without narrowing: at most the new reload.
-    m_driver.compare(channel, static_cast<u32>(scaled));
   }
 }
 
@@ -115,6 +106,7 @@ pwm::channel::channel(hal::ref<pwm> p_pwm, timer_channel p_channel)
   claim_pin(output);
   configure_pin(output, push_pull_alternative_output);
   m_pwm->m_claimed_channels.set(hal::value(m_channel));
+  m_pwm->m_duty_cycles[hal::value(m_channel)] = 0;
   m_pwm->m_driver.enable(m_channel);
 }
 
@@ -133,9 +125,9 @@ hal::hertz pwm::channel::driver_frequency()
 {
   // Rounded to the nearest hertz: 50 Hz at 72 MHz is 49.9997 Hz, which
   // rounding down would report as 49.
-  auto const period = m_pwm->m_driver.period();
+  auto const& period = m_pwm->m_period;
   auto const hertz = hal::divide<hal::rounding::round, u64>(
-    { .num = m_pwm->clock().numerical_value_in(mp_units::si::hertz),
+    { .num = m_pwm->m_clock.numerical_value_in(mp_units::si::hertz),
       .den = u64{ period.prescaler } * period.reload });
   // NOTE: Safe to cast without narrowing: at most half the timer clock.
   return static_cast<u32>(hertz) * mp_units::si::hertz;
@@ -143,8 +135,9 @@ hal::hertz pwm::channel::driver_frequency()
 
 void pwm::channel::driver_duty_cycle(u16 p_duty_cycle)
 {
-  m_pwm->m_driver.compare(m_channel,
-                          hal::stm32_generic::pwm_compare(
-                            p_duty_cycle, m_pwm->m_driver.period().reload));
+  m_pwm->m_duty_cycles[hal::value(m_channel)] = p_duty_cycle;
+  m_pwm->m_driver.compare(
+    m_channel,
+    hal::stm32_generic::pwm_compare(p_duty_cycle, m_pwm->m_period.reload));
 }
 }  // namespace hal::stm32f1

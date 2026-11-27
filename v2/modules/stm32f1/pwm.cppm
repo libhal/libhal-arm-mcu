@@ -53,10 +53,7 @@ export struct pwm_settings
  * timer clock gets half the timer clock.
  *
  * A new frequency or duty cycle takes effect at the start of the next period,
- * and changing the frequency keeps every channel's duty cycle. The duty cycle
- * is rescaled from the channel's compare value, so it keeps only the steps the
- * coarser frequency had: after 20 kHz (3,600 steps), a lower frequency has the
- * duty cycle to 1 part in 3,600 until `duty_cycle()` sets it again.
+ * and changing the frequency keeps every channel's duty cycle.
  *
  * TIM1 to TIM5 and TIM8 have PWM outputs; TIM6 and TIM7 don't. TIM5 and TIM8
  * exist only on high-density and larger parts, such as the STM32F103ZG. On
@@ -96,10 +93,12 @@ private:
 
   void driver_frequency(hal::hertz p_frequency) override;
 
-  /// The timer clock
-  [[nodiscard]] hal::hertz clock() const;
-
   hal::stm32_generic::pwm m_driver;
+  hal::hertz m_clock;
+  hal::stm32_generic::pwm_period m_period;
+  /// Each channel's duty cycle, so a frequency change keeps it at full
+  /// precision
+  std::array<u16, 4> m_duty_cycles{};
   std::bitset<4> m_claimed_channels{};
   timer_remap m_remap;
   u8 m_index;

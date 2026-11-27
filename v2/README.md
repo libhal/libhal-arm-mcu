@@ -14,8 +14,8 @@ yet are left out of the build: their lines in `CMakeLists.txt`,
 | --- | --- |
 | Cortex-M: interrupts, startup, system control, DWT counter (steady clock), SysTick timer, WFI waiter | `stm32_generic`: pwm, quadrature encoder |
 | `stm32_generic`: uart, spi, i2c, timer | STM32F1: pwm, quadrature encoder, usb |
-| STM32F1: constants, power, clock, pin, gpio, edge_triggered_interrupt (EXTI), dma, usart, independent_watchdog, adc, spi, i2c, can, timer | Demos: usb_cdc_raw, usb |
-| Demos: adc, blank, blinker, can, dma, edge_interrupt, gpio, i2c, spi, timer, uart | |
+| STM32F1: constants, power, clock, pin, gpio, edge_triggered_interrupt (EXTI), dma, usart, independent_watchdog, adc, spi, i2c, can, timer, timer_clock_16bit | Demos: usb_cdc_raw, usb |
+| Demos: adc, blank, blinker, can, dma, edge_interrupt, gpio, i2c, spi, timer, timer_clock, uart | |
 
 ## Changes from v4
 

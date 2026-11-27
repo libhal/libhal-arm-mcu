@@ -70,6 +70,7 @@ set(DEMOS
     spi
     stacktrace
     timer
+    timer_clock
     uart
 )
 

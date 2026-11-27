@@ -89,6 +89,13 @@ hal::static_ref<hal::timed_interrupt> timer()
   return timer2;
 }
 
+hal::static_ref<hal::steady_clock> timer_clock_16bit()
+{
+  static hal::stm32f1::timer_clock_16bit timer3(
+    hal::stm32f1::peripheral::timer3);
+  return timer3;
+}
+
 hal::static_ref<hal::output_pin> status_led()
 {
   static hal::stm32f1::output_pin led({ .port = 'C', .pin = 13 });

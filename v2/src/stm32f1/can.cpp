@@ -193,21 +193,17 @@ constexpr u32 max_frame_bits = 160;
 
 constinit can* s_can = nullptr;
 
-void enter_initialization()
-{
-  bit_modify(can1_reg->mcr).set<master_control::initialization_request>();
-  while (
-    not bit_is_set<master_status::initialization_acknowledge>(can1_reg->msr)) {
-    continue;
-  }
-}
-
+/**
+ * Leave initialization mode
+ *
+ * The controller joins the bus by itself once RX has been recessive for 11
+ * bits (RM0008 section 24.4.1), so nothing waits for that: on a bus that never
+ * goes recessive, such as one without a transceiver, the wait would never end.
+ * Until the controller joins, sends wait in their mailboxes.
+ */
 void exit_initialization()
 {
   bit_modify(can1_reg->mcr).clear<master_control::initialization_request>();
-  while (bit_is_set<master_status::initialization_acknowledge>(can1_reg->msr)) {
-    continue;
-  }
 }
 
 /// Program the bit timing. Must run in initialization mode.
@@ -243,6 +239,45 @@ hal::hertz programmed_baud_rate()
   auto const can_hz =
     frequency(peripheral::can1).numerical_value_in(mp_units::si::hertz);
   return (can_hz / (divider * quanta)) * mp_units::si::hertz;
+}
+
+/**
+ * Enter initialization mode, sleeping until the controller is in it
+ *
+ * The controller enters once the frame on the bus, if any, has ended (RM0008
+ * section 24.4.1).
+ *
+ * @param p_instance - the driver, for the exception
+ * @throws hal::timed_out - not in initialization mode within twice the longest
+ * frame plus 1 ms. The request is withdrawn, so the controller stays in the
+ * mode it was in.
+ */
+void enter_initialization(void const* p_instance)
+{
+  bit_modify(can1_reg->mcr).set<master_control::initialization_request>();
+  auto const initializing = [] {
+    return bit_is_set<master_status::initialization_acknowledge>(can1_reg->msr);
+  };
+  if (initializing()) {
+    return;
+  }
+
+  using namespace std::chrono_literals;
+  auto const baud =
+    programmed_baud_rate().numerical_value_in(mp_units::si::hertz);
+  auto const frame =
+    std::chrono::nanoseconds(hal::divide<hal::rounding::ceil, hal::u64>(
+      { .num = max_frame_bits * 1'000'000'000ULL, .den = baud }));
+  auto const time_limit = (2 * frame) + 1ms;
+  hal::time_duration slept{};
+  while (not initializing()) {
+    if (slept >= time_limit) {
+      bit_modify(can1_reg->mcr).clear<master_control::initialization_request>();
+      throw hal::timed_out(p_instance);
+    }
+    hal::sleep_for(frame);
+    slept += frame;
+  }
 }
 
 bool is_bus_off()
@@ -439,8 +474,8 @@ can::can(hal::ref<hal::basic_lock> p_lock,
     .clear<master_control::no_automatic_retransmission>()
     .clear<master_control::automatic_bus_off_management>()
     .set<master_control::transmit_fifo_priority>();
-  enter_initialization();
   try {
+    enter_initialization(this);
     configure_bit_timing(p_settings.baud_rate, p_settings.loop_back);
   } catch (...) {
     power_off(peripheral::can1);
@@ -622,7 +657,7 @@ void can::set_baud_rate(hal::hertz p_baud_rate)
 {
   std::lock_guard const hold(*m_lock);
   auto const loop_back = bit_is_set<bus_timing::loop_back_mode>(can1_reg->btr);
-  enter_initialization();
+  enter_initialization(this);
   try {
     configure_bit_timing(p_baud_rate, loop_back);
   } catch (...) {
@@ -651,7 +686,7 @@ void can::recover_bus()
     // RM0008 section 24.7.6: with automatic bus-off management off, software
     // starts recovery by entering and leaving initialization mode. The
     // controller then rejoins after 128 runs of 11 recessive bits.
-    enter_initialization();
+    enter_initialization(this);
     exit_initialization();
   }
 }

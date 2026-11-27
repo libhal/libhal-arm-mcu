@@ -112,7 +112,10 @@ public:
    *
    * It starts bus-on, accepting every message
    * (`hal::can_message_acceptance::all`) until a bus manager's `filter_mode()`
-   * changes that.
+   * changes that. It returns without waiting for the controller to join the
+   * bus, which it does once RX has been recessive for 11 bits. Until then,
+   * sends wait in the transmit mailboxes, so with no transceiver, or a bus
+   * held dominant, they eventually fail with `hal::timed_out`.
    *
    * @param p_lock - held by sends, baud rate changes and filter changes
    * @param p_buffer - the receive buffer. Must outlive the driver, and hold at
@@ -123,6 +126,8 @@ public:
    * the USB peripheral (which shares CAN1's memory), or one of the pins
    * @throws hal::operation_not_supported - if CAN1's clock can't make the baud
    * rate
+   * @throws hal::timed_out - if CAN1 doesn't enter initialization mode within
+   * twice the longest frame plus 1 ms. Coming out of reset, it enters at once.
    */
   can(hal::ref<hal::basic_lock> p_lock [[clang::lifetimebound]],
       std::span<hal::can_message> p_buffer [[clang::lifetimebound]],
@@ -184,6 +189,11 @@ private:
  * @brief CAN1's bus manager: baud rate, filter mode and bus-off
  *
  * Constructed from a `can`, which must outlive it.
+ *
+ * `baud_rate()` and `bus_on()` put CAN1 in initialization mode, which it
+ * enters once the frame on the bus has ended. If it isn't in that mode within
+ * twice the longest frame plus 1 ms, they throw `hal::timed_out` and change
+ * nothing. Neither waits for CAN1 to rejoin the bus afterwards.
  */
 class can::bus_manager final : public hal::can_bus_manager
 {

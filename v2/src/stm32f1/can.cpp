@@ -242,10 +242,10 @@ hal::hertz programmed_baud_rate()
 }
 
 /**
- * Enter initialization mode, sleeping until the controller is in it
+ * Request initialization mode and wait for the controller to enter it
  *
- * The controller enters once the frame on the bus, if any, has ended (RM0008
- * section 24.4.1).
+ * The controller enters it once the frame on the bus, if any, has ended
+ * (RM0008 section 24.4.1). The wait sleeps one longest frame at a time.
  *
  * @param p_instance - the driver, for the exception
  * @throws hal::timed_out - not in initialization mode within twice the longest

@@ -53,7 +53,10 @@ export struct pwm_settings
  * timer clock gets half the timer clock.
  *
  * A new frequency or duty cycle takes effect at the start of the next period,
- * and changing the frequency keeps every channel's duty cycle.
+ * and changing the frequency keeps every channel's duty cycle. The duty cycle
+ * is rescaled from the channel's compare value, so it keeps only the steps the
+ * coarser frequency had: after 20 kHz (3,600 steps), a lower frequency has the
+ * duty cycle to 1 part in 3,600 until `duty_cycle()` sets it again.
  *
  * TIM1 to TIM5 and TIM8 have PWM outputs; TIM6 and TIM7 don't. TIM5 and TIM8
  * exist only on high-density and larger parts, such as the STM32F103ZG. On
@@ -88,15 +91,18 @@ public:
   ~pwm();
 
 private:
+  /// Takes the index `claim_timer()` returned
+  pwm(u8 p_index, pwm_settings const& p_settings);
+
   void driver_frequency(hal::hertz p_frequency) override;
 
+  /// The timer clock
+  [[nodiscard]] hal::hertz clock() const;
+
+  hal::stm32_generic::pwm m_driver;
+  std::bitset<4> m_claimed_channels{};
   timer_remap m_remap;
   u8 m_index;
-  hal::hertz m_clock;
-  hal::stm32_generic::pwm_period m_period;
-  hal::stm32_generic::pwm m_driver;
-  std::array<u16, 4> m_duty_cycles{};
-  std::bitset<4> m_claimed_channels{};
 };
 
 /**
@@ -132,6 +138,6 @@ private:
   void driver_duty_cycle(u16 p_duty_cycle) override;
 
   hal::ref<pwm> m_pwm;
-  u8 m_channel;
+  timer_channel m_channel;
 };
 }  // namespace hal::stm32f1

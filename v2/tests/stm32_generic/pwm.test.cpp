@@ -31,7 +31,8 @@ void pwm_test()
 
   "20 kHz at 72 MHz needs no prescaler"_test = []() {
     // Exercise
-    auto const period = pwm_periods(72'000'000, 20'000);
+    auto const period =
+      pwm_periods({ .clock_hz = 72'000'000, .frequency_hz = 20'000 });
 
     // Verify
     expect(that % 1U == period.prescaler);
@@ -42,7 +43,8 @@ void pwm_test()
     // Exercise
     // 50 Hz: 1,440,000 cycles. 1,440,000 / 65,535 = 21.97, so 22, and
     // 1,440,000 / 22 rounds to 65,455.
-    auto const servo = pwm_periods(72'000'000, 50);
+    auto const servo =
+      pwm_periods({ .clock_hz = 72'000'000, .frequency_hz = 50 });
 
     // Verify
     expect(that % 22U == servo.prescaler);
@@ -52,7 +54,8 @@ void pwm_test()
   "the reload never reaches 65,536"_test = []() {
     // Exercise
     // 72,000,000 / 1,098 = 65,574 cycles: over 65,535, so prescaler 2
-    auto const period = pwm_periods(72'000'000, 1'098);
+    auto const period =
+      pwm_periods({ .clock_hz = 72'000'000, .frequency_hz = 1'098 });
 
     // Verify
     expect(that % 2U == period.prescaler);
@@ -61,8 +64,10 @@ void pwm_test()
 
   "too fast runs at half the clock, and 0 Hz at the lowest"_test = []() {
     // Exercise
-    auto const fast = pwm_periods(72'000'000, 72'000'000);
-    auto const stopped = pwm_periods(72'000'000, 0);
+    auto const fast =
+      pwm_periods({ .clock_hz = 72'000'000, .frequency_hz = 72'000'000 });
+    auto const stopped =
+      pwm_periods({ .clock_hz = 72'000'000, .frequency_hz = 0 });
 
     // Verify
     expect(that % 1U == fast.prescaler);

@@ -59,12 +59,7 @@ export enum class timer_remap : u8 {
 };
 
 /// One of a timer's four channels
-export enum class timer_channel : u8 {
-  ch1,
-  ch2,
-  ch3,
-  ch4,
-};
+export using timer_channel = hal::stm32_generic::timer_channel;
 
 /**
  * @brief Two timers that can chain into a `chained_32bit_timer_clock`

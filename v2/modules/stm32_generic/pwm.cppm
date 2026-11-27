@@ -22,6 +22,7 @@ import hal;
 import hal.util;
 
 import :registers;
+import :timer;
 
 namespace hal::stm32_generic {
 /// The counter settings for a PWM frequency
@@ -34,6 +35,15 @@ export struct pwm_period
   u32 reload;
 };
 
+/// A timer clock and a PWM frequency, for `pwm_periods()`
+export struct pwm_rate
+{
+  /// The timer clock
+  u64 clock_hz;
+  /// The PWM frequency
+  u64 frequency_hz;
+};
+
 /**
  * @brief The counter settings closest to a PWM frequency
  *
@@ -42,25 +52,23 @@ export struct pwm_period
  * the timer clock run at half the timer clock, the fastest a 2-step period
  * goes, and 0 Hz runs at the lowest frequency.
  *
- * @param p_clock_hz - the timer clock
- * @param p_frequency_hz - the PWM frequency
+ * @param p_rate - the timer clock and the PWM frequency
  * @return pwm_period - the prescaler and reload
  */
-export [[nodiscard]] constexpr pwm_period pwm_periods(u64 p_clock_hz,
-                                                      u64 p_frequency_hz)
+export [[nodiscard]] constexpr pwm_period pwm_periods(pwm_rate p_rate)
 {
   constexpr u64 max_prescaler = 65'536;
   // Not 65,536: 100% duty needs a compare value of ARR + 1, and CCRx is 16
   // bits.
   constexpr u64 max_reload = 65'535;
   constexpr u64 min_reload = 2;
-  if (p_frequency_hz == 0) {
+  if (p_rate.frequency_hz == 0) {
     return { .prescaler = max_prescaler, .reload = max_reload };
   }
   // The period in timer clock cycles, rounded to the nearest
   auto const cycles =
     std::max<u64>(hal::divide<hal::rounding::round, u64>(
-                    { .num = p_clock_hz, .den = p_frequency_hz }),
+                    { .num = p_rate.clock_hz, .den = p_rate.frequency_hz }),
                   min_reload);
   auto const prescaler = std::min<u64>(
     hal::divide<hal::rounding::ceil, u64>({ .num = cycles, .den = max_reload }),
@@ -120,6 +128,7 @@ public:
    * @brief Start the counter with every channel's output off
    *
    * @param p_period - the counter settings, from `pwm_periods()`
+   * @pre The timer is powered on.
    */
   void start(pwm_period p_period) noexcept
   {
@@ -136,7 +145,11 @@ public:
     bit_modify(m_reg->control_register).set<control::counter_enable>();
   }
 
-  /// Stop the counter and turn every channel's output off
+  /**
+   * @brief Stop the counter and turn every channel's output off
+   *
+   * @pre The timer is powered on.
+   */
   void stop() noexcept
   {
     bit_modify(m_reg->control_register).clear<control::counter_enable>();
@@ -148,6 +161,8 @@ public:
    *
    * TIM1 and TIM8 drive no output until this is set, whatever the channels
    * are set to. Not for the general-purpose timers, which don't have it.
+   *
+   * @pre The timer is powered on.
    */
   void enable_main_output() noexcept
   {
@@ -161,6 +176,7 @@ public:
    * is preloaded. Call `compare()` for each channel after this.
    *
    * @param p_period - the counter settings, from `pwm_periods()`
+   * @pre The timer is powered on.
    */
   void period(pwm_period p_period) noexcept
   {
@@ -169,35 +185,52 @@ public:
   }
 
   /**
+   * @brief The period last set, read back from PSC and ARR
+   *
+   * Both read back the value written, even before it takes effect at the
+   * next period.
+   *
+   * @return pwm_period - the prescaler and reload
+   * @pre The timer is powered on.
+   */
+  [[nodiscard]] pwm_period period() const noexcept
+  {
+    return { .prescaler = (m_reg->prescale_register & 0xFFFFU) + 1U,
+             .reload = (m_reg->auto_reload_register & 0xFFFFU) + 1U };
+  }
+
+  /**
    * @brief Drive a channel's output in PWM mode 1, starting low
    *
-   * @param p_channel - 0 to 3 for CH1 to CH4
+   * @param p_channel - the channel
+   * @pre The timer is powered on.
    */
-  void enable(u8 p_channel) noexcept
+  void enable(timer_channel p_channel) noexcept
   {
     compare(p_channel, 0);
+    auto const index = hal::value(p_channel);
     // CCMR1 holds CH1 and CH2, CCMR2 holds CH3 and CH4, 8 bits each:
     // CCxS = 0b00 (output), OCxPE = 1 (preload), OCxM = 0b110 (PWM mode 1)
-    auto& mode = (p_channel < 2U) ? m_reg->capture_compare_mode_register
-                                  : m_reg->capture_compare_mode_register_2;
-    auto const shift = (p_channel % 2U) * 8U;
+    auto& mode = (index < 2U) ? m_reg->capture_compare_mode_register
+                              : m_reg->capture_compare_mode_register_2;
+    auto const shift = (index % 2U) * 8U;
     auto const field = hal::bit_mask{ .position = shift, .width = 8 };
     bit_modify(mode).insert(field, output_mode_pwm1);
     // CCxE, active high
-    auto const enable_bit =
-      hal::bit_mask{ .position = p_channel * 4U, .width = 2 };
+    auto const enable_bit = hal::bit_mask{ .position = index * 4U, .width = 2 };
     bit_modify(m_reg->cc_enable_register).insert(enable_bit, 0b01U);
   }
 
   /**
    * @brief Turn a channel's output off
    *
-   * @param p_channel - 0 to 3 for CH1 to CH4
+   * @param p_channel - the channel
+   * @pre The timer is powered on.
    */
-  void disable(u8 p_channel) noexcept
+  void disable(timer_channel p_channel) noexcept
   {
     auto const enable_bit =
-      hal::bit_mask{ .position = p_channel * 4U, .width = 2 };
+      hal::bit_mask{ .position = hal::value(p_channel) * 4U, .width = 2 };
     bit_modify(m_reg->cc_enable_register).insert(enable_bit, 0b00U);
     compare(p_channel, 0);
   }
@@ -205,41 +238,57 @@ public:
   /**
    * @brief Set a channel's compare value, from the next period on
    *
-   * @param p_channel - 0 to 3 for CH1 to CH4
+   * @param p_channel - the channel
    * @param p_value - the value for CCRx, from `pwm_compare()`
+   * @pre The timer is powered on.
    */
-  void compare(u8 p_channel, u32 p_value) noexcept
+  void compare(timer_channel p_channel, u32 p_value) noexcept
   {
     switch (p_channel) {
-      case 0:
+      case timer_channel::ch1:
         m_reg->capture_compare_register = p_value;
         break;
-      case 1:
+      case timer_channel::ch2:
         m_reg->capture_compare_register_2 = p_value;
         break;
-      case 2:
+      case timer_channel::ch3:
         m_reg->capture_compare_register_3 = p_value;
         break;
-      default:
+      case timer_channel::ch4:
         m_reg->capture_compare_register_4 = p_value;
         break;
     }
   }
 
-private:
-  /// Bit masks for TIMx_CR1
-  struct control
+  /**
+   * @brief A channel's compare value last set, read back from CCRx
+   *
+   * CCRx reads back the value written, even before it takes effect at the
+   * next period.
+   *
+   * @param p_channel - the channel
+   * @return u32 - the value in CCRx
+   * @pre The timer is powered on.
+   */
+  [[nodiscard]] u32 compare(timer_channel p_channel) const noexcept
   {
-    static constexpr auto counter_enable = hal::bit_mask::from<0>();
-    static constexpr auto one_pulse_mode = hal::bit_mask::from<3>();
-    static constexpr auto direction = hal::bit_mask::from<4>();
-    static constexpr auto center_aligned_mode = hal::bit_mask::from<5, 6>();
-    static constexpr auto auto_reload_preload = hal::bit_mask::from<7>();
-  };
-  /// UG in TIMx_EGR
-  static constexpr auto update_generation = hal::bit_mask::from<0>();
-  /// MOE in TIMx_BDTR
-  static constexpr auto main_output_enable = hal::bit_mask::from<15>();
+    switch (p_channel) {
+      case timer_channel::ch1:
+        return m_reg->capture_compare_register & 0xFFFFU;
+      case timer_channel::ch2:
+        return m_reg->capture_compare_register_2 & 0xFFFFU;
+      case timer_channel::ch3:
+        return m_reg->capture_compare_register_3 & 0xFFFFU;
+      case timer_channel::ch4:
+        break;
+    }
+    return m_reg->capture_compare_register_4 & 0xFFFFU;
+  }
+
+private:
+  using control = timer_bits::control;
+  static constexpr auto update_generation = timer_bits::update_generation;
+  static constexpr auto main_output_enable = timer_bits::main_output_enable;
   /// One channel's 8 bits of CCMRx: OCxM = 0b110, OCxPE = 1, CCxS = 0b00
   static constexpr u32 output_mode_pwm1 = 0b0110'1000;
 

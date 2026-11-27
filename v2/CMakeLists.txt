@@ -180,7 +180,7 @@ libhal_add_tests(arm-mcu
         i2c
         pin
         power
-        pwm
+        stm32_generic/pwm
         spi
         stm32_generic/timer
         uart

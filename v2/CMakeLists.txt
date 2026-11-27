@@ -75,6 +75,7 @@ libhal_add_library(arm-mcu
         src/stm32f1/independent_watchdog.cpp
         src/stm32f1/can.cpp
         src/stm32f1/timer.cpp
+        src/stm32f1/timer_clock.cpp
         # src/stm32f1/usb.cpp
 )
 

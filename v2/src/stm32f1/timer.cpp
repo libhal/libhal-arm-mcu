@@ -31,91 +31,103 @@ import :timer;
 
 namespace hal::stm32f1 {
 namespace {
-/// Where each supported timer lives and which interrupt reports its updates
-struct timer_route
+/// What each timer's update interrupt calls
+struct timer_slot
 {
-  peripheral id;
-  irq interrupt;
-  std::uintptr_t address;
+  timer_handler handler = nullptr;
+  void* object = nullptr;
 };
 
-/// TIM1 to TIM8 (RM0008 section 3.3, memory map). TIM1 and TIM8 have their
-/// own update interrupt; the others have one interrupt for everything.
-constexpr std::array<timer_route, 8> routes{ {
-  { .id = peripheral::timer1,
-    .interrupt = irq::tim1_up,
-    .address = 0x4001'2C00 },
-  { .id = peripheral::timer2, .interrupt = irq::tim2, .address = 0x4000'0000 },
-  { .id = peripheral::timer3, .interrupt = irq::tim3, .address = 0x4000'0400 },
-  { .id = peripheral::timer4, .interrupt = irq::tim4, .address = 0x4000'0800 },
-  { .id = peripheral::timer5, .interrupt = irq::tim5, .address = 0x4000'0C00 },
-  { .id = peripheral::timer6, .interrupt = irq::tim6, .address = 0x4000'1000 },
-  { .id = peripheral::timer7, .interrupt = irq::tim7, .address = 0x4000'1400 },
-  { .id = peripheral::timer8,
-    .interrupt = irq::tim8_up,
-    .address = 0x4001'3400 },
-} };
+constinit std::array<timer_slot, timer_routes.size()> timer_slots{};
 
-/// The driver each timer's interrupt reports to
-constinit std::array<timer*, routes.size()> drivers{};
+/**
+ * One interrupt handler serves every timer. Each driver's handler checks its
+ * own timer's update flag, so calling every routed handler is safe, and it
+ * links one handler instead of one per timer.
+ */
+void timer_isr()
+{
+  for (auto const& slot : timer_slots) {
+    if (slot.handler != nullptr) {
+      slot.handler(slot.object);
+    }
+  }
+}
 
 /// @throws hal::operation_not_supported - if `p_id` isn't TIM1 to TIM8
-u8 route_index(peripheral p_id)
+u8 timer_index(peripheral p_id)
 {
-  for (usize index = 0; index < routes.size(); index++) {
-    if (routes[index].id == p_id) {
-      // NOTE: Safe to cast without narrowing: there are 8 routes.
+  for (usize index = 0; index < timer_routes.size(); index++) {
+    if (timer_routes[index].id == p_id) {
+      // NOTE: Safe to cast without narrowing: there are 8 timers.
       return static_cast<u8>(index);
     }
   }
   throw hal::operation_not_supported(nullptr);
 }
-
-void* timer_address(u8 p_index)
-{
-  // NOLINTNEXTLINE(performance-no-int-to-ptr)
-  return reinterpret_cast<void*>(routes[p_index].address);
-}
 }  // namespace
 
-timer::timer(peripheral p_id)
-  : m_frequency(frequency(p_id))
-  , m_driver(timer_address(route_index(p_id)))
-  , m_index(route_index(p_id))
+u8 claim_timer(peripheral p_id)
 {
-  // The last call that can throw, so nothing needs undoing after it
+  auto const index = timer_index(p_id);
+  // The last call that can throw, so a driver has nothing to undo after it
   claim(p_id);
   power_on(p_id);
   // Start from the reset state, whatever ran before (e.g. a bootloader) left.
   reset_peripheral(p_id);
+  return index;
+}
 
-  drivers[m_index] = this;
-  cortex_m::enable_interrupt(routes[m_index].interrupt, &isr);
+void release_timer(u8 p_index) noexcept
+{
+  auto const& route = timer_routes[p_index];
+  cortex_m::disable_interrupt(route.interrupt);
+  timer_slots[p_index] = {};
+  power_off(route.id);
+  release(route.id);
+}
+
+void route_timer_interrupt(u8 p_index, timer_handler p_handler, void* p_object)
+{
+  timer_slots[p_index] = { .handler = p_handler, .object = p_object };
+  cortex_m::enable_interrupt(timer_routes[p_index].interrupt, &timer_isr);
+}
+
+void* timer_address(u8 p_index)
+{
+  // NOLINTNEXTLINE(performance-no-int-to-ptr)
+  return reinterpret_cast<void*>(timer_routes[p_index].address);
+}
+
+timer::timer(peripheral p_id)
+  : timer(claim_timer(p_id))
+{
+}
+
+timer::timer(u8 p_index)
+  : m_frequency(frequency(timer_routes[p_index].id))
+  , m_driver(timer_address(p_index))
+  , m_index(p_index)
+{
+  route_timer_interrupt(m_index, &handle_update, this);
 }
 
 timer::~timer()
 {
   m_driver.stop();
-  cortex_m::disable_interrupt(routes[m_index].interrupt);
-  drivers[m_index] = nullptr;
-  power_off(routes[m_index].id);
-  release(routes[m_index].id);
+  release_timer(m_index);
 }
 
-void timer::isr()
+void timer::handle_update(void* p_self) noexcept
 {
-  // One handler serves every timer: update() only reports an expiry for a
-  // timer whose own update flag is set, so asking each driver is safe. It
-  // links one handler instead of one per timer.
-  for (auto* const driver : drivers) {
-    if (driver == nullptr or not driver->m_driver.update()) {
-      continue;
-    }
-    // Read the callback once: it can be cleared between expirations.
-    auto* const callback = driver->m_callback;
-    if (callback != nullptr) {
-      callback->callback();
-    }
+  auto& self = *static_cast<timer*>(p_self);
+  if (not self.m_driver.update()) {
+    return;
+  }
+  // Read the callback once: it can be cleared between expirations.
+  auto* const callback = self.m_callback;
+  if (callback != nullptr) {
+    callback->callback();
   }
 }
 

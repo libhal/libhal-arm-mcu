@@ -204,4 +204,67 @@ private:
   hal::hertz m_frequency;
   hal::stm32_generic::free_running_counter m_counter;
 };
+
+/**
+ * @brief Two STM32F1 timers chained into a 64-bit `hal::steady_clock`
+ *
+ * Claims both timers. The low timer counts every timer clock cycle and the
+ * high timer counts its wraps in hardware, so together they count 32 bits at
+ * the full timer clock: 13.9 ns ticks at 72 MHz. Only the 32-bit count's wraps
+ * raise an interrupt, once every 59.6 s at 72 MHz, which extends it to 64
+ * bits. `uptime()` stays right however rarely it is called, and interrupts may
+ * stay masked for up to one wrap, 59.6 s at 72 MHz.
+ *
+ * The high timer counts the low one through an internal trigger input, so
+ * only some pairs work (RM0008 Tables 82 and 86):
+ *
+ * | high | low timers it can count       |
+ * | ---- | ----------------------------- |
+ * | TIM1 | TIM2, TIM3, TIM4, TIM5        |
+ * | TIM2 | TIM1, TIM3, TIM4, TIM8        |
+ * | TIM3 | TIM1, TIM2, TIM4, TIM5        |
+ * | TIM4 | TIM1, TIM2, TIM3, TIM8        |
+ * | TIM5 | TIM2, TIM3, TIM4, TIM8        |
+ * | TIM8 | TIM1, TIM2, TIM4, TIM5        |
+ *
+ * TIM6 and TIM7 can't be chained. TIM5 and TIM8 exist only on high-density
+ * and larger parts, such as the STM32F103ZG. On other parts, constructing
+ * them is undefined behavior.
+ */
+export class chained_32bit_timer_clock final : public hal::steady_clock
+{
+public:
+  /**
+   * @brief Claim two timers, chain them and start them counting
+   *
+   * @param p_low - the timer that counts the clock
+   * @param p_high - the timer that counts `p_low`'s wraps
+   * @throws hal::operation_not_supported - if the pair isn't in the table
+   * above
+   * @throws hal::device_or_resource_busy - if another driver has claimed
+   * either timer
+   */
+  chained_32bit_timer_clock(peripheral p_low, peripheral p_high);
+
+  chained_32bit_timer_clock(chained_32bit_timer_clock const&) = delete;
+  chained_32bit_timer_clock& operator=(chained_32bit_timer_clock const&) =
+    delete;
+  chained_32bit_timer_clock(chained_32bit_timer_clock&&) = delete;
+  chained_32bit_timer_clock& operator=(chained_32bit_timer_clock&&) = delete;
+
+  /// Stop both timers, disable the interrupt, power them off and release them
+  ~chained_32bit_timer_clock();
+
+private:
+  static void handle_update(void* p_self) noexcept;
+
+  hal::hertz driver_frequency() override;
+  u64 driver_uptime() override;
+
+  u32 m_trigger_input;
+  u8 m_low_index;
+  u8 m_high_index;
+  hal::hertz m_frequency;
+  hal::stm32_generic::chained_counter m_counter;
+};
 }  // namespace hal::stm32f1

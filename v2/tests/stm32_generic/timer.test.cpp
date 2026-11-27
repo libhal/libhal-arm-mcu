@@ -136,21 +136,29 @@ void counter_test()
   "picks the finest ticks under the interrupt rate"_test = []() {
     // Exercise + Verify
     // 72 MHz / (20 * 65,536) = 54.9, so 55: 1.309 MHz, 19.98 wraps a second
-    expect(that % 55U == counter_prescaler(72'000'000, 20));
-    expect(that % 74U == counter_prescaler(72'000'000, 15));
-    expect(that % 1'099U == counter_prescaler(72'000'000, 1));
+    expect(that % 55U == counter_prescaler({ .clock_hz = 72'000'000,
+                                             .max_interrupt_rate_hz = 20 }));
+    expect(that % 74U == counter_prescaler({ .clock_hz = 72'000'000,
+                                             .max_interrupt_rate_hz = 15 }));
+    expect(that % 1'099U == counter_prescaler({ .clock_hz = 72'000'000,
+                                                .max_interrupt_rate_hz = 1 }));
   };
 
   "a rate the full clock already meets doesn't divide it"_test = []() {
     // Exercise + Verify
     // 72 MHz wraps 1,098.6 times a second
-    expect(that % 1U == counter_prescaler(72'000'000, 1'099));
-    expect(that % 1U == counter_prescaler(72'000'000, 1'000'000));
+    expect(that % 1U == counter_prescaler({ .clock_hz = 72'000'000,
+                                            .max_interrupt_rate_hz = 1'099 }));
+    expect(that % 1U ==
+           counter_prescaler(
+             { .clock_hz = 72'000'000, .max_interrupt_rate_hz = 1'000'000 }));
   };
 
-  "a rate of 0 can't be met"_test = []() {
+  "a rate too low to reach gets the fewest wraps"_test = []() {
     // Exercise + Verify
-    expect(that % 0U == counter_prescaler(72'000'000, 0));
+    // 72 MHz / 65,536 / 65,536 = 0.017 wraps a second at the most
+    expect(that % 65'536U == counter_prescaler({ .clock_hz = 72'000'000,
+                                                 .max_interrupt_rate_hz = 0 }));
   };
 
   "the wraps become the upper bits"_test = []() {

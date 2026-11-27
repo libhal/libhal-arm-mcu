@@ -57,9 +57,10 @@ void timer_isr()
 /// @throws hal::operation_not_supported - if `p_id` isn't TIM1 to TIM8
 u8 timer_index(peripheral p_id)
 {
-  for (u8 index = 0; index < timer_routes.size(); index++) {
+  for (usize index = 0; index < timer_routes.size(); index++) {
     if (timer_routes[index].id == p_id) {
-      return index;
+      // NOTE: Safe to cast without narrowing: there are 8 timers.
+      return static_cast<u8>(index);
     }
   }
   throw hal::operation_not_supported(nullptr);
@@ -99,9 +100,14 @@ void* timer_address(u8 p_index)
 }
 
 timer::timer(peripheral p_id)
-  : m_index(claim_timer(p_id))
-  , m_frequency(frequency(p_id))
-  , m_driver(timer_address(m_index))
+  : timer(claim_timer(p_id))
+{
+}
+
+timer::timer(u8 p_index)
+  : m_frequency(frequency(timer_routes[p_index].id))
+  , m_driver(timer_address(p_index))
+  , m_index(p_index)
 {
   route_timer_interrupt(m_index, &handle_update, this);
 }

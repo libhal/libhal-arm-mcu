@@ -89,14 +89,14 @@ hal::static_ref<hal::timed_interrupt> timer()
   return timer2;
 }
 
-hal::static_ref<hal::steady_clock> timer_clock_16bit()
+hal::static_ref<hal::steady_clock> timer_clock()
 {
   static hal::stm32f1::timer_clock_16bit timer3(
     hal::stm32f1::peripheral::timer3);
   return timer3;
 }
 
-hal::static_ref<hal::steady_clock> chained_32bit_timer_clock()
+hal::static_ref<hal::steady_clock> wide_timer_clock()
 {
   static hal::stm32f1::chained_32bit_timer_clock tim1_tim4(
     hal::stm32f1::peripheral::timer1, hal::stm32f1::peripheral::timer4);

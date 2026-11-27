@@ -66,6 +66,35 @@ export enum class timer_channel : u8 {
   ch4,
 };
 
+/**
+ * @brief Two timers that can chain into a `chained_32bit_timer_clock`
+ *
+ * One timer counts the timer clock and the other counts its wraps through an
+ * internal trigger input, which only some pairs are wired for (RM0008 Tables
+ * 82 and 86). The clock picks which timer does which, so every pair here
+ * works. TIM6 and TIM7 can't chain, and neither can TIM3 with TIM8.
+ *
+ * The `_high_density` pairs use TIM5 or TIM8, which exist only on
+ * high-density and larger parts, such as the STM32F103ZG. On other parts,
+ * constructing a clock from one of them is undefined behavior.
+ */
+export enum class timer_pair : u8 {
+  timer1_timer2,
+  timer1_timer3,
+  timer1_timer4,
+  timer2_timer3,
+  timer2_timer4,
+  timer3_timer4,
+  timer1_timer5_high_density,
+  timer1_timer8_high_density,
+  timer2_timer5_high_density,
+  timer2_timer8_high_density,
+  timer3_timer5_high_density,
+  timer4_timer5_high_density,
+  timer4_timer8_high_density,
+  timer5_timer8_high_density,
+};
+
 // ---- Shared by the timer drivers, not exported ----------------------------
 
 /// A timer's channel pins for one remap, and the value for its MAPR field
@@ -133,6 +162,25 @@ void route_timer_interrupt(u8 p_index, timer_handler p_handler, void* p_object);
 /// The timer's base address
 void* timer_address(u8 p_index);
 
+/// Two claimed timers chained by `claim_timer_pair()`
+struct claimed_timer_pair
+{
+  /// The timer that counts the clock, as an index in `timer_routes`
+  u8 low_index;
+  /// The timer that counts the low timer's wraps
+  u8 high_index;
+  /// The high timer's trigger input (ITR0 to ITR3) wired to the low timer
+  u8 trigger_input;
+};
+
+/**
+ * @brief Claim both timers of a pair, power them on and reset them
+ *
+ * @throws hal::device_or_resource_busy - if another driver has claimed
+ * either timer. Neither is claimed then.
+ */
+claimed_timer_pair claim_timer_pair(timer_pair p_pair);
+
 // ---- Drivers ---------------------------------------------------------------
 
 /**
@@ -174,6 +222,9 @@ public:
   ~timer();
 
 private:
+  /// Takes the index `claim_timer()` returned
+  explicit timer(u8 p_index);
+
   static void handle_update(void* p_self) noexcept;
 
   bool driver_scheduled() override;
@@ -183,10 +234,10 @@ private:
   void driver_on_expire(hal::timed_callback& p_callback) override;
   void driver_clear_expire() noexcept override;
 
-  u8 m_index;
   hal::hertz m_frequency;
   hal::stm32_generic::timer m_driver;
   hal::timed_callback* volatile m_callback = nullptr;
+  u8 m_index;
 };
 
 /// Settings for a `timer_clock_16bit`
@@ -234,8 +285,8 @@ public:
    * @brief Claim a timer, power it on and start it counting
    *
    * @param p_id - the timer: `peripheral::timer1` to `peripheral::timer8`
-   * @param p_settings - the most interrupts a second to accept
-   * @throws hal::argument_out_of_domain - if `max_interrupt_rate` is 0 Hz
+   * @param p_settings - the most interrupts a second to accept. A rate too low
+   * to reach, 0 Hz included, gets the fewest: one wrap every 59.6 s at 72 MHz.
    * @throws hal::operation_not_supported - if `p_id` isn't TIM1 to TIM8
    * @throws hal::device_or_resource_busy - if another driver has claimed the
    * timer
@@ -252,15 +303,16 @@ public:
   ~timer_clock_16bit();
 
 private:
+  /// Takes the index `claim_timer()` returned
+  timer_clock_16bit(u8 p_index, timer_clock_16bit_settings const& p_settings);
+
   static void handle_update(void* p_self) noexcept;
 
   hal::hertz driver_frequency() override;
   u64 driver_uptime() override;
 
-  u32 m_prescaler;
-  u8 m_index;
-  hal::hertz m_frequency;
   hal::stm32_generic::free_running_counter m_counter;
+  u8 m_index;
 };
 
 /**
@@ -273,21 +325,7 @@ private:
  * bits. `uptime()` stays right however rarely it is called, and interrupts may
  * stay masked for up to one wrap, 59.6 s at 72 MHz.
  *
- * The high timer counts the low one through an internal trigger input, so
- * only some pairs work (RM0008 Tables 82 and 86):
- *
- * | high | low timers it can count       |
- * | ---- | ----------------------------- |
- * | TIM1 | TIM2, TIM3, TIM4, TIM5        |
- * | TIM2 | TIM1, TIM3, TIM4, TIM8        |
- * | TIM3 | TIM1, TIM2, TIM4, TIM5        |
- * | TIM4 | TIM1, TIM2, TIM3, TIM8        |
- * | TIM5 | TIM2, TIM3, TIM4, TIM8        |
- * | TIM8 | TIM1, TIM2, TIM4, TIM5        |
- *
- * TIM6 and TIM7 can't be chained. TIM5 and TIM8 exist only on high-density
- * and larger parts, such as the STM32F103ZG. On other parts, constructing
- * them is undefined behavior.
+ * The pair must be one whose timers are wired to chain: see `timer_pair`.
  */
 export class chained_32bit_timer_clock final : public hal::steady_clock
 {
@@ -295,14 +333,11 @@ public:
   /**
    * @brief Claim two timers, chain them and start them counting
    *
-   * @param p_low - the timer that counts the clock
-   * @param p_high - the timer that counts `p_low`'s wraps
-   * @throws hal::operation_not_supported - if the pair isn't in the table
-   * above
+   * @param p_pair - the two timers
    * @throws hal::device_or_resource_busy - if another driver has claimed
    * either timer
    */
-  chained_32bit_timer_clock(peripheral p_low, peripheral p_high);
+  explicit chained_32bit_timer_clock(timer_pair p_pair);
 
   chained_32bit_timer_clock(chained_32bit_timer_clock const&) = delete;
   chained_32bit_timer_clock& operator=(chained_32bit_timer_clock const&) =
@@ -314,15 +349,15 @@ public:
   ~chained_32bit_timer_clock();
 
 private:
+  explicit chained_32bit_timer_clock(claimed_timer_pair p_pair);
+
   static void handle_update(void* p_self) noexcept;
 
   hal::hertz driver_frequency() override;
   u64 driver_uptime() override;
 
-  u32 m_trigger_input;
+  hal::stm32_generic::chained_counter m_counter;
   u8 m_low_index;
   u8 m_high_index;
-  hal::hertz m_frequency;
-  hal::stm32_generic::chained_counter m_counter;
 };
 }  // namespace hal::stm32f1

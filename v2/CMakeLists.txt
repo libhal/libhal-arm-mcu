@@ -178,6 +178,6 @@ libhal_add_tests(arm-mcu
         pin
         power
         spi
-        timer
+        stm32_generic/timer
         uart
 )

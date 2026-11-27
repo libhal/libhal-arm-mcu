@@ -279,7 +279,7 @@ export struct counter_reading
 {
   /// Wraps the interrupt has counted
   u64 wraps;
-  /// The 16-bit counter
+  /// The counter: 16 bits for one timer, 32 for two chained
   u32 count;
   /// Whether a wrap was waiting to be counted
   pending_wrap pending;
@@ -290,18 +290,22 @@ export struct counter_reading
  *
  * A wrap the interrupt hasn't counted yet still counts. If it happened while
  * the counter was read, the count tells which side it's on: a few ticks after
- * a wrap it's near 0, and a few ticks before, near 65,535.
+ * a wrap it's near 0, and a few ticks before, near its maximum.
  *
+ * @tparam Bits - the counter's width: 16 for one timer, 32 for two chained
  * @param p_reading - the wraps, the count and the wrap flag
  * @return u64 - ticks since the counter started
  */
-export [[nodiscard]] constexpr u64 counter_ticks(counter_reading p_reading)
+export template<u8 Bits>
+[[nodiscard]] constexpr u64 counter_ticks(counter_reading p_reading)
 {
+  static_assert((Bits == 16U) or (Bits == 32U));
+  constexpr u64 half = 1ULL << (Bits - 1U);
   bool const uncounted = (p_reading.pending == pending_wrap::before_read) or
                          ((p_reading.pending == pending_wrap::during_read) and
-                          (p_reading.count < 0x8000U));
+                          (p_reading.count < half));
   auto const wraps = p_reading.wraps + (uncounted ? 1U : 0U);
-  return (wraps << 16U) | p_reading.count;
+  return (wraps << Bits) | p_reading.count;
 }
 
 /**
@@ -423,7 +427,7 @@ public:
       } else if (after) {
         pending = pending_wrap::during_read;
       }
-      return counter_ticks(
+      return counter_ticks<16>(
         { .wraps = wraps, .count = count, .pending = pending });
     }
   }
@@ -449,6 +453,184 @@ private:
   }
 
   timer_reg* m_reg;
+  u64 volatile m_wraps = 0;
+};
+
+/**
+ * @brief Two STM32 timers chained into a 32-bit free-running count
+ *
+ * The low timer counts every timer clock cycle from 0 to 65,535. Each time it
+ * wraps, it pulses its TRGO output, which the chip wires to an internal
+ * trigger input (ITRx) of the high timer. The high timer, in external clock
+ * mode 1, counts those pulses, so together they count 32 bits in hardware:
+ * the high timer holds the upper 16 bits and the low timer the lower 16. Only
+ * the high timer's wraps raise an interrupt: once every 4,294,967,296
+ * cycles, 59.6 s at 72 MHz. The platform driver calls `update()` from that
+ * interrupt, which counts the wrap.
+ *
+ * This class is meant to only be used by platform libraries or drivers.
+ */
+export class chained_counter
+{
+public:
+  /**
+   * @brief Construct over two timers' registers
+   *
+   * Doesn't touch the hardware.
+   *
+   * @param p_low - the base address of the timer that counts the clock
+   * @param p_high - the base address of the timer that counts its wraps
+   */
+  chained_counter(void* p_low, void* p_high)
+    : m_low(timer_reg::from(p_low))
+    , m_high(timer_reg::from(p_high))
+  {
+  }
+
+  /**
+   * @brief Start counting from 0
+   *
+   * @param p_trigger_input - which internal trigger input (ITR0 to ITR3) of
+   * the high timer receives the low timer's TRGO
+   * @pre Both timers are powered on.
+   */
+  void start(u32 p_trigger_input) noexcept
+  {
+    stop();
+    m_wraps = 0;
+
+    // Low: count every cycle from 0 to 65,535. The update generated here
+    // loads the prescaler. It may pulse TRGO, but the high timer isn't
+    // counting yet, and its own update below resets it anyway.
+    bit_modify(m_low->control_register)
+      .clear<control::center_aligned_mode>()
+      .clear<control::direction>()
+      .clear<control::one_pulse_mode>();
+    m_low->prescale_register = 0;
+    m_low->auto_reload_register = 0xFFFF;
+    m_low->event_generator_register = update_generation.value<u32>();
+    bit_modify(m_low->control_register_2)
+      .insert<master_mode>(master_mode_update);
+
+    // High: count the low timer's wraps from 0 to 65,535, and only raise an
+    // update interrupt when the counter wraps.
+    bit_modify(m_high->control_register)
+      .clear<control::center_aligned_mode>()
+      .clear<control::direction>()
+      .clear<control::one_pulse_mode>()
+      .set<control::update_request_source>();
+    bit_modify(m_high->peripheral_control_register)
+      .insert<trigger_selection>(p_trigger_input)
+      .insert<slave_mode>(slave_mode_external_clock);
+    m_high->prescale_register = 0;
+    m_high->auto_reload_register = 0xFFFF;
+    m_high->event_generator_register = update_generation.value<u32>();
+    clear_wrap_flag();
+    bit_modify(m_high->interrupt_enable_register)
+      .set<update_interrupt_enable>();
+    bit_modify(m_high->control_register).set<control::counter_enable>();
+
+    // Start the low timer last, so both count from 0 together
+    m_low->counter_register = 0;
+    bit_modify(m_low->control_register).set<control::counter_enable>();
+  }
+
+  /**
+   * @brief Stop counting. `uptime()` keeps returning the last count.
+   *
+   * @pre Both timers are powered on.
+   */
+  void stop() noexcept
+  {
+    bit_modify(m_low->control_register).clear<control::counter_enable>();
+    bit_modify(m_high->control_register).clear<control::counter_enable>();
+  }
+
+  /**
+   * @brief Handle the high timer's update interrupt: count a wrap
+   *
+   * Does nothing if the interrupt wasn't a wrap.
+   *
+   * @pre Both timers are powered on.
+   */
+  void update() noexcept
+  {
+    if (not wrap_pending()) {
+      return;
+    }
+    // A higher-priority interrupt reading uptime() between these two lines
+    // would see neither the flag nor the count, and run 2^32 ticks behind.
+    cortex_m::interrupt_mask_guard const mask;
+    clear_wrap_flag();
+    m_wraps = m_wraps + 1U;
+  }
+
+  /**
+   * @brief Timer clock cycles since `start()`
+   *
+   * Safe to call from any context, including with interrupts masked, as long
+   * as they haven't been masked for longer than one wrap of the 32-bit count.
+   *
+   * @return u64 - cycles since the counter started
+   * @pre Both timers are powered on.
+   */
+  [[nodiscard]] u64 uptime() const noexcept
+  {
+    // The high timer counts a low wrap a few clock cycles after it happens,
+    // once TRGO is resynchronized to its clock. A low count this small may
+    // be from before the high count caught up, so read again.
+    constexpr u32 settle_ticks = 8;
+    while (true) {
+      auto const wraps = m_wraps;
+      bool const before = wrap_pending();
+      auto const high = m_high->counter_register & 0xFFFFU;
+      auto const low = m_low->counter_register & 0xFFFFU;
+      auto const high_again = m_high->counter_register & 0xFFFFU;
+      bool const after = wrap_pending();
+      if ((wraps != m_wraps) or (high != high_again) or (low < settle_ticks)) {
+        continue;
+      }
+      auto pending = pending_wrap::none;
+      if (before) {
+        pending = pending_wrap::before_read;
+      } else if (after) {
+        pending = pending_wrap::during_read;
+      }
+      return counter_ticks<32>(
+        { .wraps = wraps, .count = (high << 16U) | low, .pending = pending });
+    }
+  }
+
+private:
+  using control = timer_bits::control;
+  static constexpr auto master_mode = timer_bits::control_2::master_mode;
+  static constexpr auto master_mode_update =
+    timer_bits::control_2::master_mode_update;
+  static constexpr auto slave_mode = timer_bits::slave_mode_control::slave_mode;
+  static constexpr auto slave_mode_external_clock =
+    timer_bits::slave_mode_control::slave_mode_external_clock;
+  static constexpr auto trigger_selection =
+    timer_bits::slave_mode_control::trigger_selection;
+  static constexpr auto update_interrupt_enable =
+    timer_bits::update_interrupt_enable;
+  static constexpr auto update_interrupt_flag =
+    timer_bits::update_interrupt_flag;
+  static constexpr auto update_generation = timer_bits::update_generation;
+
+  [[nodiscard]] bool wrap_pending() const noexcept
+  {
+    return bit_is_set<update_interrupt_flag>(m_high->status_register);
+  }
+
+  void clear_wrap_flag() noexcept
+  {
+    // The status flags are cleared by writing 0. Writing 1 leaves them as
+    // they are, so only UIF clears.
+    m_high->status_register = ~update_interrupt_flag.value<u32>();
+  }
+
+  timer_reg* m_low;
+  timer_reg* m_high;
   u64 volatile m_wraps = 0;
 };
 }  // namespace hal::stm32_generic

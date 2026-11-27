@@ -96,6 +96,13 @@ hal::static_ref<hal::steady_clock> timer_clock()
   return timer3;
 }
 
+hal::static_ref<hal::steady_clock> wide_timer_clock()
+{
+  static hal::stm32f1::chained_32bit_timer_clock tim1_tim4(
+    hal::stm32f1::timer_pair::timer1_timer4);
+  return tim1_tim4;
+}
+
 hal::static_ref<hal::output_pin> status_led()
 {
   static hal::stm32f1::output_pin led({ .port = 'C', .pin = 13 });

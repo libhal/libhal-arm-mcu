@@ -163,7 +163,7 @@ void counter_test()
 
   "the wraps become the upper bits"_test = []() {
     // Exercise
-    auto const ticks = counter_ticks(
+    auto const ticks = counter_ticks<16>(
       { .wraps = 3, .count = 0x1234, .pending = pending_wrap::none });
 
     // Verify
@@ -173,9 +173,9 @@ void counter_test()
   "a wrap flagged before the read counts"_test = []() {
     // Exercise
     // Even late in the next period: interrupts were masked for a while
-    auto const early = counter_ticks(
+    auto const early = counter_ticks<16>(
       { .wraps = 3, .count = 0x0002, .pending = pending_wrap::before_read });
-    auto const late = counter_ticks(
+    auto const late = counter_ticks<16>(
       { .wraps = 3, .count = 0xF000, .pending = pending_wrap::before_read });
 
     // Verify
@@ -186,15 +186,39 @@ void counter_test()
   "a wrap flagged during the read counts only for a count after it"_test =
     []() {
       // Exercise
-      auto const after_wrap = counter_ticks(
+      auto const after_wrap = counter_ticks<16>(
         { .wraps = 3, .count = 0x0001, .pending = pending_wrap::during_read });
-      auto const before_wrap = counter_ticks(
+      auto const before_wrap = counter_ticks<16>(
         { .wraps = 3, .count = 0xFFFF, .pending = pending_wrap::during_read });
 
       // Verify
       expect(that % 0x4'0001ULL == after_wrap);
       expect(that % 0x3'FFFFULL == before_wrap);
     };
+
+  "a chained 32-bit count splits its wraps at 2^31"_test = []() {
+    // Exercise
+    auto const plain = counter_ticks<32>(
+      { .wraps = 2, .count = 0x1234'5678, .pending = pending_wrap::none });
+    auto const after_wrap =
+      counter_ticks<32>({ .wraps = 2,
+                          .count = 0x0000'0010,
+                          .pending = pending_wrap::during_read });
+    auto const before_wrap =
+      counter_ticks<32>({ .wraps = 2,
+                          .count = 0xFFFF'FFF0,
+                          .pending = pending_wrap::during_read });
+    auto const late =
+      counter_ticks<32>({ .wraps = 2,
+                          .count = 0xF000'0000,
+                          .pending = pending_wrap::before_read });
+
+    // Verify
+    expect(that % 0x2'1234'5678ULL == plain);
+    expect(that % 0x3'0000'0010ULL == after_wrap);
+    expect(that % 0x2'FFFF'FFF0ULL == before_wrap);
+    expect(that % 0x3'F000'0000ULL == late);
+  };
 }
 }  // namespace
 

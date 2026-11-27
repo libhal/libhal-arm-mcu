@@ -12,9 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Compares the timer-based steady clock with the platform's steady clock once
-// a second. The timer clock keeps its own time from its interrupt, so it stays
-// right however rarely uptime() is called.
+// Compares the two timer-based steady clocks with the platform's steady clock
+// once a second. The timer clocks keep their own time from their interrupts,
+// so they stay right however rarely uptime() is called.
 
 module;
 
@@ -42,27 +42,37 @@ void application()
   auto console = resources::console();
   auto reference = resources::clock();
   auto timer_clock = resources::timer_clock();
+  auto wide = resources::wide_timer_clock();
 
   auto const timer_hz =
     timer_clock->frequency().numerical_value_in(hal::hertz::unit);
+  auto const wide_hz =
+    wide->frequency().numerical_value_in(hal::hertz::unit);
   auto const reference_hz =
     reference->frequency().numerical_value_in(hal::hertz::unit);
-  hal::print<64>(*console,
-                 "Timer clock: %" PRIu32 " Hz ticks\n",
-                 static_cast<std::uint32_t>(timer_hz));
+  hal::print<96>(*console,
+                 "Timer clock: %" PRIu32 " Hz ticks, wide: %" PRIu32
+                 " Hz ticks\n",
+                 static_cast<std::uint32_t>(timer_hz),
+                 static_cast<std::uint32_t>(wide_hz));
 
   auto const timer_start = timer_clock->uptime();
+  auto const wide_start = wide->uptime();
   auto const reference_start = reference->uptime();
 
   while (true) {
     hal::sleep_for(1s);
     auto const timer_us =
       microseconds(timer_clock->uptime() - timer_start, timer_hz);
+    auto const wide_us =
+      microseconds(wide->uptime() - wide_start, wide_hz);
     auto const reference_us =
       microseconds(reference->uptime() - reference_start, reference_hz);
-    hal::print<96>(*console,
-                   "timer clock %10" PRIu32 " us, reference %10" PRIu32 " us\n",
-                   static_cast<std::uint32_t>(timer_us),
-                   static_cast<std::uint32_t>(reference_us));
+    hal::print<128>(*console,
+                    "timer clock %10" PRIu32 " us, wide %10" PRIu32
+                    " us, reference %10" PRIu32 " us\n",
+                    static_cast<std::uint32_t>(timer_us),
+                    static_cast<std::uint32_t>(wide_us),
+                    static_cast<std::uint32_t>(reference_us));
   }
 }

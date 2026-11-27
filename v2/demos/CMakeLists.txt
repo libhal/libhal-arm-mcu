@@ -69,6 +69,7 @@ set(DEMOS
     i2c
     spi
     stacktrace
+    timer
     uart
 )
 

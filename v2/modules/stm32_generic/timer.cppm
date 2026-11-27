@@ -1,4 +1,4 @@
-// Copyright 2024 - 2025 Khalil Estell and the libhal contributors
+// Copyright 2024 - 2026 Khalil Estell and the libhal contributors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -14,344 +14,215 @@
 
 module;
 
-#include <limits>
-#include <utility>
+#include <algorithm>
 
 export module hal.arm_mcu.stm32_generic:timer;
 
 import hal;
 import hal.util;
-import hal.arm_mcu.cortex_m;
 
 import :registers;
 
 namespace hal::stm32_generic {
-void setup(timer_reg* p_reg)
+/// How a timer counts out a delay: `counts` equal periods, each
+/// `prescaler * reload` timer clock cycles long
+export struct timer_period
 {
-  constexpr auto auto_reload_preload_enable = hal::bit_mask::from<7>();
-  constexpr auto one_pulse_mode = hal::bit_mask::from<3>();
-  constexpr auto update_request_source = hal::bit_mask::from<2>();
-  constexpr auto update_interrupt_enable = hal::bit_mask::from<0>();
+  /// How many periods the delay takes
+  u64 counts;
+  /// The prescaler's divider, 1 to 65,536 (PSC + 1)
+  u32 prescaler;
+  /// Prescaled ticks per period, 2 to 65,536 (ARR + 1)
+  u32 reload;
+};
 
-  bit_modify(p_reg->control_register)
-    .set(auto_reload_preload_enable)
-    .set(one_pulse_mode)
-    .set(update_request_source);
+/**
+ * @brief Split a delay into equal timer periods
+ *
+ * One period counts at most 65,536 * 65,536 cycles, with a 16-bit prescaler
+ * and a 16-bit counter. A longer delay runs as the fewest equal periods that
+ * fit, so a periodic timer keeps reloading in hardware and never drifts. With
+ * two or more, each is over half the longest period, so the interrupt has
+ * plenty of time to run before the next one ends.
+ *
+ * Each period picks the smallest prescaler that fits, for the finest ticks,
+ * and rounds up. The delay never ends early, and runs fewer than `prescaler`
+ * cycles per period longer than asked. A delay of fewer than 2 cycles runs as
+ * 2, since a counter with a reload of 0 doesn't count.
+ *
+ * @param p_cycles - the delay in timer clock cycles
+ * @return timer_period - the periods that count out the delay
+ */
+export [[nodiscard]] constexpr timer_period timer_periods(u64 p_cycles)
+{
+  constexpr u64 max_divider = 65'536;
+  constexpr u64 max_period = max_divider * max_divider;
+  constexpr u64 min_period = 2;
 
-  bit_modify(p_reg->interrupt_enable_register).set(update_interrupt_enable);
+  u64 counts = 1;
+  u64 period = p_cycles;
+  if (p_cycles > max_period) {
+    counts = hal::divide<hal::rounding::ceil, u64>(
+      { .num = p_cycles, .den = max_period });
+    period =
+      hal::divide<hal::rounding::ceil, u64>({ .num = p_cycles, .den = counts });
+  }
+  period = std::max(period, min_period);
+
+  auto const prescaler = hal::divide<hal::rounding::ceil, u64>(
+    { .num = period, .den = max_divider });
+  auto const reload =
+    hal::divide<hal::rounding::ceil, u64>({ .num = period, .den = prescaler });
+
+  // NOTE: Safe to cast without narrowing: both are at most 65,536.
+  return { .counts = counts,
+           .prescaler = static_cast<u32>(prescaler),
+           .reload = static_cast<u32>(reload) };
 }
 
 /**
- * @brief Implements shared timer setup and control logic common to all STM32
- * series.
+ * @brief Delay counting shared by the STM32 basic, general-purpose and
+ * advanced timers
  *
- * This class provides the common functionality for timer configuration and
- * control, abstracting the parts of the timer interface that remain
- * consistent across different STM32 series. It is intended to be used by
- * series-specific implementations, which handle MCU-specific configuration
- * details and pass any required parameters to these generic functions.
+ * The counter counts up from 0 to ARR and raises an update interrupt each time
+ * it wraps. The platform driver claims and powers the timer, routes that
+ * interrupt, and calls `update()` from it.
+ *
+ * This class is meant to only be used by platform libraries or drivers.
  */
-export class timer final
+export class timer
 {
 public:
   /**
-   * @brief Construct timer uninitialized
+   * @brief Construct over a timer's registers
    *
-   * The purpose of this is to send the settings through the initialize
-   * function instead, because all the settings are series-specific.
-   * Therefore in the series-specific implementations of the timer, the
-   * address is deduced from the timer, as well as all the interrupt
-   * configuration is done, then they are passed to initialize.
+   * Doesn't touch the hardware.
    *
-   * It is unsafe to call any API of this class before calling the
-   * `initialize()` API with the correct inputs. Once that API has been
-   * called without failure, then the other APIs will become available.
+   * @param p_address - the timer's base address
    */
-  timer() = default;
-
-  /**
-   * @brief Determine if the timer is currently running
-   *
-   * @return true - if a callback has been scheduled and has not been
-   * invoked yet, false otherwise.
-   */
-  [[nodiscard]] bool is_running()
+  explicit timer(void* p_address)
+    : m_reg(timer_reg::from(p_address))
   {
-    constexpr auto counter_enable = hal::bit_mask::from<0>();
-    auto* reg = timer_reg::from(m_reg);
-
-    return bit_extract<counter_enable>(reg->control_register);
   }
 
   /**
-   * @brief Stops a scheduled event from happening.
+   * @brief Count out a delay, stopping any delay already counting
    *
-   * Does nothing if the timer is not currently running.
+   * Leaves the update interrupt enabled.
    *
-   * Note that there must be sufficient time between the this call
-   * finishing and the scheduled event's termination. If this call is too
-   * close to when the schedule event expires, this function may not
-   * complete before the timer interrupt is triggered.
+   * @param p_period - the periods to count, from `timer_periods()`
+   * @param p_mode - whether to stop after the delay or count it again
+   * @pre The timer is powered on.
    */
-  void cancel()
+  void start(timer_period p_period, hal::timer_mode p_mode) noexcept
   {
-    constexpr auto counter_enable = hal::bit_mask::from<0>();
-    auto* reg = timer_reg::from(m_reg);
+    stop();
 
-    bit_modify(reg->control_register).clear(counter_enable);
+    m_mode = p_mode;
+    m_counts = p_period.counts;
+    m_counts_left = p_period.counts;
+    m_armed = true;
+
+    // Count up, without one-pulse mode, and only raise an update interrupt
+    // when the counter wraps, not on the update generated below. ARR is
+    // preloaded so a new reload takes effect cleanly at the next update.
+    bit_modify(m_reg->control_register)
+      .set<control::auto_reload_preload>()
+      .clear<control::center_aligned_mode>()
+      .clear<control::direction>()
+      .clear<control::one_pulse_mode>()
+      .set<control::update_request_source>();
+    m_reg->prescale_register = p_period.prescaler - 1U;
+    m_reg->auto_reload_register = p_period.reload - 1U;
+    // Load the prescaler and reload, and restart the counter from 0
+    m_reg->event_generator_register = update_generation.value<u32>();
+    clear_update_flag();
+    bit_modify(m_reg->interrupt_enable_register).set<update_interrupt_enable>();
+    bit_modify(m_reg->control_register).set<control::counter_enable>();
   }
 
   /**
-   * @brief Schedule an interrupt to occur for this timer
+   * @brief Stop counting
    *
-   * If this is called and the timer has already scheduled an event (in
-   * other words, `is_running()` returns true), then the previous scheduled
-   * event will be canceled and the new scheduled event will be started.
+   * Does nothing if no delay is counting. A pending update interrupt is
+   * cleared, so `update()` won't report an expiry for it.
    *
-   * If the delay time result in a tick period of 0, then the timer will
-   * execute after 1 tick period. For example, if the tick period is 1ms
-   * and the requested time delay is 500us, then the event will be
-   * scheduled for 1ms.
-   *
-   * If the tick period is 1ms and the requested time is 2.5ms then the
-   * event will be scheduled after 2 tick periods or in 2ms.
-   *
-   * @param p_delay - the amount of time until the timer expires
-   * @param p_timer_clock_frequency - the clock driving the timer
-   * @throws hal::argument_out_of_domain - if p_delay cannot be achieved.
+   * @pre The timer is powered on.
    */
-  void schedule(hal::time_duration p_delay, u32 p_timer_clock_frequency)
+  void stop() noexcept
   {
-    cancel();
+    bit_modify(m_reg->control_register).clear<control::counter_enable>();
+    clear_update_flag();
+    m_armed = false;
+    m_counts_left = 0;
+  }
 
-    constexpr auto counter_enable = hal::bit_mask::from<0>();
-    constexpr auto update_generation = hal::bit_mask::from<0>();
-    constexpr auto prescaler = hal::bit_mask::from<0, 15>();
-    constexpr auto auto_reload_value = hal::bit_mask::from<0, 15>();
-    constexpr auto counter = hal::bit_mask::from<0, 15>();
-
-    auto* reg = timer_reg::from(m_reg);
-
-    constexpr u32 scale_factor = decltype(p_delay)::period::den;
-    constexpr u16 prescaler_max_value = std::numeric_limits<hal::u16>::max();
-    constexpr u16 timer_max_ticks = std::numeric_limits<hal::u16>::max();
-    constexpr u16 timer_reset_value = 0;
-
-    u32 const time_per_tick_ns = scale_factor / p_timer_clock_frequency;
-    // Check if CPU Frequency too fast
-    if (time_per_tick_ns == 0) {
-      throw hal::argument_out_of_domain(this);
+  /**
+   * @brief Handle the update interrupt
+   *
+   * Call from the timer's update interrupt. A periodic delay starts counting
+   * again, and a one-shot delay stops, before this returns, so the caller is
+   * free to start or stop the timer from its callback.
+   *
+   * @return true - the delay has run out
+   * @return false - more periods are left, or the interrupt wasn't an update
+   * @pre The timer is powered on.
+   */
+  [[nodiscard]] bool update() noexcept
+  {
+    if (not bit_is_set<update_interrupt_flag>(m_reg->status_register)) {
+      return false;
     }
-    // Use 64-bit to prevent immediate overflow. If still too big after
-    // division, exception thrown.
-    u64 const ticks_required = p_delay.count() / time_per_tick_ns;
-    u64 const prescaler_value = ticks_required / timer_max_ticks;
-    if (prescaler_value > prescaler_max_value) {
-      throw hal::argument_out_of_domain(this);
+    clear_update_flag();
+    if (m_counts_left == 0) {
+      return false;
     }
 
-    u16 prescaler_ticks_required = 0;
-    // When the delay amount is shorter than one clock cycle
-    if (ticks_required == 0) {
-      prescaler_ticks_required = 1;
+    // The counter has already wrapped and is counting the next period.
+    m_counts_left = m_counts_left - 1U;
+    if (m_counts_left > 0) {
+      return false;
+    }
+
+    if (m_mode == hal::timer_mode::periodic) {
+      m_counts_left = m_counts;
     } else {
-      u32 const prescaler_frequency =
-        p_timer_clock_frequency / (static_cast<u16>(prescaler_value) + 1);
-      u32 const prescaler_time_per_tick_ns = scale_factor / prescaler_frequency;
-      prescaler_ticks_required =
-        static_cast<u16>(p_delay.count() / prescaler_time_per_tick_ns);
+      bit_modify(m_reg->control_register).clear<control::counter_enable>();
+      m_armed = false;
     }
-
-    bit_modify(reg->prescale_register)
-      .insert<prescaler>(static_cast<u16>(prescaler_value));
-    bit_modify(reg->auto_reload_register)
-      .insert<auto_reload_value>(prescaler_ticks_required);
-    bit_modify(reg->counter_register).insert<counter>(timer_reset_value);
-    bit_modify(reg->event_generator_register).set(update_generation);
-    bit_modify(reg->control_register).set(counter_enable);
+    return true;
   }
 
   /**
-   * @brief Initialize the timer with the series-specific settings
+   * @brief Whether a delay is counting
    *
-   * This is where the constructed uninitialized timer gets initialized. It
-   * gets all the series-specific settings passed to it that it needs, and
-   * it handles them appropriately.
-   *
-   * @param p_peripheral_address - the address of the chosen timer
-   * peripheral
-   * @param p_initialize_interrupts_function - the function needed to
-   * initialize interrupts for the specific series stm32. For example, for
-   * the stm32f1 series, the function passed would be
-   * `hal::stm32f1::initialize_interrupts()`.
-   * @param p_irq - the irq number for the chosen timer
-   * @param p_handler - the platform specific interrupt handler to be
-   * installed
-   * @throws hal::device_or_resource_busy - if the timer interrupt vector is
-   * already in use.
+   * @return true - a one-shot delay hasn't run out, or a periodic delay is
+   * counting
    */
-  void initialize(void* p_peripheral_address,
-                  void (*p_initialize_interrupts_function)(),
-                  cortex_m::irq_t p_irq,
-                  cortex_m::interrupt_pointer p_handler)
+  [[nodiscard]] bool armed() const noexcept
   {
-    m_reg = p_peripheral_address;
-    p_initialize_interrupts_function();
-    if (hal::cortex_m::is_interrupt_enabled(p_irq)) {
-      throw hal::device_or_resource_busy(this);
-    }
-    cortex_m::enable_interrupt(p_irq, p_handler);
-    setup(timer_reg::from(m_reg));
+    return m_armed;
   }
 
 private:
-  /// Stores the base address of the timer
-  void* m_reg = nullptr;
-};
+  using control = timer_bits::control;
+  static constexpr auto update_interrupt_enable =
+    timer_bits::update_interrupt_enable;
+  static constexpr auto update_interrupt_flag =
+    timer_bits::update_interrupt_flag;
+  static constexpr auto update_generation = timer_bits::update_generation;
 
-void setup_channel(int p_channel, timer_reg* p_reg)
-{
-  constexpr auto odd_channel_input_mode = bit_mask::from<0, 1>();
-  constexpr auto odd_channel_filter_select = bit_mask::from<4, 7>();
-
-  constexpr auto even_channel_input_mode = bit_mask::from<8, 9>();
-  constexpr auto even_channel_filter_select = bit_mask::from<12, 15>();
-
-  constexpr auto input_select = 0b01U;
-  constexpr auto input_capture_filter = 0b0000U;
-
-  // Select the TI1 and TI2 polarity by programming the CC1P and CC2P bits in
-  // the TIMx_CCER register. When needed, the user can program the input
-  // filter as well. find out which pin is what channel
-  switch (p_channel) {
-    case 1:
-      bit_modify(p_reg->capture_compare_mode_register)
-        .insert<odd_channel_input_mode>(input_select)
-        .insert<odd_channel_filter_select>(input_capture_filter);
-      break;
-    case 2:
-      bit_modify(p_reg->capture_compare_mode_register)
-        .insert<even_channel_input_mode>(input_select)
-        .insert<even_channel_filter_select>(input_capture_filter);
-      break;
-    default:
-      std::unreachable();
-  }
-}
-
-void setup_enable_register(int p_channel, timer_reg* p_reg)
-{
-  // The polarity bit is the second bit in a set of 4 bits per channel.
-  // Therefore if it is channel 1-> bit 1, channel 2-> bit->5. Application
-  // Note Pg: 353
-  auto const polarity_start_pos = ((p_channel - 1) * 4) + 1;
-
-  // Similar to polarity bits, capture_enable bits are the first bit in a
-  // set of 4 bits per channel. Application Note Pg: 353.
-  auto const input_capture_enable = ((p_channel - 1) * 4);
-
-  auto const input_start_pos = bit_mask::from(input_capture_enable);
-  auto const polarity_inverted = bit_mask::from(polarity_start_pos);
-
-  bit_modify(p_reg->cc_enable_register).clear(polarity_inverted);
-  bit_modify(p_reg->cc_enable_register).set(input_start_pos);
-}
-
-/**
- * @brief These are the 2 channels from the same timer that a user must use.
- *
- * They must be channel 1 and channel 2 of any timer. If channel 1 and
- * channel 2 are flipped, the order of these parameters are important
- * otherwise the counter will work in the opposite direction.
- */
-export struct encoder_channels
-{
-  u8 channel_a;
-  u8 channel_b;
-};
-
-/**
- * @brief This class should not be constructed directly.
- *
- * The user should instantiate a platform specific timer class and acquire a
- * quadrature encoder through that class.
- */
-export class quadrature_encoder final : public hal::rotation_sensor
-{
-public:
-  /**
-   * @brief Construct generic stm32 quadrature encoder driver
-   *
-   * @param p_channels - the two timer channels used for quadrature decoding
-   * @param p_reg - address of the timer peripheral
-   * @param p_pulses_per_rotation - number of encoder pulses per full
-   * rotation
-   */
-  quadrature_encoder(encoder_channels p_channels,
-                     void* p_reg,
-                     u32 p_pulses_per_rotation)
+  void clear_update_flag() noexcept
   {
-    initialize(p_channels, p_reg, p_pulses_per_rotation);
+    // The status flags are cleared by writing 0. Writing 1 leaves them as
+    // they are, so only UIF clears.
+    m_reg->status_register = ~update_interrupt_flag.value<u32>();
   }
 
-  /**
-   * @brief Construct quadrature encoder uninitialized
-   *
-   * It is unsafe to call any API of this class before calling the
-   * `initialize()` API with the correct inputs. Once that API has been
-   * called without failure, then the other APIs will become available.
-   */
-  quadrature_encoder() = default;
-
-  /**
-   * @brief Initialize the driver if the default `quadrature_encoder()` was
-   * used
-   *
-   * @param p_channels - the two timer channels used for quadrature decoding
-   * @param p_reg - address of the timer peripheral
-   * @param p_pulses_per_rotation - number of encoder pulses per full
-   * rotation
-   */
-  void initialize(encoder_channels p_channels,
-                  void* p_reg,
-                  u32 p_pulses_per_rotation)
-  {
-    m_reg = p_reg;
-    m_pulses_per_rotation = static_cast<float>(p_pulses_per_rotation);
-
-    auto* timer_register = timer_reg::from(m_reg);
-    constexpr auto set_encoder_mode = bit_mask::from<0, 2>();
-    // encoder counts up/down on only TI2FP1 level
-    constexpr auto encoder_mode_3 = 0b010U;
-
-    setup_channel(p_channels.channel_a, timer_register);
-    setup_channel(p_channels.channel_b, timer_register);
-    setup_enable_register(p_channels.channel_a, timer_register);
-    setup_enable_register(p_channels.channel_b, timer_register);
-    timer_register->auto_reload_register = 0xFFFF;  // Set max counter value
-    timer_register->counter_register = 0x8000;      // Start at middle value
-    bit_modify(timer_register->peripheral_control_register)
-      .insert<set_encoder_mode>(encoder_mode_3);
-    constexpr auto counter_enable = bit_mask::from<0>();
-    bit_modify(timer_register->control_register).set(counter_enable);
-  }
-
-private:
-  async::future<revolutions> driver_read(async::context&) override
-  {
-    auto* timer_register = timer_reg::from(m_reg);
-    // difference from start pos
-    i32 const diff_pulses =
-      static_cast<u16>(timer_register->counter_register) - 0x8000;
-
-    // pulses / pulses_per_rotation = revolutions.
-    auto const revolution_count =
-      static_cast<float>(diff_pulses) / m_pulses_per_rotation;
-
-    return revolution_count * mp_units::angular::revolution;
-  }
-
-  void* m_reg = nullptr;
-  float m_pulses_per_rotation = 1.0f;
+  timer_reg* m_reg;
+  u64 m_counts = 0;
+  u64 m_counts_left = 0;
+  hal::timer_mode m_mode = hal::timer_mode::one_shot;
+  bool m_armed = false;
 };
 }  // namespace hal::stm32_generic

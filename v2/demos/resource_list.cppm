@@ -56,6 +56,7 @@ export namespace resources {
 // storage. static_ref proves that at compile time: a non-static object won't
 // convert to it.
 hal::static_ref<hal::steady_clock> clock();
+hal::static_ref<hal::timed_interrupt> timer();
 hal::static_ref<hal::output_pin> status_led();
 hal::static_ref<hal::input_pin> input_pin();
 hal::static_ref<hal::edge_triggered_interrupt> edge_interrupt();

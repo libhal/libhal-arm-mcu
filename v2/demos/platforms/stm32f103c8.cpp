@@ -103,6 +103,25 @@ hal::static_ref<hal::steady_clock> chained_32bit_timer_clock()
   return tim1_tim4;
 }
 
+hal::static_ref<hal::stm32f1::pwm> timer3_pwm()
+{
+  static hal::stm32f1::pwm pwm3(hal::stm32f1::peripheral::timer3);
+  return pwm3;
+}
+
+hal::static_ref<hal::pwm_group_manager> pwm_group()
+{
+  return timer3_pwm();
+}
+
+hal::static_ref<hal::pwm16_channel> pwm_channel()
+{
+  // PB1: MicroMod A1, pin 38
+  static hal::stm32f1::pwm::channel channel4(timer3_pwm(),
+                                             hal::stm32f1::timer_channel::ch4);
+  return channel4;
+}
+
 hal::static_ref<hal::output_pin> status_led()
 {
   static hal::stm32f1::output_pin led({ .port = 'C', .pin = 13 });

@@ -24,9 +24,67 @@ import hal.util;
 import hal.arm_mcu.stm32_generic;
 
 import :constants;
+import :pin;
 
 namespace hal::stm32f1 {
+/**
+ * @brief Which pins a timer's channels use, by AFIO remap (RM0008 Tables 43
+ * to 46)
+ *
+ * The names follow RM0008. Channels CH1, CH2, CH3 and CH4 use:
+ *
+ * - TIM1: `none` and `partial_1`: PA8, PA9, PA10, PA11. `full`: PE9, PE11,
+ *   PE13, PE14. The partial remap only moves ETR, BKIN and the complementary
+ *   outputs.
+ * - TIM2: `none`: PA0, PA1, PA2, PA3. `partial_1`: PA15, PB3, PA2, PA3.
+ *   `partial_2`: PA0, PA1, PB10, PB11. `full`: PA15, PB3, PB10, PB11.
+ * - TIM3: `none`: PA6, PA7, PB0, PB1. `partial_1`: PB4, PB5, PB0, PB1.
+ *   `full`: PC6, PC7, PC8, PC9.
+ * - TIM4: `none`: PB6, PB7, PB8, PB9. `full`: PD12, PD13, PD14, PD15.
+ * - TIM5: `none`: PA0, PA1, PA2, PA3.
+ * - TIM8: `none`: PC6, PC7, PC8, PC9.
+ *
+ * The full remaps of TIM1 and TIM4 exist only on 100- and 144-pin packages,
+ * and TIM3's on 64-pin and larger.
+ */
+export enum class timer_remap : u8 {
+  /// The default pins
+  none,
+  /// RM0008's partial remap (TIM2: TIM2_REMAP = 0b01)
+  partial_1,
+  /// TIM2's second partial remap (TIM2_REMAP = 0b10)
+  partial_2,
+  /// RM0008's full remap
+  full,
+};
+
+/// One of a timer's four channels
+export enum class timer_channel : u8 {
+  ch1,
+  ch2,
+  ch3,
+  ch4,
+};
+
 // ---- Shared by the timer drivers, not exported ----------------------------
+
+/// A timer's channel pins for one remap, and the value for its MAPR field
+struct timer_pin_set
+{
+  std::array<pin, 4> channels;
+  u32 remap_value;
+};
+
+/**
+ * @brief The pins a timer's channels use with a remap
+ *
+ * @throws hal::operation_not_supported - if the timer has no channel outputs
+ * (TIM6, TIM7) or no such remap
+ */
+timer_pin_set timer_pins(peripheral p_id, timer_remap p_remap);
+
+/// Write a timer's remap field in AFIO MAPR. AFIO must be powered on.
+void apply_timer_remap(peripheral p_id, u32 p_value);
 
 /// Where a timer lives and which interrupt reports its updates
 struct timer_route

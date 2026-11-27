@@ -42,7 +42,7 @@ libhal_add_library(arm-mcu
         modules/stm32_generic/registers.cppm
         modules/stm32_generic/dma.cppm
         modules/stm32_generic/i2c.cppm
-        # modules/stm32_generic/pwm.cppm
+        modules/stm32_generic/pwm.cppm
         modules/stm32_generic/spi.cppm
         modules/stm32_generic/timer.cppm
         modules/stm32_generic/uart.cppm
@@ -61,6 +61,7 @@ libhal_add_library(arm-mcu
         modules/stm32f1/independent_watchdog.cppm
         modules/stm32f1/can.cppm
         modules/stm32f1/timer.cppm
+        modules/stm32f1/pwm.cppm
         # modules/stm32f1/usb.cppm
     SOURCES
         src/dwt_counter.cpp
@@ -76,6 +77,7 @@ libhal_add_library(arm-mcu
         src/stm32f1/can.cpp
         src/stm32f1/timer.cpp
         src/stm32f1/timer_clock.cpp
+        src/stm32f1/pwm.cpp
         # src/stm32f1/usb.cpp
 )
 
@@ -178,6 +180,7 @@ libhal_add_tests(arm-mcu
         i2c
         pin
         power
+        pwm
         spi
         timer
         uart

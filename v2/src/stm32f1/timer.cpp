@@ -27,6 +27,7 @@ import hal.arm_mcu.stm32_generic;
 import :constants;
 import :power;
 import :clock;
+import :pin;
 import :timer;
 
 namespace hal::stm32f1 {
@@ -90,6 +91,103 @@ void route_timer_interrupt(u8 p_index, timer_handler p_handler, void* p_object)
 {
   timer_slots[p_index] = { .handler = p_handler, .object = p_object };
   cortex_m::enable_interrupt(timer_routes[p_index].interrupt, &timer_isr);
+}
+
+timer_pin_set timer_pins(peripheral p_id, timer_remap p_remap)
+{
+  auto const set = [](pin p_ch1, pin p_ch2, pin p_ch3, pin p_ch4, u32 p_value) {
+    return timer_pin_set{ .channels = { p_ch1, p_ch2, p_ch3, p_ch4 },
+                          .remap_value = p_value };
+  };
+  auto const pa = [](u8 p_pin) { return pin{ .port = 'A', .pin = p_pin }; };
+  auto const pb = [](u8 p_pin) { return pin{ .port = 'B', .pin = p_pin }; };
+  auto const pc = [](u8 p_pin) { return pin{ .port = 'C', .pin = p_pin }; };
+  auto const pd = [](u8 p_pin) { return pin{ .port = 'D', .pin = p_pin }; };
+  auto const pe = [](u8 p_pin) { return pin{ .port = 'E', .pin = p_pin }; };
+
+  // RM0008 Tables 43 to 46
+  switch (p_id) {
+    case peripheral::timer1:
+      switch (p_remap) {
+        case timer_remap::none:
+          return set(pa(8), pa(9), pa(10), pa(11), 0b00);
+        case timer_remap::partial_1:
+          return set(pa(8), pa(9), pa(10), pa(11), 0b01);
+        case timer_remap::full:
+          return set(pe(9), pe(11), pe(13), pe(14), 0b11);
+        default:
+          break;
+      }
+      break;
+    case peripheral::timer2:
+      switch (p_remap) {
+        case timer_remap::none:
+          return set(pa(0), pa(1), pa(2), pa(3), 0b00);
+        case timer_remap::partial_1:
+          return set(pa(15), pb(3), pa(2), pa(3), 0b01);
+        case timer_remap::partial_2:
+          return set(pa(0), pa(1), pb(10), pb(11), 0b10);
+        case timer_remap::full:
+          return set(pa(15), pb(3), pb(10), pb(11), 0b11);
+      }
+      break;
+    case peripheral::timer3:
+      switch (p_remap) {
+        case timer_remap::none:
+          return set(pa(6), pa(7), pb(0), pb(1), 0b00);
+        case timer_remap::partial_1:
+          return set(pb(4), pb(5), pb(0), pb(1), 0b10);
+        case timer_remap::full:
+          return set(pc(6), pc(7), pc(8), pc(9), 0b11);
+        default:
+          break;
+      }
+      break;
+    case peripheral::timer4:
+      switch (p_remap) {
+        case timer_remap::none:
+          return set(pb(6), pb(7), pb(8), pb(9), 0b0);
+        case timer_remap::full:
+          return set(pd(12), pd(13), pd(14), pd(15), 0b1);
+        default:
+          break;
+      }
+      break;
+    case peripheral::timer5:
+      if (p_remap == timer_remap::none) {
+        return set(pa(0), pa(1), pa(2), pa(3), 0);
+      }
+      break;
+    case peripheral::timer8:
+      if (p_remap == timer_remap::none) {
+        return set(pc(6), pc(7), pc(8), pc(9), 0);
+      }
+      break;
+    default:
+      break;
+  }
+  throw hal::operation_not_supported(nullptr);
+}
+
+void apply_timer_remap(peripheral p_id, u32 p_value)
+{
+  switch (p_id) {
+    case peripheral::timer1:
+      write_remap<pin_remap::tim1_rempap>(p_value);
+      break;
+    case peripheral::timer2:
+      write_remap<pin_remap::tim2_rempap>(p_value);
+      break;
+    case peripheral::timer3:
+      write_remap<pin_remap::tim3_rempap>(p_value);
+      break;
+    case peripheral::timer4:
+      write_remap<pin_remap::tim4_rempap>(p_value);
+      break;
+    default:
+      // TIM5 and TIM8 have no remap
+      break;
+  }
 }
 
 void* timer_address(u8 p_index)

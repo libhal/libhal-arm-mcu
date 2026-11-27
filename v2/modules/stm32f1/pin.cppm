@@ -81,6 +81,33 @@ struct alternative_function_io_t
 inline auto* alternative_function_io =
   reinterpret_cast<alternative_function_io_t*>(0x4001'0000);
 
+/// MAPR's SWJ_CFG field: which of the JTAG and SWD pins the debug port keeps
+constexpr auto swj_config = hal::bit_mask::from<24, 26>();
+
+/// The SWJ_CFG value last written. 0b000, the reset value, keeps all of them.
+/// The field reads back undefined (RM0008 section 9.4.2), so every MAPR write
+/// puts this back. Otherwise a remap writes back whatever SWJ_CFG reads as,
+/// which can hand PB3, PB4 and PA15 back to JTAG. Writing a value the table
+/// calls "no effect" isn't an option: RM0008 section 31.4.2 forbids setting
+/// more than one of its bits.
+constinit u32 written_swj_config = 0b000U;
+
+/**
+ * @brief Write one remap field of AFIO MAPR, keeping the debug port setting
+ *
+ * AFIO must be powered on.
+ *
+ * @tparam Field - the MAPR field to write
+ * @param p_value - the field's new value
+ */
+template<hal::bit_mask Field>
+void write_remap(u32 p_value)
+{
+  bit_modify(alternative_function_io->mapr)
+    .insert<swj_config>(written_swj_config)
+    .template insert<Field>(p_value);
+}
+
 /**
  * @brief GPIO register map
  *
@@ -357,9 +384,10 @@ export void release_jtag_pins()
   if (not is_on(peripheral::afio)) {
     power_on(peripheral::afio);
   }
-  // Set the JTAG Release code
+  // Keep SWD, release JTAG's other pins
+  written_swj_config = 0b010U;
   bit_modify(alternative_function_io->mapr)
-    .insert<bit_mask::from<24, 26>()>(0b010U);
+    .insert<swj_config>(written_swj_config);
 }
 
 /// One bit per pin of ports A to G, set while a driver has claimed the pin.
@@ -519,7 +547,7 @@ constexpr auto can_pin_remap = bit_mask::from<14, 13>();
  */
 export void remap_pins(can_pins p_pin)
 {
-  bit_modify(alternative_function_io->mapr).insert<can_pin_remap>(value(p_pin));
+  write_remap<can_pin_remap>(value(p_pin));
 }
 
 /**

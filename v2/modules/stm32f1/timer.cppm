@@ -125,10 +125,10 @@ private:
   void driver_on_expire(hal::timed_callback& p_callback) override;
   void driver_clear_expire() noexcept override;
 
-  u8 m_index;
   hal::hertz m_frequency;
   hal::stm32_generic::timer m_driver;
   hal::timed_callback* volatile m_callback = nullptr;
+  u8 m_index;
 };
 
 /// Settings for a `timer_clock_16bit`

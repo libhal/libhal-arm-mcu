@@ -113,6 +113,7 @@ public:
    *
    * @param p_period - the periods to count, from `timer_periods()`
    * @param p_mode - whether to stop after the delay or count it again
+   * @pre The timer is powered on.
    */
   void start(timer_period p_period, hal::timer_mode p_mode) noexcept
   {
@@ -146,6 +147,8 @@ public:
    *
    * Does nothing if no delay is counting. A pending update interrupt is
    * cleared, so `update()` won't report an expiry for it.
+   *
+   * @pre The timer is powered on.
    */
   void stop() noexcept
   {
@@ -164,6 +167,7 @@ public:
    *
    * @return true - the delay has run out
    * @return false - more periods are left, or the interrupt wasn't an update
+   * @pre The timer is powered on.
    */
   [[nodiscard]] bool update() noexcept
   {
@@ -202,22 +206,12 @@ public:
   }
 
 private:
-  /// Bit masks for TIMx_CR1
-  struct control
-  {
-    static constexpr auto counter_enable = hal::bit_mask::from<0>();
-    static constexpr auto update_request_source = hal::bit_mask::from<2>();
-    static constexpr auto one_pulse_mode = hal::bit_mask::from<3>();
-    static constexpr auto direction = hal::bit_mask::from<4>();
-    static constexpr auto center_aligned_mode = hal::bit_mask::from<5, 6>();
-    static constexpr auto auto_reload_preload = hal::bit_mask::from<7>();
-  };
-  /// UIE in TIMx_DIER
-  static constexpr auto update_interrupt_enable = hal::bit_mask::from<0>();
-  /// UIF in TIMx_SR
-  static constexpr auto update_interrupt_flag = hal::bit_mask::from<0>();
-  /// UG in TIMx_EGR
-  static constexpr auto update_generation = hal::bit_mask::from<0>();
+  using control = timer_bits::control;
+  static constexpr auto update_interrupt_enable =
+    timer_bits::update_interrupt_enable;
+  static constexpr auto update_interrupt_flag =
+    timer_bits::update_interrupt_flag;
+  static constexpr auto update_generation = timer_bits::update_generation;
 
   void clear_update_flag() noexcept
   {

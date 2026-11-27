@@ -61,6 +61,7 @@ hal::static_ref<hal::steady_clock> timer_clock_16bit();
 hal::static_ref<hal::steady_clock> chained_32bit_timer_clock();
 hal::static_ref<hal::pwm_group_manager> pwm_group();
 hal::static_ref<hal::pwm16_channel> pwm_channel();
+hal::static_ref<hal::rotation_sensor> rotation_sensor();
 hal::static_ref<hal::output_pin> status_led();
 hal::static_ref<hal::input_pin> input_pin();
 hal::static_ref<hal::edge_triggered_interrupt> edge_interrupt();

@@ -1,4 +1,4 @@
-// Copyright 2024 - 2025 Khalil Estell and the libhal contributors
+// Copyright 2024 - 2026 Khalil Estell and the libhal contributors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,14 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Not built yet: carried over unported from the old stm32_generic timer, for
-// the quadrature encoder port.
-
-module;
-
-#include <limits>
-#include <utility>
-
 export module hal.arm_mcu.stm32_generic:quadrature_encoder;
 
 import hal;
@@ -29,149 +21,194 @@ import hal.arm_mcu.cortex_m;
 import :registers;
 
 namespace hal::stm32_generic {
-void setup_channel(int p_channel, timer_reg* p_reg)
+/**
+ * @brief Which way a quadrature counter wrapped, from its count just after
+ *
+ * The counter wraps from 65,535 to 0 counting up, and from 0 to 65,535
+ * counting down. Read soon after the wrap, the count is near the end it
+ * wrapped to. Using the count, not the direction bit, keeps a wrap right when
+ * the shaft turns back right after it without crossing back.
+ *
+ * @param p_count - the counter, read after the wrap flag
+ * @return i64 - +1 for a wrap counting up, -1 for one counting down
+ */
+export [[nodiscard]] constexpr i64 quadrature_wrap(u32 p_count)
 {
-  constexpr auto odd_channel_input_mode = bit_mask::from<0, 1>();
-  constexpr auto odd_channel_filter_select = bit_mask::from<4, 7>();
-
-  constexpr auto even_channel_input_mode = bit_mask::from<8, 9>();
-  constexpr auto even_channel_filter_select = bit_mask::from<12, 15>();
-
-  constexpr auto input_select = 0b01U;
-  constexpr auto input_capture_filter = 0b0000U;
-
-  // Select the TI1 and TI2 polarity by programming the CC1P and CC2P bits in
-  // the TIMx_CCER register. When needed, the user can program the input
-  // filter as well. find out which pin is what channel
-  switch (p_channel) {
-    case 1:
-      bit_modify(p_reg->capture_compare_mode_register)
-        .insert<odd_channel_input_mode>(input_select)
-        .insert<odd_channel_filter_select>(input_capture_filter);
-      break;
-    case 2:
-      bit_modify(p_reg->capture_compare_mode_register)
-        .insert<even_channel_input_mode>(input_select)
-        .insert<even_channel_filter_select>(input_capture_filter);
-      break;
-    default:
-      std::unreachable();
-  }
-}
-
-void setup_enable_register(int p_channel, timer_reg* p_reg)
-{
-  // The polarity bit is the second bit in a set of 4 bits per channel.
-  // Therefore if it is channel 1-> bit 1, channel 2-> bit->5. Application
-  // Note Pg: 353
-  auto const polarity_start_pos = ((p_channel - 1) * 4) + 1;
-
-  // Similar to polarity bits, capture_enable bits are the first bit in a
-  // set of 4 bits per channel. Application Note Pg: 353.
-  auto const input_capture_enable = ((p_channel - 1) * 4);
-
-  auto const input_start_pos = bit_mask::from(input_capture_enable);
-  auto const polarity_inverted = bit_mask::from(polarity_start_pos);
-
-  bit_modify(p_reg->cc_enable_register).clear(polarity_inverted);
-  bit_modify(p_reg->cc_enable_register).set(input_start_pos);
+  return (p_count < 0x8000U) ? 1 : -1;
 }
 
 /**
- * @brief These are the 2 channels from the same timer that a user must use.
+ * @brief Combine a quadrature counter's wraps and count into one signed count
  *
- * They must be channel 1 and channel 2 of any timer. If channel 1 and
- * channel 2 are flipped, the order of these parameters are important
- * otherwise the counter will work in the opposite direction.
+ * @param p_wraps - net wraps: up wraps minus down wraps
+ * @param p_count - the 16-bit counter
+ * @return i64 - counts since the counter started at 0
  */
-export struct encoder_channels
+export [[nodiscard]] constexpr i64 quadrature_position(i64 p_wraps, u32 p_count)
 {
-  u8 channel_a;
-  u8 channel_b;
-};
+  return (p_wraps * 65'536) + static_cast<i64>(p_count);
+}
 
 /**
- * @brief This class should not be constructed directly.
+ * @brief A quadrature encoder count shared by the STM32 timers
  *
- * The user should instantiate a platform specific timer class and acquire a
- * quadrature encoder through that class.
+ * Runs the timer in encoder mode 3: the counter counts every edge of both
+ * TI1 and TI2, four counts per encoder pulse, up or down by which input leads.
+ * The 16-bit counter wraps, raising an update interrupt. The platform driver
+ * calls `update()` from that interrupt, which counts the wrap, and `count()`
+ * combines the wraps with the counter into a signed 64-bit count.
+ *
+ * This class is meant to only be used by platform libraries or drivers.
  */
-export class quadrature_encoder final : public hal::rotation_sensor
+export class quadrature_counter
 {
 public:
   /**
-   * @brief Construct generic stm32 quadrature encoder driver
+   * @brief Construct over a timer's registers
    *
-   * @param p_channels - the two timer channels used for quadrature decoding
-   * @param p_reg - address of the timer peripheral
-   * @param p_pulses_per_rotation - number of encoder pulses per full
-   * rotation
+   * Doesn't touch the hardware.
+   *
+   * @param p_address - the timer's base address
    */
-  quadrature_encoder(encoder_channels p_channels,
-                     void* p_reg,
-                     u32 p_pulses_per_rotation)
+  explicit quadrature_counter(void* p_address)
+    : m_reg(timer_reg::from(p_address))
   {
-    initialize(p_channels, p_reg, p_pulses_per_rotation);
   }
 
   /**
-   * @brief Construct quadrature encoder uninitialized
+   * @brief Start counting from 0 in encoder mode 3
    *
-   * It is unsafe to call any API of this class before calling the
-   * `initialize()` API with the correct inputs. Once that API has been
-   * called without failure, then the other APIs will become available.
+   * Both inputs are filtered: an edge must hold for 8 timer clock cycles to
+   * count, 111 ns at 72 MHz.
    */
-  quadrature_encoder() = default;
+  void start() noexcept
+  {
+    stop();
+    m_wraps = 0;
+
+    // Only raise an update interrupt when the counter wraps, not on the
+    // update generated below.
+    bit_modify(m_reg->control_register)
+      .clear<control::center_aligned_mode>()
+      .clear<control::one_pulse_mode>()
+      .set<control::update_request_source>();
+    // CC1S = CC2S = 0b01: IC1 on TI1 and IC2 on TI2, each with the filter
+    m_reg->capture_compare_mode_register = bit_value<u32>(0)
+                                             .insert<mode::cc1_select>(0b01U)
+                                             .insert<mode::ic1_filter>(filter)
+                                             .insert<mode::cc2_select>(0b01U)
+                                             .insert<mode::ic2_filter>(filter)
+                                             .get();
+    // CC1P = CC2P = 0: count the inputs as they are, not inverted
+    m_reg->cc_enable_register = 0;
+    bit_modify(m_reg->peripheral_control_register)
+      .insert<slave_mode_select>(encoder_mode_3);
+    m_reg->prescale_register = 0;
+    m_reg->auto_reload_register = 0xFFFF;
+    // Load the prescaler, then start from 0
+    m_reg->event_generator_register = update_generation.value<u32>();
+    m_reg->counter_register = 0;
+    clear_wrap_flag();
+    bit_modify(m_reg->interrupt_enable_register).set<update_interrupt_enable>();
+    bit_modify(m_reg->control_register).set<control::counter_enable>();
+  }
+
+  /// Stop counting. `count()` keeps returning the last count.
+  void stop() noexcept
+  {
+    bit_modify(m_reg->control_register).clear<control::counter_enable>();
+    bit_modify(m_reg->interrupt_enable_register)
+      .clear<update_interrupt_enable>();
+  }
 
   /**
-   * @brief Initialize the driver if the default `quadrature_encoder()` was
-   * used
+   * @brief Handle the update interrupt: count a wrap
    *
-   * @param p_channels - the two timer channels used for quadrature decoding
-   * @param p_reg - address of the timer peripheral
-   * @param p_pulses_per_rotation - number of encoder pulses per full
-   * rotation
+   * Call from the timer's update interrupt. Does nothing if the interrupt
+   * wasn't a wrap.
    */
-  void initialize(encoder_channels p_channels,
-                  void* p_reg,
-                  u32 p_pulses_per_rotation)
+  void update() noexcept
   {
-    m_reg = p_reg;
-    m_pulses_per_rotation = static_cast<float>(p_pulses_per_rotation);
+    // Masked so a higher-priority interrupt calling count() can't see the
+    // flag cleared before the wrap is counted.
+    cortex_m::interrupt_mask_guard const mask;
+    count_pending_wrap();
+  }
 
-    auto* timer_register = timer_reg::from(m_reg);
-    constexpr auto set_encoder_mode = bit_mask::from<0, 2>();
-    // encoder counts up/down on only TI2FP1 level
-    constexpr auto encoder_mode_3 = 0b010U;
-
-    setup_channel(p_channels.channel_a, timer_register);
-    setup_channel(p_channels.channel_b, timer_register);
-    setup_enable_register(p_channels.channel_a, timer_register);
-    setup_enable_register(p_channels.channel_b, timer_register);
-    timer_register->auto_reload_register = 0xFFFF;  // Set max counter value
-    timer_register->counter_register = 0x8000;      // Start at middle value
-    bit_modify(timer_register->peripheral_control_register)
-      .insert<set_encoder_mode>(encoder_mode_3);
-    constexpr auto counter_enable = bit_mask::from<0>();
-    bit_modify(timer_register->control_register).set(counter_enable);
+  /**
+   * @brief Counts since `start()`: four per encoder pulse, signed
+   *
+   * Safe to call from any context, including with interrupts masked, as long
+   * as the shaft doesn't cross the counter's wrap point and back while they
+   * are.
+   *
+   * @return i64 - counts since the counter started
+   */
+  [[nodiscard]] i64 count() noexcept
+  {
+    cortex_m::interrupt_mask_guard const mask;
+    while (true) {
+      auto const counter = m_reg->counter_register & 0xFFFFU;
+      // A wrap after this read leaves the flag clear here, so the counter
+      // read above comes before it, matching m_wraps.
+      if (not count_pending_wrap()) {
+        return quadrature_position(m_wraps, counter);
+      }
+      // A wrap came before or during the read: it is counted now, so read
+      // the counter again.
+    }
   }
 
 private:
-  async::future<revolutions> driver_read(async::context&) override
+  /// Bit masks for TIMx_CR1
+  struct control
   {
-    auto* timer_register = timer_reg::from(m_reg);
-    // difference from start pos
-    i32 const diff_pulses =
-      static_cast<u16>(timer_register->counter_register) - 0x8000;
+    static constexpr auto counter_enable = hal::bit_mask::from<0>();
+    static constexpr auto update_request_source = hal::bit_mask::from<2>();
+    static constexpr auto one_pulse_mode = hal::bit_mask::from<3>();
+    static constexpr auto center_aligned_mode = hal::bit_mask::from<5, 6>();
+  };
+  /// Bit masks for TIMx_CCMR1 in input capture mode
+  struct mode
+  {
+    static constexpr auto cc1_select = hal::bit_mask::from<0, 1>();
+    static constexpr auto ic1_filter = hal::bit_mask::from<4, 7>();
+    static constexpr auto cc2_select = hal::bit_mask::from<8, 9>();
+    static constexpr auto ic2_filter = hal::bit_mask::from<12, 15>();
+  };
+  /// SMS in TIMx_SMCR
+  static constexpr auto slave_mode_select = hal::bit_mask::from<0, 2>();
+  /// SMS = 0b011: count both edges of both inputs
+  static constexpr u32 encoder_mode_3 = 0b011;
+  /// ICxF = 0b0011: sample at the timer clock, 8 samples must agree
+  static constexpr u32 filter = 0b0011;
+  /// UIE in TIMx_DIER
+  static constexpr auto update_interrupt_enable = hal::bit_mask::from<0>();
+  /// UIF in TIMx_SR
+  static constexpr auto update_interrupt_flag = hal::bit_mask::from<0>();
+  /// UG in TIMx_EGR
+  static constexpr auto update_generation = hal::bit_mask::from<0>();
 
-    // pulses / pulses_per_rotation = revolutions.
-    auto const revolution_count =
-      static_cast<float>(diff_pulses) / m_pulses_per_rotation;
-
-    return revolution_count * mp_units::angular::revolution;
+  /// Count a wrap if one is waiting. Call with interrupts masked.
+  bool count_pending_wrap() noexcept
+  {
+    if (not bit_is_set<update_interrupt_flag>(m_reg->status_register)) {
+      return false;
+    }
+    clear_wrap_flag();
+    // Read after the flag, so the count is from after the wrap
+    m_wraps = m_wraps + quadrature_wrap(m_reg->counter_register & 0xFFFFU);
+    return true;
   }
 
-  void* m_reg = nullptr;
-  float m_pulses_per_rotation = 1.0f;
+  void clear_wrap_flag() noexcept
+  {
+    // The status flags are cleared by writing 0. Writing 1 leaves them as
+    // they are, so only UIF clears.
+    m_reg->status_register = ~update_interrupt_flag.value<u32>();
+  }
+
+  timer_reg* m_reg;
+  i64 volatile m_wraps = 0;
 };
 }  // namespace hal::stm32_generic

@@ -122,6 +122,15 @@ hal::static_ref<hal::pwm16_channel> pwm_channel()
   return channel4;
 }
 
+hal::static_ref<hal::rotation_sensor> rotation_sensor()
+{
+  // TIM3: A on PA6 (MicroMod CIPO, pin 64), B on PA7 (COPI, pin 62). 100
+  // pulses per turn is a guess: set the encoder's own.
+  static hal::stm32f1::quadrature_encoder encoder(
+    hal::stm32f1::peripheral::timer3, 100.0f);
+  return encoder;
+}
+
 hal::static_ref<hal::output_pin> status_led()
 {
   static hal::stm32f1::output_pin led({ .port = 'C', .pin = 13 });

@@ -38,74 +38,33 @@ u32 prescaler_for(hal::hertz p_timer_clock, hal::hertz p_max_interrupt_rate)
         p_max_interrupt_rate.numerical_value_in(mp_units::si::hertz) });
 }
 
-/// The timers each timer can count through its internal trigger inputs
-/// ITR0 to ITR3 (RM0008 Tables 82 and 86)
-struct trigger_inputs
+/// Which timer of a pair counts the clock, which counts its wraps, and the
+/// high timer's trigger input wired to the low one (RM0008 Tables 82 and 86)
+struct timer_chain
 {
+  peripheral low;
   peripheral high;
-  std::array<peripheral, 4> lows;
+  u8 trigger_input;
 };
 
-constexpr std::array<trigger_inputs, 6> trigger_table{ {
-  { .high = peripheral::timer1,
-    .lows = { peripheral::timer5,
-              peripheral::timer2,
-              peripheral::timer3,
-              peripheral::timer4 } },
-  { .high = peripheral::timer8,
-    .lows = { peripheral::timer1,
-              peripheral::timer2,
-              peripheral::timer4,
-              peripheral::timer5 } },
-  { .high = peripheral::timer2,
-    .lows = { peripheral::timer1,
-              peripheral::timer8,
-              peripheral::timer3,
-              peripheral::timer4 } },
-  { .high = peripheral::timer3,
-    .lows = { peripheral::timer1,
-              peripheral::timer2,
-              peripheral::timer5,
-              peripheral::timer4 } },
-  { .high = peripheral::timer4,
-    .lows = { peripheral::timer1,
-              peripheral::timer2,
-              peripheral::timer3,
-              peripheral::timer8 } },
-  { .high = peripheral::timer5,
-    .lows = { peripheral::timer2,
-              peripheral::timer3,
-              peripheral::timer4,
-              peripheral::timer8 } },
+/// Indexed by `timer_pair`
+constexpr std::array<timer_chain, 14> timer_chains{ {
+  { .low = peripheral::timer1, .high = peripheral::timer2, .trigger_input = 0 },
+  { .low = peripheral::timer1, .high = peripheral::timer3, .trigger_input = 0 },
+  { .low = peripheral::timer1, .high = peripheral::timer4, .trigger_input = 0 },
+  { .low = peripheral::timer2, .high = peripheral::timer3, .trigger_input = 1 },
+  { .low = peripheral::timer2, .high = peripheral::timer4, .trigger_input = 1 },
+  { .low = peripheral::timer3, .high = peripheral::timer4, .trigger_input = 2 },
+  // TIM5 can't count TIM1, so TIM1 counts TIM5
+  { .low = peripheral::timer5, .high = peripheral::timer1, .trigger_input = 0 },
+  { .low = peripheral::timer1, .high = peripheral::timer8, .trigger_input = 0 },
+  { .low = peripheral::timer2, .high = peripheral::timer5, .trigger_input = 0 },
+  { .low = peripheral::timer2, .high = peripheral::timer8, .trigger_input = 1 },
+  { .low = peripheral::timer3, .high = peripheral::timer5, .trigger_input = 1 },
+  { .low = peripheral::timer4, .high = peripheral::timer5, .trigger_input = 2 },
+  { .low = peripheral::timer4, .high = peripheral::timer8, .trigger_input = 2 },
+  { .low = peripheral::timer5, .high = peripheral::timer8, .trigger_input = 3 },
 } };
-
-/**
- * @brief Check that the pair can chain, and that both are free
- *
- * Runs before either timer is claimed, so nothing needs undoing.
- *
- * @return u32 - the high timer's trigger input that sees the low timer
- * @throws hal::operation_not_supported - if `p_high` can't count `p_low`
- * @throws hal::device_or_resource_busy - if either timer is claimed
- */
-u32 check_chain(peripheral p_low, peripheral p_high)
-{
-  for (auto const& entry : trigger_table) {
-    if (entry.high != p_high) {
-      continue;
-    }
-    for (u32 input = 0; input < entry.lows.size(); input++) {
-      if (entry.lows[input] != p_low) {
-        continue;
-      }
-      if (is_claimed(p_low) or is_claimed(p_high)) {
-        throw hal::device_or_resource_busy(nullptr);
-      }
-      return input;
-    }
-  }
-  throw hal::operation_not_supported(nullptr);
-}
 }  // namespace
 
 timer_clock_16bit::timer_clock_16bit(
@@ -147,17 +106,31 @@ u64 timer_clock_16bit::driver_uptime()
   return m_counter.uptime();
 }
 
-chained_32bit_timer_clock::chained_32bit_timer_clock(peripheral p_low,
-                                                     peripheral p_high)
-  : m_trigger_input(check_chain(p_low, p_high))
-  // Neither claim can throw now: check_chain() found both free.
-  , m_low_index(claim_timer(p_low))
-  , m_high_index(claim_timer(p_high))
-  , m_frequency(stm32f1::frequency(p_low))
-  , m_counter(timer_address(m_low_index), timer_address(m_high_index))
+claimed_timer_pair claim_timer_pair(timer_pair p_pair)
+{
+  auto const& chain = timer_chains[hal::value(p_pair)];
+  // Checked first, so neither claim below can throw and leave the other
+  // claimed
+  if (is_claimed(chain.low) or is_claimed(chain.high)) {
+    throw hal::device_or_resource_busy(nullptr);
+  }
+  return { .low_index = claim_timer(chain.low),
+           .high_index = claim_timer(chain.high),
+           .trigger_input = chain.trigger_input };
+}
+
+chained_32bit_timer_clock::chained_32bit_timer_clock(timer_pair p_pair)
+  : chained_32bit_timer_clock(claim_timer_pair(p_pair))
+{
+}
+
+chained_32bit_timer_clock::chained_32bit_timer_clock(claimed_timer_pair p_pair)
+  : m_counter(timer_address(p_pair.low_index), timer_address(p_pair.high_index))
+  , m_low_index(p_pair.low_index)
+  , m_high_index(p_pair.high_index)
 {
   route_timer_interrupt(m_high_index, &handle_update, this);
-  m_counter.start(m_trigger_input);
+  m_counter.start(p_pair.trigger_input);
 }
 
 chained_32bit_timer_clock::~chained_32bit_timer_clock()
@@ -174,7 +147,8 @@ void chained_32bit_timer_clock::handle_update(void* p_self) noexcept
 
 hal::hertz chained_32bit_timer_clock::driver_frequency()
 {
-  return m_frequency;
+  // The low timer counts every cycle of its clock
+  return stm32f1::frequency(timer_routes[m_low_index].id);
 }
 
 u64 chained_32bit_timer_clock::driver_uptime()

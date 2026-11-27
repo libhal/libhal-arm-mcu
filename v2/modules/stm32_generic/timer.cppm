@@ -459,12 +459,14 @@ private:
 /**
  * @brief Two STM32 timers chained into a 32-bit free-running count
  *
- * The low timer counts every timer clock cycle from 0 to 65,535 and sends
- * each wrap out on TRGO. The high timer, in external clock mode 1, counts
- * those wraps through one of its internal trigger inputs, so together they
- * count 32 bits in hardware. Only the high timer's wraps raise an interrupt:
- * once every 4,294,967,296 cycles, 59.6 s at 72 MHz. The platform driver calls
- * `update()` from that interrupt, which counts the wrap.
+ * The low timer counts every timer clock cycle from 0 to 65,535. Each time it
+ * wraps, it pulses its TRGO output, which the chip wires to an internal
+ * trigger input (ITRx) of the high timer. The high timer, in external clock
+ * mode 1, counts those pulses, so together they count 32 bits in hardware:
+ * the high timer holds the upper 16 bits and the low timer the lower 16. Only
+ * the high timer's wraps raise an interrupt: once every 4,294,967,296
+ * cycles, 59.6 s at 72 MHz. The platform driver calls `update()` from that
+ * interrupt, which counts the wrap.
  *
  * This class is meant to only be used by platform libraries or drivers.
  */
@@ -489,7 +491,8 @@ public:
    * @brief Start counting from 0
    *
    * @param p_trigger_input - which internal trigger input (ITR0 to ITR3) of
-   * the high timer is connected to the low timer
+   * the high timer receives the low timer's TRGO
+   * @pre Both timers are powered on.
    */
   void start(u32 p_trigger_input) noexcept
   {
@@ -532,7 +535,11 @@ public:
     bit_modify(m_low->control_register).set<control::counter_enable>();
   }
 
-  /// Stop counting. `uptime()` keeps returning the last count.
+  /**
+   * @brief Stop counting. `uptime()` keeps returning the last count.
+   *
+   * @pre Both timers are powered on.
+   */
   void stop() noexcept
   {
     bit_modify(m_low->control_register).clear<control::counter_enable>();
@@ -543,6 +550,8 @@ public:
    * @brief Handle the high timer's update interrupt: count a wrap
    *
    * Does nothing if the interrupt wasn't a wrap.
+   *
+   * @pre Both timers are powered on.
    */
   void update() noexcept
   {
@@ -563,6 +572,7 @@ public:
    * as they haven't been masked for longer than one wrap of the 32-bit count.
    *
    * @return u64 - cycles since the counter started
+   * @pre Both timers are powered on.
    */
   [[nodiscard]] u64 uptime() const noexcept
   {
@@ -592,31 +602,20 @@ public:
   }
 
 private:
-  /// Bit masks for TIMx_CR1
-  struct control
-  {
-    static constexpr auto counter_enable = hal::bit_mask::from<0>();
-    static constexpr auto update_request_source = hal::bit_mask::from<2>();
-    static constexpr auto one_pulse_mode = hal::bit_mask::from<3>();
-    static constexpr auto direction = hal::bit_mask::from<4>();
-    static constexpr auto center_aligned_mode = hal::bit_mask::from<5, 6>();
-  };
-  /// MMS in TIMx_CR2: what the timer sends out on TRGO
-  static constexpr auto master_mode = hal::bit_mask::from<4, 6>();
-  /// MMS = 0b010: each update event goes out on TRGO
-  static constexpr u32 master_mode_update = 0b010;
-  /// SMS in TIMx_SMCR
-  static constexpr auto slave_mode = hal::bit_mask::from<0, 2>();
-  /// SMS = 0b111: external clock mode 1, count each rising edge of TRGI
-  static constexpr u32 slave_mode_external_clock = 0b111;
-  /// TS in TIMx_SMCR: which trigger input is TRGI
-  static constexpr auto trigger_selection = hal::bit_mask::from<4, 6>();
-  /// UIE in TIMx_DIER
-  static constexpr auto update_interrupt_enable = hal::bit_mask::from<0>();
-  /// UIF in TIMx_SR
-  static constexpr auto update_interrupt_flag = hal::bit_mask::from<0>();
-  /// UG in TIMx_EGR
-  static constexpr auto update_generation = hal::bit_mask::from<0>();
+  using control = timer_bits::control;
+  static constexpr auto master_mode = timer_bits::control_2::master_mode;
+  static constexpr auto master_mode_update =
+    timer_bits::control_2::master_mode_update;
+  static constexpr auto slave_mode = timer_bits::slave_mode_control::slave_mode;
+  static constexpr auto slave_mode_external_clock =
+    timer_bits::slave_mode_control::slave_mode_external_clock;
+  static constexpr auto trigger_selection =
+    timer_bits::slave_mode_control::trigger_selection;
+  static constexpr auto update_interrupt_enable =
+    timer_bits::update_interrupt_enable;
+  static constexpr auto update_interrupt_flag =
+    timer_bits::update_interrupt_flag;
+  static constexpr auto update_generation = timer_bits::update_generation;
 
   [[nodiscard]] bool wrap_pending() const noexcept
   {

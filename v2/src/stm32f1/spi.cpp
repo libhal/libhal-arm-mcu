@@ -134,7 +134,7 @@ spi::spi(peripheral p_id)
   if (p_id == peripheral::spi1) {
     // AFIO is shared, so it is powered on, never claimed.
     power_on(peripheral::afio);
-    bit_modify(alternative_function_io->mapr).clear<pin_remap::spi1_remap>();
+    write_remap<pin_remap::spi1_remap>(0U);
   }
 
   configure_pin(pins.clock, push_pull_alternative_output);

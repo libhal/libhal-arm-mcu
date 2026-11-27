@@ -146,7 +146,7 @@ void start_peripheral(peripheral p_id,
   if (p_id == peripheral::i2c1) {
     // AFIO is shared, so it is powered on, never claimed.
     power_on(peripheral::afio);
-    bit_modify(alternative_function_io->mapr).clear<pin_remap::i2c1_remap>();
+    write_remap<pin_remap::i2c1_remap>(0U);
   }
 
   configure_pin(p_pins.scl, open_drain_alternative_output);

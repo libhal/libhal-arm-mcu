@@ -40,26 +40,28 @@ hal::stm32_generic::pwm_period period_for(hal::hertz p_clock,
 }
 }  // namespace
 
-pwm_base::pwm_base(timer_pin_set const& p_pins, pwm_settings const& p_settings)
+pwm_base::pwm_base(peripheral p_id,
+                   u8 p_remap_value,
+                   pwm_settings const& p_settings)
   // claim_timer() is the last call that can throw, so nothing needs undoing
   // after it
-  : pwm_base(claim_timer(p_pins.id), p_pins, p_settings)
+  : pwm_base(claim_timer(p_id), p_settings)
 {
+  // AFIO is shared, so it is powered on, never claimed. No pin is an output
+  // yet, so the remap can follow the counter's start.
+  power_on(peripheral::afio);
+  apply_timer_remap(p_id, p_remap_value);
 }
 
-pwm_base::pwm_base(u8 p_index,
-                   timer_pin_set const& p_pins,
-                   pwm_settings const& p_settings)
+pwm_base::pwm_base(u8 p_index, pwm_settings const& p_settings)
   : m_driver(timer_address(p_index))
-  , m_clock(stm32f1::frequency(p_pins.id))
+  , m_clock(stm32f1::frequency(timer_routes[p_index].id))
   , m_period(period_for(m_clock, p_settings.frequency))
   , m_index(p_index)
 {
-  // AFIO is shared, so it is powered on, never claimed.
-  power_on(peripheral::afio);
-  apply_timer_remap(p_pins.id, p_pins.remap_value);
+  auto const id = timer_routes[m_index].id;
   m_driver.start(m_period);
-  if ((p_pins.id == peripheral::timer1) or (p_pins.id == peripheral::timer8)) {
+  if ((id == peripheral::timer1) or (id == peripheral::timer8)) {
     m_driver.enable_main_output();
   }
 }

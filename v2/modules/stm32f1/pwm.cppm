@@ -61,18 +61,17 @@ protected:
   /**
    * @brief Claim a timer, set its pin remap and start its counter
    *
-   * @param p_pins - the timer and its remap
+   * @param p_id - the timer
+   * @param p_remap_value - the value for the timer's AFIO MAPR field
    * @param p_settings - the frequency
    * @throws hal::device_or_resource_busy - if another driver has claimed the
    * timer
    */
-  pwm_base(timer_pin_set const& p_pins, pwm_settings const& p_settings);
+  pwm_base(peripheral p_id, u8 p_remap_value, pwm_settings const& p_settings);
 
 private:
   /// Takes the index `claim_timer()` returned
-  pwm_base(u8 p_index,
-           timer_pin_set const& p_pins,
-           pwm_settings const& p_settings);
+  pwm_base(u8 p_index, pwm_settings const& p_settings);
 
   void driver_frequency(hal::hertz p_frequency) override;
 
@@ -161,9 +160,7 @@ public:
    * timer
    */
   explicit pwm(pwm_settings const& p_settings = {})
-    : pwm_base(
-        timer_pin_sets[find_timer_pin_set<sizeof...(Pins)>(Timer, { Pins... })],
-        p_settings)
+    : pwm_base(Timer, pins.remap_value, p_settings)
   {
   }
 
@@ -171,14 +168,16 @@ private:
   template<pin>
   friend class pwm_channel;
 
+  /// The timer's channel pins with the remap picked, found at compile time
+  static constexpr timer_pin_set pins =
+    timer_pin_sets[find_timer_pin_set<sizeof...(Pins)>(Timer, { Pins... })];
+
   /// The channel that drives `Pin`, or 4 if no channel does
   template<pin Pin>
   static consteval timer_channel channel_of()
   {
-    auto const& set =
-      timer_pin_sets[find_timer_pin_set<sizeof...(Pins)>(Timer, { Pins... })];
     u8 index = 0;
-    while ((index < set.channels.size()) and (set.channels[index] != Pin)) {
+    while ((index < pins.channels.size()) and (pins.channels[index] != Pin)) {
       index++;
     }
     return static_cast<timer_channel>(index);

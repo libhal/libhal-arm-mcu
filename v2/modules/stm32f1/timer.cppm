@@ -28,40 +28,6 @@ import :pin;
 
 namespace hal::stm32f1 {
 /**
- * @brief Which pins a timer's channels use, by AFIO remap (RM0008 Tables 43
- * to 46)
- *
- * The names follow RM0008. Channels CH1, CH2, CH3 and CH4 use:
- *
- * - TIM1: `none` and `partial_1`: PA8, PA9, PA10, PA11. `full`: PE9, PE11,
- *   PE13, PE14. The partial remap only moves ETR, BKIN and the complementary
- *   outputs.
- * - TIM2: `none`: PA0, PA1, PA2, PA3. `partial_1`: PA15, PB3, PA2, PA3.
- *   `partial_2`: PA0, PA1, PB10, PB11. `full`: PA15, PB3, PB10, PB11.
- * - TIM3: `none`: PA6, PA7, PB0, PB1. `partial_1`: PB4, PB5, PB0, PB1.
- *   `full`: PC6, PC7, PC8, PC9.
- * - TIM4: `none`: PB6, PB7, PB8, PB9. `full`: PD12, PD13, PD14, PD15.
- * - TIM5: `none`: PA0, PA1, PA2, PA3.
- * - TIM8: `none`: PC6, PC7, PC8, PC9.
- *
- * The full remaps of TIM1 and TIM4 exist only on 100- and 144-pin packages,
- * and TIM3's on 64-pin and larger.
- */
-export enum class timer_remap : u8 {
-  /// The default pins
-  none,
-  /// RM0008's partial remap (TIM2: TIM2_REMAP = 0b01)
-  partial_1,
-  /// TIM2's second partial remap (TIM2_REMAP = 0b10)
-  partial_2,
-  /// RM0008's full remap
-  full,
-};
-
-/// One of a timer's four channels
-export using timer_channel = hal::stm32_generic::timer_channel;
-
-/**
  * @brief Two timers that can chain into a `chained_32bit_timer_clock`
  *
  * One timer counts the timer clock and the other counts its wraps through an
@@ -73,7 +39,8 @@ export using timer_channel = hal::stm32_generic::timer_channel;
  * high-density and larger parts, such as the STM32F103ZG. On other parts,
  * constructing a clock from one of them is undefined behavior.
  */
-export enum class timer_pair : u8 {
+export enum class timer_pair : u8
+{
   timer1_timer2,
   timer1_timer3,
   timer1_timer4,
@@ -92,20 +59,118 @@ export enum class timer_pair : u8 {
 
 // ---- Shared by the timer drivers, not exported ----------------------------
 
-/// A timer's channel pins for one remap, and the value for its MAPR field
+/// One of a timer's four channels
+using timer_channel = hal::stm32_generic::timer_channel;
+
+/// A timer's channel pins for one AFIO remap, and the value for its MAPR field
 struct timer_pin_set
 {
+  peripheral id;
+  u8 remap_value;
   std::array<pin, 4> channels;
-  u32 remap_value;
 };
 
 /**
- * @brief The pins a timer's channels use with a remap
+ * @brief Every timer's channel pins, by remap (RM0008 Tables 43 to 46)
  *
- * @throws hal::operation_not_supported - if the timer has no channel outputs
- * (TIM6, TIM7) or no such remap
+ * The first set of a timer with all the pins someone asks for is the one used,
+ * so each timer's sets go from no remap to full remap. TIM1's partial remap is
+ * left out: it moves only ETR, BKIN and the complementary outputs, so its CH1
+ * to CH4 pins are the same as with no remap.
  */
-timer_pin_set timer_pins(peripheral p_id, timer_remap p_remap);
+constexpr std::array<timer_pin_set, 13> timer_pin_sets{ {
+  { .id = peripheral::timer1,
+    .remap_value = 0b00,
+    .channels = { pa8, pa9, pa10, pa11 } },
+  { .id = peripheral::timer1,
+    .remap_value = 0b11,
+    .channels = { pe9, pe11, pe13, pe14 } },
+  { .id = peripheral::timer2,
+    .remap_value = 0b00,
+    .channels = { pa0, pa1, pa2, pa3 } },
+  { .id = peripheral::timer2,
+    .remap_value = 0b01,
+    .channels = { pa15, pb3, pa2, pa3 } },
+  { .id = peripheral::timer2,
+    .remap_value = 0b10,
+    .channels = { pa0, pa1, pb10, pb11 } },
+  { .id = peripheral::timer2,
+    .remap_value = 0b11,
+    .channels = { pa15, pb3, pb10, pb11 } },
+  { .id = peripheral::timer3,
+    .remap_value = 0b00,
+    .channels = { pa6, pa7, pb0, pb1 } },
+  { .id = peripheral::timer3,
+    .remap_value = 0b10,
+    .channels = { pb4, pb5, pb0, pb1 } },
+  { .id = peripheral::timer3,
+    .remap_value = 0b11,
+    .channels = { pc6, pc7, pc8, pc9 } },
+  { .id = peripheral::timer4,
+    .remap_value = 0b0,
+    .channels = { pb6, pb7, pb8, pb9 } },
+  { .id = peripheral::timer4,
+    .remap_value = 0b1,
+    .channels = { pd12, pd13, pd14, pd15 } },
+  { .id = peripheral::timer5,
+    .remap_value = 0,
+    .channels = { pa0, pa1, pa2, pa3 } },
+  { .id = peripheral::timer8,
+    .remap_value = 0,
+    .channels = { pc6, pc7, pc8, pc9 } },
+} };
+
+/**
+ * @brief The index of the first set of a timer's channel pins with all of
+ * `p_pins`
+ *
+ * @param p_id - the timer
+ * @param p_pins - the pins, in any order
+ * @return usize - the index into `timer_pin_sets`, or its size if no set of
+ * the timer has every pin
+ */
+template<usize Count>
+constexpr usize find_timer_pin_set(peripheral p_id,
+                                   std::array<pin, Count> const& p_pins)
+{
+  for (usize index = 0; index < timer_pin_sets.size(); index++) {
+    auto const& set = timer_pin_sets[index];
+    if (set.id != p_id) {
+      continue;
+    }
+    bool has_all = true;
+    for (auto const& wanted : p_pins) {
+      bool found = false;
+      for (auto const& channel_pin : set.channels) {
+        found = found or (channel_pin == wanted);
+      }
+      has_all = has_all and found;
+    }
+    if (has_all) {
+      return index;
+    }
+  }
+  return timer_pin_sets.size();
+}
+
+/**
+ * @brief Whether a list of pins names any pin twice
+ *
+ * @param p_pins - the pins
+ * @return true - two entries are the same pin
+ */
+template<usize Count>
+constexpr bool has_duplicate_pins(std::array<pin, Count> const& p_pins)
+{
+  for (usize first = 0; first < Count; first++) {
+    for (usize second = first + 1; second < Count; second++) {
+      if (p_pins[first] == p_pins[second]) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
 
 /// Write a timer's remap field in AFIO MAPR. AFIO must be powered on.
 void apply_timer_remap(peripheral p_id, u32 p_value);

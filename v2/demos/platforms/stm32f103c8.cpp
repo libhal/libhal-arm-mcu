@@ -103,23 +103,25 @@ hal::static_ref<hal::steady_clock> wide_timer_clock()
   return tim1_tim4;
 }
 
-hal::static_ref<hal::stm32f1::pwm> timer3_pwm()
+/// TIM3 with only PB1 (CH4): MicroMod A1, pin 38
+using timer3_pwm =
+  hal::stm32f1::pwm<hal::stm32f1::peripheral::timer3, hal::stm32f1::pb1>;
+
+hal::static_ref<timer3_pwm> timer3()
 {
-  static hal::stm32f1::pwm pwm3(hal::stm32f1::peripheral::timer3);
+  static timer3_pwm pwm3;
   return pwm3;
 }
 
 hal::static_ref<hal::pwm_group_manager> pwm_group()
 {
-  return timer3_pwm();
+  return timer3();
 }
 
 hal::static_ref<hal::pwm16_channel> pwm_channel()
 {
-  // PB1: MicroMod A1, pin 38
-  static hal::stm32f1::pwm::channel channel4(timer3_pwm(),
-                                             hal::stm32f1::timer_channel::ch4);
-  return channel4;
+  static hal::stm32f1::pwm_channel<hal::stm32f1::pb1> pb1(*timer3());
+  return pb1;
 }
 
 hal::static_ref<hal::output_pin> status_led()

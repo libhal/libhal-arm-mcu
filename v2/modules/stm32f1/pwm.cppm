@@ -15,7 +15,6 @@
 module;
 
 #include <array>
-#include <bitset>
 
 export module hal.arm_mcu.stm32f1:pwm;
 
@@ -24,24 +23,106 @@ import hal.util;
 import hal.arm_mcu.stm32_generic;
 
 import :constants;
+import :pin;
 import :timer;
 
 namespace hal::stm32f1 {
 /// Settings for a `pwm`
 export struct pwm_settings
 {
-  /// Which pins the channels use: see `timer_remap`
-  timer_remap remap = timer_remap::none;
   /// The frequency every channel runs at
   hal::hertz frequency = 20'000 * mp_units::si::hertz;
 };
 
+export template<pin Pin>
+class pwm_channel;
+
 /**
- * @brief One STM32F1 timer's PWM: the frequency its four channels share
+ * @brief The part of `pwm` that isn't a template
+ *
+ * Holds the timer and implements `hal::pwm_group_manager`. Construct a `pwm`,
+ * which picks the pins.
+ */
+export class pwm_base : public hal::pwm_group_manager
+{
+public:
+  class channel;
+
+  pwm_base(pwm_base const&) = delete;
+  pwm_base& operator=(pwm_base const&) = delete;
+  pwm_base(pwm_base&&) = delete;
+  pwm_base& operator=(pwm_base&&) = delete;
+
+  /// Stop the counter, turn the outputs off, power the timer off and release
+  /// it. Destroy the channels first.
+  ~pwm_base();
+
+protected:
+  /**
+   * @brief Claim a timer, set its pin remap and start its counter
+   *
+   * @param p_pins - the timer and its remap
+   * @param p_settings - the frequency
+   * @throws hal::device_or_resource_busy - if another driver has claimed the
+   * timer
+   */
+  pwm_base(timer_pin_set const& p_pins, pwm_settings const& p_settings);
+
+private:
+  /// Takes the index `claim_timer()` returned
+  pwm_base(u8 p_index,
+           timer_pin_set const& p_pins,
+           pwm_settings const& p_settings);
+
+  void driver_frequency(hal::hertz p_frequency) override;
+
+  hal::stm32_generic::pwm m_driver;
+  hal::hertz m_clock;
+  hal::stm32_generic::pwm_period m_period;
+  /// Each channel's duty cycle, so a frequency change keeps it at full
+  /// precision
+  std::array<u16, 4> m_duty_cycles{};
+  u8 m_index;
+};
+
+/**
+ * @brief One STM32F1 timer's PWM: the frequency its channels share
+ *
+ * The timer and the pins its channels will drive are template arguments, and
+ * the timer's AFIO remap is picked from the pins at compile time. A timer
+ * with no remap that has all the pins doesn't compile, so neither does a
+ * timer without PWM outputs (TIM6, TIM7). Each pin then gets a
+ * `pwm_channel`:
+ *
+ * ```cpp
+ * hal::stm32f1::pwm<hal::stm32f1::peripheral::timer3,
+ *                   hal::stm32f1::pb4,
+ *                   hal::stm32f1::pb1>
+ *   motors;  // TIM3's partial remap
+ * hal::stm32f1::pwm_channel<hal::stm32f1::pb4> left(motors);
+ * hal::stm32f1::pwm_channel<hal::stm32f1::pb1> right(motors);
+ * ```
  *
  * Claims the whole timer: a timer that runs PWM can't also count delays or a
- * quadrature encoder, since those use the same counter. The channels are
- * `pwm::channel`s, constructed from this.
+ * quadrature encoder, since those use the same counter.
+ *
+ * The pins of each timer's CH1, CH2, CH3 and CH4, by remap (RM0008 Tables 43
+ * to 46):
+ *
+ * - TIM1: PA8, PA9, PA10, PA11. Full remap: PE9, PE11, PE13, PE14.
+ * - TIM2: PA0, PA1, PA2, PA3. Partial remaps: PA15, PB3, PA2, PA3 and PA0,
+ *   PA1, PB10, PB11. Full remap: PA15, PB3, PB10, PB11.
+ * - TIM3: PA6, PA7, PB0, PB1. Partial remap: PB4, PB5, PB0, PB1. Full
+ *   remap: PC6, PC7, PC8, PC9.
+ * - TIM4: PB6, PB7, PB8, PB9. Full remap: PD12, PD13, PD14, PD15.
+ * - TIM5: PA0, PA1, PA2, PA3.
+ * - TIM8: PC6, PC7, PC8, PC9.
+ *
+ * The full remaps of TIM1 and TIM4 exist only on 100- and 144-pin packages,
+ * and TIM3's on 64-pin and larger. TIM5 and TIM8 exist only on high-density
+ * and larger parts, such as the STM32F103ZG; on other parts, constructing
+ * them is undefined behavior. PA15, PB3 and PB4 are JTAG pins: they drive
+ * nothing until the debug port is switched to SWD only or off.
  *
  * Each frequency gets the smallest prescaler that fits, so the channels get as
  * many duty cycle steps as the timer clock allows: the timer clock divided by
@@ -55,88 +136,119 @@ export struct pwm_settings
  * A new frequency or duty cycle takes effect at the start of the next period,
  * and changing the frequency keeps every channel's duty cycle.
  *
- * TIM1 to TIM5 and TIM8 have PWM outputs; TIM6 and TIM7 don't. TIM5 and TIM8
- * exist only on high-density and larger parts, such as the STM32F103ZG. On
- * other parts, constructing them is undefined behavior.
+ * @tparam Timer - the timer: TIM1 to TIM5 or TIM8
+ * @tparam Pins - the pins the channels will drive, in any order
  */
-export class pwm final : public hal::pwm_group_manager
+export template<peripheral Timer, pin... Pins>
+class pwm final : public pwm_base
 {
 public:
-  class channel;
+  static_assert(sizeof...(Pins) > 0, "List the pins the channels will drive");
+  static_assert(not has_duplicate_pins<sizeof...(Pins)>({ Pins... }),
+                "A pin is listed more than once");
+  static_assert(find_timer_pin_set<sizeof...(Pins)>(Timer, { Pins... }) <
+                  timer_pin_sets.size(),
+                "No remap of this timer has all of these pins, or the timer "
+                "has no PWM outputs");
 
   /**
-   * @brief Claim a timer, set its pin remap and start its counter
+   * @brief Claim the timer, set its pin remap and start its counter
    *
-   * No channel drives its pin until a `pwm::channel` claims it.
+   * No channel drives its pin until a `pwm_channel` claims it.
    *
-   * @param p_id - the timer: TIM1 to TIM5 or TIM8
-   * @param p_settings - the channels' pins and frequency
-   * @throws hal::operation_not_supported - if the timer has no PWM outputs or
-   * no such remap
+   * @param p_settings - the frequency
    * @throws hal::device_or_resource_busy - if another driver has claimed the
    * timer
    */
-  explicit pwm(peripheral p_id, pwm_settings const& p_settings = {});
-
-  pwm(pwm const&) = delete;
-  pwm& operator=(pwm const&) = delete;
-  pwm(pwm&&) = delete;
-  pwm& operator=(pwm&&) = delete;
-
-  /// Stop the counter, turn the outputs off, power the timer off and release
-  /// it. Destroy the channels first.
-  ~pwm();
+  explicit pwm(pwm_settings const& p_settings = {})
+    : pwm_base(
+        timer_pin_sets[find_timer_pin_set<sizeof...(Pins)>(Timer, { Pins... })],
+        p_settings)
+  {
+  }
 
 private:
-  /// Takes the index `claim_timer()` returned
-  pwm(u8 p_index, pwm_settings const& p_settings);
+  template<pin>
+  friend class pwm_channel;
 
-  void driver_frequency(hal::hertz p_frequency) override;
-
-  hal::stm32_generic::pwm m_driver;
-  hal::hertz m_clock;
-  hal::stm32_generic::pwm_period m_period;
-  /// Each channel's duty cycle, so a frequency change keeps it at full
-  /// precision
-  std::array<u16, 4> m_duty_cycles{};
-  std::bitset<4> m_claimed_channels{};
-  timer_remap m_remap;
-  u8 m_index;
+  /// The channel that drives `Pin`, or 4 if no channel does
+  template<pin Pin>
+  static consteval timer_channel channel_of()
+  {
+    auto const& set =
+      timer_pin_sets[find_timer_pin_set<sizeof...(Pins)>(Timer, { Pins... })];
+    u8 index = 0;
+    while ((index < set.channels.size()) and (set.channels[index] != Pin)) {
+      index++;
+    }
+    return static_cast<timer_channel>(index);
+  }
 };
 
 /**
- * @brief One channel of an STM32F1 timer's PWM
+ * @brief The part of `pwm_channel` that isn't a template
  *
- * Claims its pin and drives it in PWM mode 1, active high. It starts at a 0%
- * duty cycle.
+ * Construct a `pwm_channel`, which picks the pin.
  */
-class pwm::channel final : public hal::pwm16_channel
+class pwm_base::channel : public hal::pwm16_channel
 {
 public:
-  /**
-   * @brief Claim a channel and its pin, and start it at 0%
-   *
-   * @param p_pwm - the timer's PWM, which must outlive the channel
-   * @param p_channel - which channel
-   * @throws hal::device_or_resource_busy - if the channel or its pin is
-   * already claimed
-   */
-  channel(hal::ref<pwm> p_pwm [[clang::lifetimebound]],
-          timer_channel p_channel);
-
   channel(channel const&) = delete;
   channel& operator=(channel const&) = delete;
   channel(channel&&) = delete;
   channel& operator=(channel&&) = delete;
 
-  /// Turn the output off and release the channel and its pin
+  /// Turn the output off and release the pin
   ~channel();
+
+protected:
+  /**
+   * @brief Claim a pin and drive it from its channel, starting at 0%
+   *
+   * @param p_pwm - the timer's PWM, which must outlive the channel
+   * @param p_channel - the channel that drives the pin
+   * @param p_pin - the pin
+   * @throws hal::device_or_resource_busy - if the pin is already claimed
+   */
+  channel(hal::ref<pwm_base> p_pwm [[clang::lifetimebound]],
+          timer_channel p_channel,
+          pin p_pin);
 
 private:
   hal::hertz driver_frequency() override;
   void driver_duty_cycle(u16 p_duty_cycle) override;
 
-  hal::ref<pwm> m_pwm;
+  hal::ref<pwm_base> m_pwm;
+  pin m_pin;
   timer_channel m_channel;
+};
+
+/**
+ * @brief One pin of a timer's PWM
+ *
+ * Claims its pin and drives it in PWM mode 1, active high. It starts at a 0%
+ * duty cycle. The pin must be one the `pwm` lists, or it doesn't compile.
+ *
+ * @tparam Pin - the pin, such as `hal::stm32f1::pb1`
+ */
+export template<pin Pin>
+class pwm_channel final : public pwm_base::channel
+{
+public:
+  /**
+   * @brief Claim the pin and start it at 0%
+   *
+   * @param p_pwm - the timer's PWM, which must outlive the channel
+   * @throws hal::device_or_resource_busy - if the pin is already claimed
+   */
+  template<peripheral Timer, pin... Pins>
+  explicit pwm_channel(pwm<Timer, Pins...>& p_pwm [[clang::lifetimebound]])
+    : pwm_base::channel(p_pwm,
+                        pwm<Timer, Pins...>::template channel_of<Pin>(),
+                        Pin)
+  {
+    static_assert(((Pin == Pins) or ...),
+                  "This pin isn't one of the pwm's pins");
+  }
 };
 }  // namespace hal::stm32f1

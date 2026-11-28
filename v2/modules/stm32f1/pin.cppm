@@ -44,12 +44,258 @@ export struct pin
 };
 
 /**
+ * @brief Compare two pins
+ *
+ * @param p_left - a pin
+ * @param p_right - another pin
+ * @return true - both name the same pin
+ */
+export constexpr bool operator==(pin p_left, pin p_right)
+{
+  return (p_left.port == p_right.port) and (p_left.pin == p_right.pin);
+}
+
+/**
+ * @name Pins
+ *
+ * Every GPIO pin, named like the datasheet: `pb4` is port B, pin 4. Pins a
+ * package doesn't have are still listed.
+ */
+///@{
+/// PA0
+export constexpr pin pa0{ .port = 'A', .pin = 0 };
+/// PA1
+export constexpr pin pa1{ .port = 'A', .pin = 1 };
+/// PA2
+export constexpr pin pa2{ .port = 'A', .pin = 2 };
+/// PA3
+export constexpr pin pa3{ .port = 'A', .pin = 3 };
+/// PA4
+export constexpr pin pa4{ .port = 'A', .pin = 4 };
+/// PA5
+export constexpr pin pa5{ .port = 'A', .pin = 5 };
+/// PA6
+export constexpr pin pa6{ .port = 'A', .pin = 6 };
+/// PA7
+export constexpr pin pa7{ .port = 'A', .pin = 7 };
+/// PA8
+export constexpr pin pa8{ .port = 'A', .pin = 8 };
+/// PA9
+export constexpr pin pa9{ .port = 'A', .pin = 9 };
+/// PA10
+export constexpr pin pa10{ .port = 'A', .pin = 10 };
+/// PA11
+export constexpr pin pa11{ .port = 'A', .pin = 11 };
+/// PA12
+export constexpr pin pa12{ .port = 'A', .pin = 12 };
+/// PA13
+export constexpr pin pa13{ .port = 'A', .pin = 13 };
+/// PA14
+export constexpr pin pa14{ .port = 'A', .pin = 14 };
+/// PA15
+export constexpr pin pa15{ .port = 'A', .pin = 15 };
+/// PB0
+export constexpr pin pb0{ .port = 'B', .pin = 0 };
+/// PB1
+export constexpr pin pb1{ .port = 'B', .pin = 1 };
+/// PB2
+export constexpr pin pb2{ .port = 'B', .pin = 2 };
+/// PB3
+export constexpr pin pb3{ .port = 'B', .pin = 3 };
+/// PB4
+export constexpr pin pb4{ .port = 'B', .pin = 4 };
+/// PB5
+export constexpr pin pb5{ .port = 'B', .pin = 5 };
+/// PB6
+export constexpr pin pb6{ .port = 'B', .pin = 6 };
+/// PB7
+export constexpr pin pb7{ .port = 'B', .pin = 7 };
+/// PB8
+export constexpr pin pb8{ .port = 'B', .pin = 8 };
+/// PB9
+export constexpr pin pb9{ .port = 'B', .pin = 9 };
+/// PB10
+export constexpr pin pb10{ .port = 'B', .pin = 10 };
+/// PB11
+export constexpr pin pb11{ .port = 'B', .pin = 11 };
+/// PB12
+export constexpr pin pb12{ .port = 'B', .pin = 12 };
+/// PB13
+export constexpr pin pb13{ .port = 'B', .pin = 13 };
+/// PB14
+export constexpr pin pb14{ .port = 'B', .pin = 14 };
+/// PB15
+export constexpr pin pb15{ .port = 'B', .pin = 15 };
+/// PC0
+export constexpr pin pc0{ .port = 'C', .pin = 0 };
+/// PC1
+export constexpr pin pc1{ .port = 'C', .pin = 1 };
+/// PC2
+export constexpr pin pc2{ .port = 'C', .pin = 2 };
+/// PC3
+export constexpr pin pc3{ .port = 'C', .pin = 3 };
+/// PC4
+export constexpr pin pc4{ .port = 'C', .pin = 4 };
+/// PC5
+export constexpr pin pc5{ .port = 'C', .pin = 5 };
+/// PC6
+export constexpr pin pc6{ .port = 'C', .pin = 6 };
+/// PC7
+export constexpr pin pc7{ .port = 'C', .pin = 7 };
+/// PC8
+export constexpr pin pc8{ .port = 'C', .pin = 8 };
+/// PC9
+export constexpr pin pc9{ .port = 'C', .pin = 9 };
+/// PC10
+export constexpr pin pc10{ .port = 'C', .pin = 10 };
+/// PC11
+export constexpr pin pc11{ .port = 'C', .pin = 11 };
+/// PC12
+export constexpr pin pc12{ .port = 'C', .pin = 12 };
+/// PC13
+export constexpr pin pc13{ .port = 'C', .pin = 13 };
+/// PC14
+export constexpr pin pc14{ .port = 'C', .pin = 14 };
+/// PC15
+export constexpr pin pc15{ .port = 'C', .pin = 15 };
+/// PD0
+export constexpr pin pd0{ .port = 'D', .pin = 0 };
+/// PD1
+export constexpr pin pd1{ .port = 'D', .pin = 1 };
+/// PD2
+export constexpr pin pd2{ .port = 'D', .pin = 2 };
+/// PD3
+export constexpr pin pd3{ .port = 'D', .pin = 3 };
+/// PD4
+export constexpr pin pd4{ .port = 'D', .pin = 4 };
+/// PD5
+export constexpr pin pd5{ .port = 'D', .pin = 5 };
+/// PD6
+export constexpr pin pd6{ .port = 'D', .pin = 6 };
+/// PD7
+export constexpr pin pd7{ .port = 'D', .pin = 7 };
+/// PD8
+export constexpr pin pd8{ .port = 'D', .pin = 8 };
+/// PD9
+export constexpr pin pd9{ .port = 'D', .pin = 9 };
+/// PD10
+export constexpr pin pd10{ .port = 'D', .pin = 10 };
+/// PD11
+export constexpr pin pd11{ .port = 'D', .pin = 11 };
+/// PD12
+export constexpr pin pd12{ .port = 'D', .pin = 12 };
+/// PD13
+export constexpr pin pd13{ .port = 'D', .pin = 13 };
+/// PD14
+export constexpr pin pd14{ .port = 'D', .pin = 14 };
+/// PD15
+export constexpr pin pd15{ .port = 'D', .pin = 15 };
+/// PE0
+export constexpr pin pe0{ .port = 'E', .pin = 0 };
+/// PE1
+export constexpr pin pe1{ .port = 'E', .pin = 1 };
+/// PE2
+export constexpr pin pe2{ .port = 'E', .pin = 2 };
+/// PE3
+export constexpr pin pe3{ .port = 'E', .pin = 3 };
+/// PE4
+export constexpr pin pe4{ .port = 'E', .pin = 4 };
+/// PE5
+export constexpr pin pe5{ .port = 'E', .pin = 5 };
+/// PE6
+export constexpr pin pe6{ .port = 'E', .pin = 6 };
+/// PE7
+export constexpr pin pe7{ .port = 'E', .pin = 7 };
+/// PE8
+export constexpr pin pe8{ .port = 'E', .pin = 8 };
+/// PE9
+export constexpr pin pe9{ .port = 'E', .pin = 9 };
+/// PE10
+export constexpr pin pe10{ .port = 'E', .pin = 10 };
+/// PE11
+export constexpr pin pe11{ .port = 'E', .pin = 11 };
+/// PE12
+export constexpr pin pe12{ .port = 'E', .pin = 12 };
+/// PE13
+export constexpr pin pe13{ .port = 'E', .pin = 13 };
+/// PE14
+export constexpr pin pe14{ .port = 'E', .pin = 14 };
+/// PE15
+export constexpr pin pe15{ .port = 'E', .pin = 15 };
+/// PF0
+export constexpr pin pf0{ .port = 'F', .pin = 0 };
+/// PF1
+export constexpr pin pf1{ .port = 'F', .pin = 1 };
+/// PF2
+export constexpr pin pf2{ .port = 'F', .pin = 2 };
+/// PF3
+export constexpr pin pf3{ .port = 'F', .pin = 3 };
+/// PF4
+export constexpr pin pf4{ .port = 'F', .pin = 4 };
+/// PF5
+export constexpr pin pf5{ .port = 'F', .pin = 5 };
+/// PF6
+export constexpr pin pf6{ .port = 'F', .pin = 6 };
+/// PF7
+export constexpr pin pf7{ .port = 'F', .pin = 7 };
+/// PF8
+export constexpr pin pf8{ .port = 'F', .pin = 8 };
+/// PF9
+export constexpr pin pf9{ .port = 'F', .pin = 9 };
+/// PF10
+export constexpr pin pf10{ .port = 'F', .pin = 10 };
+/// PF11
+export constexpr pin pf11{ .port = 'F', .pin = 11 };
+/// PF12
+export constexpr pin pf12{ .port = 'F', .pin = 12 };
+/// PF13
+export constexpr pin pf13{ .port = 'F', .pin = 13 };
+/// PF14
+export constexpr pin pf14{ .port = 'F', .pin = 14 };
+/// PF15
+export constexpr pin pf15{ .port = 'F', .pin = 15 };
+/// PG0
+export constexpr pin pg0{ .port = 'G', .pin = 0 };
+/// PG1
+export constexpr pin pg1{ .port = 'G', .pin = 1 };
+/// PG2
+export constexpr pin pg2{ .port = 'G', .pin = 2 };
+/// PG3
+export constexpr pin pg3{ .port = 'G', .pin = 3 };
+/// PG4
+export constexpr pin pg4{ .port = 'G', .pin = 4 };
+/// PG5
+export constexpr pin pg5{ .port = 'G', .pin = 5 };
+/// PG6
+export constexpr pin pg6{ .port = 'G', .pin = 6 };
+/// PG7
+export constexpr pin pg7{ .port = 'G', .pin = 7 };
+/// PG8
+export constexpr pin pg8{ .port = 'G', .pin = 8 };
+/// PG9
+export constexpr pin pg9{ .port = 'G', .pin = 9 };
+/// PG10
+export constexpr pin pg10{ .port = 'G', .pin = 10 };
+/// PG11
+export constexpr pin pg11{ .port = 'G', .pin = 11 };
+/// PG12
+export constexpr pin pg12{ .port = 'G', .pin = 12 };
+/// PG13
+export constexpr pin pg13{ .port = 'G', .pin = 13 };
+/// PG14
+export constexpr pin pg14{ .port = 'G', .pin = 14 };
+/// PG15
+export constexpr pin pg15{ .port = 'G', .pin = 15 };
+///@}
+
+/**
  * @brief Main (Master) Clock Output options
  *
  * The following options are available to be sent to the output of the MCO
  * pin
  */
-export enum class mco_source : std::uint8_t {
+export enum class mco_source : std::uint8_t
+{
   system_clock = 0b100,
   high_speed_internal = 0b101,
   high_speed_external = 0b110,
@@ -60,7 +306,8 @@ export enum class mco_source : std::uint8_t {
  * @brief Remap pins for can bus peripheral
  *
  */
-export enum class can_pins : std::uint8_t {
+export enum class can_pins : std::uint8_t
+{
   pa11_pa12 = 0b00,
   pb9_pb8 = 0b10,
   pd0_pd1 = 0b11,

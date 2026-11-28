@@ -27,6 +27,7 @@ import hal.arm_mcu.stm32_generic;
 import :constants;
 import :power;
 import :clock;
+import :pin;
 import :timer;
 
 namespace hal::stm32f1 {
@@ -91,6 +92,27 @@ void route_timer_interrupt(u8 p_index, timer_handler p_handler, void* p_object)
 {
   timer_slots[p_index] = { .handler = p_handler, .object = p_object };
   cortex_m::enable_interrupt(timer_routes[p_index].interrupt, &timer_isr);
+}
+
+void apply_timer_remap(peripheral p_id, u32 p_value)
+{
+  switch (p_id) {
+    case peripheral::timer1:
+      write_remap<pin_remap::tim1_rempap>(p_value);
+      break;
+    case peripheral::timer2:
+      write_remap<pin_remap::tim2_rempap>(p_value);
+      break;
+    case peripheral::timer3:
+      write_remap<pin_remap::tim3_rempap>(p_value);
+      break;
+    case peripheral::timer4:
+      write_remap<pin_remap::tim4_rempap>(p_value);
+      break;
+    default:
+      // TIM5 and TIM8 have no remap
+      break;
+  }
 }
 
 void* timer_address(u8 p_index)

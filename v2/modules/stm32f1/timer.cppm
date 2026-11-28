@@ -24,6 +24,7 @@ import hal.util;
 import hal.arm_mcu.stm32_generic;
 
 import :constants;
+import :pin;
 
 namespace hal::stm32f1 {
 /**
@@ -38,7 +39,8 @@ namespace hal::stm32f1 {
  * high-density and larger parts, such as the STM32F103ZG. On other parts,
  * constructing a clock from one of them is undefined behavior.
  */
-export enum class timer_pair : u8 {
+export enum class timer_pair : u8
+{
   timer1_timer2,
   timer1_timer3,
   timer1_timer4,
@@ -56,6 +58,122 @@ export enum class timer_pair : u8 {
 };
 
 // ---- Shared by the timer drivers, not exported ----------------------------
+
+/// One of a timer's four channels
+using timer_channel = hal::stm32_generic::timer_channel;
+
+/// A timer's channel pins for one AFIO remap, and the value for its MAPR field
+struct timer_pin_set
+{
+  peripheral id;
+  u8 remap_value;
+  std::array<pin, 4> channels;
+};
+
+/**
+ * @brief Every timer's channel pins, by remap (RM0008 Tables 43 to 46)
+ *
+ * The first set of a timer with all the pins someone asks for is the one used,
+ * so each timer's sets go from no remap to full remap. TIM1's partial remap is
+ * left out: it moves only ETR, BKIN and the complementary outputs, so its CH1
+ * to CH4 pins are the same as with no remap.
+ */
+constexpr std::array<timer_pin_set, 13> timer_pin_sets{ {
+  { .id = peripheral::timer1,
+    .remap_value = 0b00,
+    .channels = { pa8, pa9, pa10, pa11 } },
+  { .id = peripheral::timer1,
+    .remap_value = 0b11,
+    .channels = { pe9, pe11, pe13, pe14 } },
+  { .id = peripheral::timer2,
+    .remap_value = 0b00,
+    .channels = { pa0, pa1, pa2, pa3 } },
+  { .id = peripheral::timer2,
+    .remap_value = 0b01,
+    .channels = { pa15, pb3, pa2, pa3 } },
+  { .id = peripheral::timer2,
+    .remap_value = 0b10,
+    .channels = { pa0, pa1, pb10, pb11 } },
+  { .id = peripheral::timer2,
+    .remap_value = 0b11,
+    .channels = { pa15, pb3, pb10, pb11 } },
+  { .id = peripheral::timer3,
+    .remap_value = 0b00,
+    .channels = { pa6, pa7, pb0, pb1 } },
+  { .id = peripheral::timer3,
+    .remap_value = 0b10,
+    .channels = { pb4, pb5, pb0, pb1 } },
+  { .id = peripheral::timer3,
+    .remap_value = 0b11,
+    .channels = { pc6, pc7, pc8, pc9 } },
+  { .id = peripheral::timer4,
+    .remap_value = 0b0,
+    .channels = { pb6, pb7, pb8, pb9 } },
+  { .id = peripheral::timer4,
+    .remap_value = 0b1,
+    .channels = { pd12, pd13, pd14, pd15 } },
+  { .id = peripheral::timer5,
+    .remap_value = 0,
+    .channels = { pa0, pa1, pa2, pa3 } },
+  { .id = peripheral::timer8,
+    .remap_value = 0,
+    .channels = { pc6, pc7, pc8, pc9 } },
+} };
+
+/**
+ * @brief The index of the first set of a timer's channel pins with all of
+ * `p_pins`
+ *
+ * @param p_id - the timer
+ * @param p_pins - the pins, in any order
+ * @return usize - the index into `timer_pin_sets`, or its size if no set of
+ * the timer has every pin
+ */
+template<usize Count>
+constexpr usize find_timer_pin_set(peripheral p_id,
+                                   std::array<pin, Count> const& p_pins)
+{
+  for (usize index = 0; index < timer_pin_sets.size(); index++) {
+    auto const& set = timer_pin_sets[index];
+    if (set.id != p_id) {
+      continue;
+    }
+    bool has_all = true;
+    for (auto const& wanted : p_pins) {
+      bool found = false;
+      for (auto const& channel_pin : set.channels) {
+        found = found or (channel_pin == wanted);
+      }
+      has_all = has_all and found;
+    }
+    if (has_all) {
+      return index;
+    }
+  }
+  return timer_pin_sets.size();
+}
+
+/**
+ * @brief Whether a list of pins names any pin twice
+ *
+ * @param p_pins - the pins
+ * @return true - two entries are the same pin
+ */
+template<usize Count>
+constexpr bool has_duplicate_pins(std::array<pin, Count> const& p_pins)
+{
+  for (usize first = 0; first < Count; first++) {
+    for (usize second = first + 1; second < Count; second++) {
+      if (p_pins[first] == p_pins[second]) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+/// Write a timer's remap field in AFIO MAPR. AFIO must be powered on.
+void apply_timer_remap(peripheral p_id, u32 p_value);
 
 /// Where a timer lives and which interrupt reports its updates
 struct timer_route

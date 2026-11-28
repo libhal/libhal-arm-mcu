@@ -67,6 +67,7 @@ set(DEMOS
     edge_interrupt
     gpio
     i2c
+    pwm
     spi
     stacktrace
     timer

@@ -25,6 +25,14 @@ import hal.arm_mcu.cortex_m;
 import :registers;
 
 namespace hal::stm32_generic {
+/// One of a timer's four channels
+export enum class timer_channel : u8 {
+  ch1,
+  ch2,
+  ch3,
+  ch4,
+};
+
 /// How a timer counts out a delay: `counts` equal periods, each
 /// `prescaler * reload` timer clock cycles long
 export struct timer_period
